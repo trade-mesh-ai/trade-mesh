@@ -1,7 +1,7 @@
 databaseChangeLog:
   - changeSet:
       id: 001-create-schema
-      author: trade-mesh-ai
+      author: trade-mesh
       comment: "Create the trade_mesh schema if it does not already exist"
       changes:
         - sql:
