@@ -1,0 +1,266 @@
+databaseChangeLog:
+
+  # ─── zerodha_sessions ──────────────────────────────────────────────────────────
+  - changeSet:
+      id: 002-create-zerodha-sessions
+      author: trade-mesh-ai
+      comment: "Stores Zerodha OAuth sessions (access tokens)"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: zerodha_sessions
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: access_token
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+
+  # ─── instruments ───────────────────────────────────────────────────────────────
+  - changeSet:
+      id: 002-create-instruments
+      author: trade-mesh-ai
+      comment: "Master list of tradeable instruments fetched from Zerodha"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: instruments
+            columns:
+              - column:
+                  name: instrument_token
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: exchange_token
+                  type: BIGINT
+              - column:
+                  name: tradingsymbol
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(200)
+              - column:
+                  name: exchange
+                  type: VARCHAR(20)
+              - column:
+                  name: segment
+                  type: VARCHAR(30)
+              - column:
+                  name: instrument_type
+                  type: VARCHAR(20)
+              - column:
+                  name: expiry
+                  type: DATE
+              - column:
+                  name: strike
+                  type: NUMERIC(18,4)
+              - column:
+                  name: tick_size
+                  type: NUMERIC(10,4)
+              - column:
+                  name: lot_size
+                  type: INTEGER
+              - column:
+                  name: last_updated
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+
+  # ─── strategies ────────────────────────────────────────────────────────────────
+  - changeSet:
+      id: 002-create-strategies
+      author: trade-mesh-ai
+      comment: "Trading strategy definitions"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: strategies
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: is_active
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: config_json
+                  type: JSONB
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+
+  # ─── orders ────────────────────────────────────────────────────────────────────
+  - changeSet:
+      id: 002-create-orders
+      author: trade-mesh-ai
+      comment: "Order records placed via Zerodha"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: orders
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: zerodha_order_id
+                  type: VARCHAR(50)
+                  constraints:
+                    unique: true
+              - column:
+                  name: strategy_id
+                  type: BIGINT
+                  constraints:
+                    foreignKeyName: fk_orders_strategy
+                    references: trade_mesh.strategies(id)
+              - column:
+                  name: tradingsymbol
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: exchange
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transaction_type
+                  type: VARCHAR(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: order_type
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: product
+                  type: VARCHAR(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: price
+                  type: NUMERIC(18,4)
+              - column:
+                  name: trigger_price
+                  type: NUMERIC(18,4)
+              - column:
+                  name: status
+                  type: VARCHAR(30)
+              - column:
+                  name: placed_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+              - column:
+                  name: updated_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+
+  # ─── portfolio_positions ───────────────────────────────────────────────────────
+  - changeSet:
+      id: 002-create-portfolio-positions
+      author: trade-mesh-ai
+      comment: "Current portfolio positions"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: portfolio_positions
+            columns:
+              - column:
+                  name: id
+                  type: BIGSERIAL
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: tradingsymbol
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: exchange
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: product
+                  type: VARCHAR(10)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: average_price
+                  type: NUMERIC(18,4)
+              - column:
+                  name: last_price
+                  type: NUMERIC(18,4)
+              - column:
+                  name: pnl
+                  type: NUMERIC(18,4)
+              - column:
+                  name: updated_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()

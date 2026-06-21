@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA / VS Code
+.idea/
+*.iml
+.vscode/
+*.class
+
+# Spring Boot
+*.jar
+*.war
+*.ear
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets – never commit real API keys
+application-local.yml
+application-prod.yml
