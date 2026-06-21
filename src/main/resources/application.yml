@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: trade-mesh-ai
+    name: trade-mesh
 
   # ─── R2DBC / PostgreSQL ───────────────────────────────────────────────────────
   r2dbc:
@@ -19,9 +19,9 @@ spring:
   # ─── JDBC DataSource (used by Liquibase only) ─────────────────────────────────
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:trade_mesh_db}?schema=trade_mesh
-    username: ${DB_USERNAME:}
-    password: ${DB_PASSWORD:}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:trade_mesh_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   # ─── Liquibase ────────────────────────────────────────────────────────────────
@@ -86,6 +86,6 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.trademeshai: DEBUG
+    com.trademesh: DEBUG
     org.springframework.r2dbc: DEBUG
     liquibase: INFO

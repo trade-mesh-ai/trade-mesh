@@ -3,7 +3,7 @@ databaseChangeLog:
   # ─── zerodha_sessions ──────────────────────────────────────────────────────────
   - changeSet:
       id: 002-create-zerodha-sessions
-      author: trade-mesh-ai
+      author: trade-mesh
       comment: "Stores Zerodha OAuth sessions (access tokens)"
       changes:
         - createTable:
@@ -42,7 +42,7 @@ databaseChangeLog:
   # ─── instruments ───────────────────────────────────────────────────────────────
   - changeSet:
       id: 002-create-instruments
-      author: trade-mesh-ai
+      author: trade-mesh
       comment: "Master list of tradeable instruments fetched from Zerodha"
       changes:
         - createTable:
@@ -95,7 +95,7 @@ databaseChangeLog:
   # ─── strategies ────────────────────────────────────────────────────────────────
   - changeSet:
       id: 002-create-strategies
-      author: trade-mesh-ai
+      author: trade-mesh
       comment: "Trading strategy definitions"
       changes:
         - createTable:
@@ -142,7 +142,7 @@ databaseChangeLog:
   # ─── orders ────────────────────────────────────────────────────────────────────
   - changeSet:
       id: 002-create-orders
-      author: trade-mesh-ai
+      author: trade-mesh
       comment: "Order records placed via Zerodha"
       changes:
         - createTable:
@@ -217,7 +217,7 @@ databaseChangeLog:
   # ─── portfolio_positions ───────────────────────────────────────────────────────
   - changeSet:
       id: 002-create-portfolio-positions
-      author: trade-mesh-ai
+      author: trade-mesh
       comment: "Current portfolio positions"
       changes:
         - createTable:

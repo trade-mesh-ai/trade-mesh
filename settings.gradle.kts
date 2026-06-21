@@ -1,1 +1,1 @@
-rootProject.name = "trade-mesh-ai"
+rootProject.name = "trade-mesh"

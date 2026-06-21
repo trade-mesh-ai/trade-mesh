@@ -1,0 +1,158 @@
+package com.trademesh.zerodha.auth;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.HexFormat;
+
+/**
+ * Service responsible for Zerodha / Kite Connect authentication.
+ *
+ * <p>Flow:
+ * <ol>
+ *   <li>User is redirected to {@link #generateLoginUrl()} → Kite login page.</li>
+ *   <li>Kite redirects back with {@code request_token}.</li>
+ *   <li>{@link #generateSession(String)} exchanges the request token for an access token
+ *       and stores it in Redis with an 8-hour TTL.</li>
+ * </ol>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ZerodhaAuthService {
+
+    /** Redis key under which the Zerodha access token is stored. */
+    public static final String ACCESS_TOKEN_KEY = "zerodha:access_token";
+
+    private final ZerodhaConfig config;
+    private final ReactiveStringRedisTemplate redisTemplate;
+    private final WebClient.Builder webClientBuilder;
+
+    // ─── Login URL ────────────────────────────────────────────────────────────────
+
+    /**
+     * Builds the Kite Connect OAuth2 login URL.
+     *
+     * @return fully-qualified login URL, e.g.
+     *         {@code https://kite.zerodha.com/connect/login?api_key=xxx&v=3}
+     */
+    public String generateLoginUrl() {
+        String url = config.getLoginUrl() + "?api_key=" + config.getApiKey() + "&v=3";
+        log.debug("Generated Kite login URL: {}", url);
+        return url;
+    }
+
+    // ─── Session / Access Token ───────────────────────────────────────────────────
+
+    /**
+     * Exchanges a {@code request_token} (received from Kite callback) for an
+     * {@code access_token} by calling the Kite Connect session API.
+     *
+     * <p>The access token is stored in Redis under {@value #ACCESS_TOKEN_KEY}
+     * with a TTL of {@code zerodha.kite.access-token-ttl-hours} (default 8 h).
+     *
+     * @param requestToken one-time token received from Kite Connect callback
+     * @return {@link Mono} emitting the access token string
+     */
+    public Mono<String> generateSession(String requestToken) {
+        log.info("Exchanging request_token for access_token …");
+
+        String checksum = computeChecksum(config.getApiKey(), requestToken, config.getApiSecret());
+
+        WebClient client = webClientBuilder
+                .baseUrl(config.getBaseUrl())
+                .build();
+
+        return client.post()
+                .uri("/session/token")
+                .header("X-Kite-Version", "3")
+                .bodyValue("api_key=" + config.getApiKey()
+                        + "&request_token=" + requestToken
+                        + "&checksum=" + checksum)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .retrieve()
+                .bodyToMono(KiteSessionResponse.class)
+                .flatMap(response -> {
+                    String accessToken = response.getData().getAccessToken();
+                    log.info("Access token obtained successfully, storing in Redis …");
+                    return storeAccessToken(accessToken);
+                })
+                .doOnError(e -> log.error("Failed to generate Kite session: {}", e.getMessage(), e));
+    }
+
+    // ─── Redis helpers ────────────────────────────────────────────────────────────
+
+    /**
+     * Stores the access token in Redis with the configured TTL.
+     *
+     * @param accessToken Kite Connect access token
+     * @return {@link Mono} emitting the stored access token
+     */
+    public Mono<String> storeAccessToken(String accessToken) {
+        Duration ttl = Duration.ofHours(config.getAccessTokenTtlHours());
+        return redisTemplate.opsForValue()
+                .set(ACCESS_TOKEN_KEY, accessToken, ttl)
+                .doOnSuccess(ok -> log.info("Access token stored in Redis (TTL={}h)", config.getAccessTokenTtlHours()))
+                .thenReturn(accessToken);
+    }
+
+    /**
+     * Retrieves the current access token from Redis.
+     *
+     * @return {@link Mono} emitting the access token, or empty if not present / expired
+     */
+    public Mono<String> getAccessToken() {
+        return redisTemplate.opsForValue().get(ACCESS_TOKEN_KEY);
+    }
+
+    /**
+     * Checks whether a valid (non-expired) access token exists in Redis.
+     *
+     * @return {@link Mono} emitting {@code true} if a token is present
+     */
+    public Mono<Boolean> isTokenValid() {
+        return redisTemplate.hasKey(ACCESS_TOKEN_KEY);
+    }
+
+    // ─── Checksum ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Computes the SHA-256 checksum required by Kite Connect:
+     * {@code SHA256(api_key + request_token + api_secret)}.
+     */
+    private String computeChecksum(String apiKey, String requestToken, String apiSecret) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(
+                    (apiKey + requestToken + apiSecret).getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    // ─── Inner DTO ────────────────────────────────────────────────────────────────
+
+    /** Minimal representation of the Kite Connect {@code POST /session/token} response. */
+    @lombok.Data
+    static class KiteSessionResponse {
+        private String status;
+        private SessionData data;
+
+        @lombok.Data
+        static class SessionData {
+            private String accessToken;
+            private String publicToken;
+            private String userId;
+            private String loginTime;
+        }
+    }
+}
