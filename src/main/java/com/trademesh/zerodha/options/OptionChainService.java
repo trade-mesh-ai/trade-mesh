@@ -12,12 +12,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import static com.trademesh.config.ApplicationConstants.*;
 
 /**
  * Service for fetching and caching option chain data from Zerodha Kite REST API.
@@ -33,17 +34,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OptionChainService {
 
-    // ─── Constants ─────────────────────────────────────────────────────────────────
-    private static final String REDIS_KEY_PREFIX = "optionchain:";
-    private static final Duration CACHE_TTL = Duration.ofMinutes(3);
-
-    /**
-     * Mapping of trading symbols to Zerodha instrument tokens.
-     */
-    private static final Map<String, Long> SYMBOL_TOKEN_MAP = Map.of(
-            "NIFTY50", 256265L,
-            "NIFTYBANK", 260105L
-    );
 
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
@@ -61,7 +51,7 @@ public class OptionChainService {
      * @return {@link Mono} emitting the OptionChain
      */
     public Mono<OptionChain> fetchOptionChain(String symbol) {
-        String redisKey = REDIS_KEY_PREFIX + symbol;
+        String redisKey = REDIS_KEY_OPTION_CHAIN_PREFIX + symbol;
 
         // Try to get from cache first
         return redisTemplate.opsForValue().get(redisKey)
@@ -76,7 +66,7 @@ public class OptionChainService {
                                     // Cache the result
                                     String json = serializeOptionChain(optionChain);
                                     return redisTemplate.opsForValue()
-                                            .set(redisKey, json, CACHE_TTL)
+                                            .set(redisKey, json, CACHE_OPTION_CHAIN_TTL)
                                             .thenReturn(optionChain)
                                             .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
                                 })

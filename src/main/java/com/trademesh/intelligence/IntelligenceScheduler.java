@@ -7,7 +7,8 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalTime;
-import java.time.ZoneId;
+
+import static com.trademesh.config.ApplicationConstants.*;
 
 /**
  * Scheduled service for auto-refreshing market intelligence every 5 minutes.
@@ -24,13 +25,6 @@ import java.time.ZoneId;
 @Component
 @RequiredArgsConstructor
 public class IntelligenceScheduler {
-
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final LocalTime MARKET_OPEN = LocalTime.of(9, 15);
-    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 30);
-
-    // ─── Symbols to analyze ───────────────────────────────────────────────────────
-    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
 
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final MarketIntelligenceService marketIntelligenceService;

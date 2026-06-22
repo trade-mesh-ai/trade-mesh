@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.ticker;
 
+import com.trademesh.config.ApplicationConstants;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
@@ -14,11 +15,12 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+
+import static com.trademesh.config.ApplicationConstants.CACHE_PRICE_TTL;
+import static com.trademesh.config.ApplicationConstants.PRICE_KEY_PREFIX;
 
 /**
  * Zerodha KiteTicker WebSocket service.
@@ -38,29 +40,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ZerodhaTickerService {
 
-    // ─── Instrument tokens ────────────────────────────────────────────────────────
-    public static final long TOKEN_NIFTY_50 = 256265L;
-    public static final long TOKEN_NIFTY_BANK = 260105L;
-
-    /**
-     * Human-readable symbol map keyed by instrument token.
-     */
-    private static final Map<Long, String> TOKEN_SYMBOL_MAP = Map.of(
-            TOKEN_NIFTY_50, "NIFTY50",
-            TOKEN_NIFTY_BANK, "NIFTYBANK"
-    );
-
-    /**
-     * Redis key prefix for latest price cache.
-     */
-    private static final String PRICE_KEY_PREFIX = "price:";
-
-    /**
-     * Price TTL in Redis – 60 seconds.
-     */
-    private static final Duration PRICE_TTL = Duration.ofSeconds(60);
-
-    // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
     private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
@@ -173,7 +152,7 @@ public class ZerodhaTickerService {
     // ─── Subscription ─────────────────────────────────────────────────────────────
 
     private void subscribeToInstruments() {
-        ArrayList<Long> tokens = new ArrayList<>(List.of(TOKEN_NIFTY_50, TOKEN_NIFTY_BANK));
+        ArrayList<Long> tokens = new ArrayList<>(List.of(ApplicationConstants.TOKEN_NIFTY_50, ApplicationConstants.TOKEN_NIFTY_BANK));
         log.info("Subscribing to instrument tokens: {}", tokens);
         kiteTicker.subscribe(tokens);
         kiteTicker.setMode(tokens, KiteTicker.modeFull);
@@ -183,7 +162,7 @@ public class ZerodhaTickerService {
     // ─── Tick processing ──────────────────────────────────────────────────────────
 
     private void processTick(Tick tick) {
-        String symbol = TOKEN_SYMBOL_MAP.getOrDefault(tick.getInstrumentToken(), "UNKNOWN");
+        String symbol = ApplicationConstants.TOKEN_SYMBOL_MAP.getOrDefault(tick.getInstrumentToken(), "UNKNOWN");
 
         // Tick.getVolumeTradedToday() returns double in this SDK version
         long volume = (long) tick.getVolumeTradedToday();
@@ -215,7 +194,7 @@ public class ZerodhaTickerService {
         // Store latest price in Redis (non-blocking)
         String redisKey = PRICE_KEY_PREFIX + symbol;
         redisTemplate.opsForValue()
-                .set(redisKey, tickData.getLastPrice().toPlainString(), PRICE_TTL)
+                .set(redisKey, tickData.getLastPrice().toPlainString(), CACHE_PRICE_TTL)
                 .subscribe(
                         ok -> log.trace("Stored price in Redis: {}={}", redisKey, tickData.getLastPrice()),
                         err -> log.error("Failed to store price in Redis for {}: {}", symbol, err.getMessage())

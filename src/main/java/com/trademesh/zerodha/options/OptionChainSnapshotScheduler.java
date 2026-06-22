@@ -9,6 +9,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 
+import static com.trademesh.config.ApplicationConstants.SYMBOLS;
+
 /**
  * Scheduled service for capturing option chain snapshots every 5 minutes.
  * <p>
@@ -21,8 +23,6 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class OptionChainSnapshotScheduler {
 
-    // ─── Symbols to snapshot ───────────────────────────────────────────────────────
-    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
     private final OptionChainService optionChainService;
     private final OptionChainSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;

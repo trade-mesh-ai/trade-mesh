@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.ticker;
 
+import com.trademesh.config.ApplicationConstants;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -148,8 +149,8 @@ public class MarketDataController {
                 "websocketConnected", connected,
                 "status", connected ? "CONNECTED" : "DISCONNECTED",
                 "instruments", Map.of(
-                        "NIFTY50", ZerodhaTickerService.TOKEN_NIFTY_50,
-                        "NIFTYBANK", ZerodhaTickerService.TOKEN_NIFTY_BANK
+                        "NIFTY50", ApplicationConstants.TOKEN_NIFTY_50,
+                        "NIFTYBANK", ApplicationConstants.TOKEN_NIFTY_BANK
                 )
         );
         HttpStatus status = connected ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;

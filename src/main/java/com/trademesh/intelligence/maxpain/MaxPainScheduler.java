@@ -9,6 +9,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 
+import static com.trademesh.config.ApplicationConstants.SYMBOLS;
+
 /**
  * Scheduled service for capturing max pain calculation snapshots every 30 minutes.
  *
@@ -24,8 +26,6 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class MaxPainScheduler {
 
-    // ─── Symbols to analyze ───────────────────────────────────────────────────────
-    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
     private final OptionChainService optionChainService;
     private final MaxPainCalculatorService maxPainCalculatorService;
     private final MaxPainHistoryRepository maxPainHistoryRepository;

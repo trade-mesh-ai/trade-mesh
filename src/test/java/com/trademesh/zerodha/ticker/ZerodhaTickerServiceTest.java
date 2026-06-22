@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.ticker;
 
+import com.trademesh.config.ApplicationConstants;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
@@ -53,7 +54,7 @@ class ZerodhaTickerServiceTest {
         ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
 
         Tick tick = Mockito.mock(Tick.class);
-        when(tick.getInstrumentToken()).thenReturn(ZerodhaTickerService.TOKEN_NIFTY_50);
+        when(tick.getInstrumentToken()).thenReturn(ApplicationConstants.TOKEN_NIFTY_50);
         when(tick.getLastTradedPrice()).thenReturn(18000.5);
         when(tick.getOpenPrice()).thenReturn(17900.0);
         when(tick.getHighPrice()).thenReturn(18050.0);
@@ -94,7 +95,7 @@ class ZerodhaTickerServiceTest {
         ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
 
         Tick tick = Mockito.mock(Tick.class);
-        when(tick.getInstrumentToken()).thenReturn(ZerodhaTickerService.TOKEN_NIFTY_BANK);
+        when(tick.getInstrumentToken()).thenReturn(ApplicationConstants.TOKEN_NIFTY_BANK);
         when(tick.getLastTradedPrice()).thenReturn(41000.25);
         when(tick.getOpenPrice()).thenReturn(40900.0);
         when(tick.getHighPrice()).thenReturn(41100.0);
@@ -139,7 +140,7 @@ class ZerodhaTickerServiceTest {
         ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
 
         Tick tick = Mockito.mock(Tick.class);
-        when(tick.getInstrumentToken()).thenReturn(ZerodhaTickerService.TOKEN_NIFTY_50);
+        when(tick.getInstrumentToken()).thenReturn(ApplicationConstants.TOKEN_NIFTY_50);
         when(tick.getLastTradedPrice()).thenReturn(18100.0);
         when(tick.getOpenPrice()).thenReturn(18000.0);
         when(tick.getHighPrice()).thenReturn(18200.0);
