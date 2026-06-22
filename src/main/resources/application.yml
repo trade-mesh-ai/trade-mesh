@@ -101,6 +101,17 @@ telegram:
   bot-token: ${TELEGRAM_BOT_TOKEN:}
   chat-id: ${TELEGRAM_CHAT_ID:}
 
+# ─── Strategy Configuration ───────────────────────────────────────────────────────
+strategy:
+  expiry-day:
+    max-vix: 18.0
+    latest-entry-time: "12:30"
+    min-credit: 20.0
+    min-distance-from-spot: 100
+    max-lots: 1
+    stop-loss-percent: 100
+    target-profit-percent: 50
+
 # ─── Logging ─────────────────────────────────────────────────────────────────────
 logging:
   level:
