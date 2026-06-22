@@ -5,6 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
@@ -63,7 +66,7 @@ public class ZerodhaAuthService {
      * @return {@link Mono} emitting the access token string
      */
     public Mono<String> generateSession(String requestToken) {
-        log.info("Exchanging request_token for access_token …");
+        log.info("Exchanging request_token for access_token ...");
 
         String checksum = computeChecksum(config.getApiKey(), requestToken, config.getApiSecret());
 
@@ -80,11 +83,7 @@ public class ZerodhaAuthService {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .retrieve()
                 .bodyToMono(KiteSessionResponse.class)
-                .flatMap(response -> {
-                    String accessToken = response.getData().getAccessToken();
-                    log.info("Access token obtained successfully, storing in Redis …");
-                    return storeAccessToken(accessToken);
-                })
+                .flatMap(this::handleKiteSessionResponse)
                 .doOnError(e -> log.error("Failed to generate Kite session: {}", e.getMessage(), e));
     }
 
@@ -102,6 +101,31 @@ public class ZerodhaAuthService {
                 .set(ACCESS_TOKEN_KEY, accessToken, ttl)
                 .doOnSuccess(ok -> log.info("Access token stored in Redis (TTL={}h)", config.getAccessTokenTtlHours()))
                 .thenReturn(accessToken);
+    }
+
+    /**
+     * Validates the Kite session response, extracts the access token and stores it.
+     */
+    private Mono<String> handleKiteSessionResponse(KiteSessionResponse response) {
+        log.info("Full Zerodha response: {}", response);
+
+        if (response == null) {
+            return Mono.error(new IllegalStateException("Response is null"));
+        }
+
+        KiteSessionResponse.SessionData data = response.getData();
+        if (data == null) {
+            return Mono.error(new IllegalStateException("Response data is null"));
+        }
+
+        String accessToken = data.getAccessToken();
+        log.info("Access token received: [{}]", accessToken);
+
+        if (accessToken == null || accessToken.isBlank()) {
+            return Mono.error(new IllegalStateException("Access token is null or empty"));
+        }
+
+        return storeAccessToken(accessToken);
     }
 
     /**
@@ -142,17 +166,26 @@ public class ZerodhaAuthService {
     // ─── Inner DTO ────────────────────────────────────────────────────────────────
 
     /** Minimal representation of the Kite Connect {@code POST /session/token} response. */
-    @lombok.Data
-    static class KiteSessionResponse {
-        private String status;
-        private SessionData data;
+@lombok.Data
+static class KiteSessionResponse {
 
-        @lombok.Data
-        static class SessionData {
-            private String accessToken;
-            private String publicToken;
-            private String userId;
-            private String loginTime;
-        }
+    private String status;
+    private SessionData data;
+
+    @lombok.Data
+    static class SessionData {
+
+        @JsonProperty("access_token")
+        private String accessToken;
+
+        @JsonProperty("public_token")
+        private String publicToken;
+
+        @JsonProperty("user_id")
+        private String userId;
+
+        @JsonProperty("login_time")
+        private String loginTime;
     }
+}
 }
