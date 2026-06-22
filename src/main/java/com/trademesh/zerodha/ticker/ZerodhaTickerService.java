@@ -4,11 +4,7 @@ import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
 import com.zerodhatech.models.Tick;
-import com.zerodhatech.ticker.KiteTicker;
-import com.zerodhatech.ticker.OnConnect;
-import com.zerodhatech.ticker.OnDisconnect;
-import com.zerodhatech.ticker.OnError;
-import com.zerodhatech.ticker.OnTicks;
+import com.zerodhatech.ticker.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -68,15 +64,13 @@ public class ZerodhaTickerService {
     private final ZerodhaConfig config;
     private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
-
-    // ─── Internal state ───────────────────────────────────────────────────────────
-    private volatile KiteTicker kiteTicker;
-
     /**
      * Hot Flux sink – all subscribers receive every tick.
      */
     private final Sinks.Many<TickData> tickSink =
             Sinks.many().multicast().onBackpressureBuffer();
+    // ─── Internal state ───────────────────────────────────────────────────────────
+    private volatile KiteTicker kiteTicker;
 
     // ─── Public API ───────────────────────────────────────────────────────────────
 

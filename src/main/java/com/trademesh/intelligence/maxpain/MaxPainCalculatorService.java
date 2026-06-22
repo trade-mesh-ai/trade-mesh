@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -42,12 +41,10 @@ import static com.trademesh.config.ApplicationConstants.REDIS_KEY_MAX_PAIN_PREFI
 @RequiredArgsConstructor
 public class MaxPainCalculatorService {
 
-    @Value("#{${maxpain.lot-sizes:{NIFTY50: 75, NIFTYBANK: 30}}}")
-    private Map<String, Integer> lotSizes;
-
     private final ReactiveStringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-
+    @Value("#{${maxpain.lot-sizes:{NIFTY50: 75, NIFTYBANK: 30}}}")
+    private Map<String, Integer> lotSizes;
 
     /**
      * Calculates the Max Pain for a given option chain.

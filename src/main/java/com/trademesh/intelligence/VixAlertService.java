@@ -25,19 +25,16 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class VixAlertService {
 
-    // ─── Configuration ────────────────────────────────────────────────────────────
-    @Value("${vix.alert-threshold:20.0}")
-    private Double alertThreshold;
-
-    @Value("${telegram.bot-token:}")
-    private String telegramBotToken;
-
-    @Value("${telegram.chat-id:}")
-    private String telegramChatId;
-
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final VixAlertRepository vixAlertRepository;
     private final WebClient.Builder webClientBuilder;
+    // ─── Configuration ────────────────────────────────────────────────────────────
+    @Value("${vix.alert-threshold:20.0}")
+    private Double alertThreshold;
+    @Value("${telegram.bot-token:}")
+    private String telegramBotToken;
+    @Value("${telegram.chat-id:}")
+    private String telegramChatId;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
 

@@ -26,18 +26,15 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class VixScheduler {
 
-    // ─── Configuration ────────────────────────────────────────────────────────────
-    @Value("${vix.fetch-interval-minutes:5}")
-    private Integer fetchIntervalMinutes;
-
-    @Value("${vix.persist-interval-minutes:15}")
-    private Integer persistIntervalMinutes;
-
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final VixMonitorService vixMonitorService;
     private final VixAlertService vixAlertService;
     private final VixHistoryRepository vixHistoryRepository;
-
+    // ─── Configuration ────────────────────────────────────────────────────────────
+    @Value("${vix.fetch-interval-minutes:5}")
+    private Integer fetchIntervalMinutes;
+    @Value("${vix.persist-interval-minutes:15}")
+    private Integer persistIntervalMinutes;
     // ─── State ────────────────────────────────────────────────────────────────────
     private VixData lastFetchedVixData;
     private Instant lastPersistTime;

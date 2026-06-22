@@ -33,16 +33,14 @@ public class VixMonitorService {
     private static final String REDIS_KEY = "market:vix";
     private static final long INDIA_VIX_TOKEN = 264969L;
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
-
-    // ─── Configuration ────────────────────────────────────────────────────────────
-    @Value("${vix.alert-threshold:20.0}")
-    private Double alertThreshold;
-
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
     private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
+    // ─── Configuration ────────────────────────────────────────────────────────────
+    @Value("${vix.alert-threshold:20.0}")
+    private Double alertThreshold;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
 

@@ -25,13 +25,12 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class OIAnalysisScheduler {
 
+    // ─── Symbols to analyze ───────────────────────────────────────────────────────
+    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
     private final OptionChainService optionChainService;
     private final OIAnalyserService oiAnalyserService;
     private final OIAnalysisRepository analysisRepository;
     private final ObjectMapper objectMapper;
-
-    // ─── Symbols to analyze ───────────────────────────────────────────────────────
-    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
 
     /**
      * Captures OI analysis snapshots every 15 minutes (900,000 milliseconds).

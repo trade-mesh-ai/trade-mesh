@@ -21,12 +21,11 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class OptionChainSnapshotScheduler {
 
+    // ─── Symbols to snapshot ───────────────────────────────────────────────────────
+    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
     private final OptionChainService optionChainService;
     private final OptionChainSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;
-
-    // ─── Symbols to snapshot ───────────────────────────────────────────────────────
-    private static final String[] SYMBOLS = {"NIFTY50", "NIFTYBANK"};
 
     /**
      * Captures option chain snapshots every 5 minutes (300,000 milliseconds).

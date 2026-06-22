@@ -25,14 +25,6 @@ public enum VixLevel {
         this.maxValue = maxValue;
     }
 
-    public double getMinValue() {
-        return minValue;
-    }
-
-    public double getMaxValue() {
-        return maxValue;
-    }
-
     /**
      * Determines the VixLevel for a given VIX value.
      *
@@ -51,5 +43,13 @@ public enum VixLevel {
         } else {
             return EXTREME;
         }
+    }
+
+    public double getMinValue() {
+        return minValue;
+    }
+
+    public double getMaxValue() {
+        return maxValue;
     }
 }

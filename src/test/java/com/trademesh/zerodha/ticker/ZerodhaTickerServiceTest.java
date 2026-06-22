@@ -5,27 +5,26 @@ import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
 import com.zerodhatech.models.Tick;
 import com.zerodhatech.ticker.KiteTicker;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.Assertions;
 import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.ReactiveValueOperations;
-
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for ZerodhaTickerService.connect()
@@ -87,7 +86,7 @@ class ZerodhaTickerServiceTest {
     void tickStream_multicast_toMultipleSubscribers() throws Exception {
         // Arrange
         @SuppressWarnings("unchecked")
-       ReactiveValueOperations<String, String> valueOps =
+        ReactiveValueOperations<String, String> valueOps =
                 Mockito.mock(ReactiveValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.set(anyString(), anyString(), any(Duration.class))).thenReturn(Mono.just(Boolean.TRUE));
@@ -108,7 +107,7 @@ class ZerodhaTickerServiceTest {
         java.lang.reflect.Method proc = ZerodhaTickerService.class.getDeclaredMethod("processTick", Tick.class);
         proc.setAccessible(true);
 
-        List<TickData> sub1 = new  java.util.concurrent.CopyOnWriteArrayList<>();
+        List<TickData> sub1 = new java.util.concurrent.CopyOnWriteArrayList<>();
         List<TickData> sub2 = new java.util.concurrent.CopyOnWriteArrayList<>();
 
         // Subscribe both before emission

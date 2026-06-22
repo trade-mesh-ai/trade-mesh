@@ -1,11 +1,10 @@
 package com.trademesh.scheduler;
 
+import com.trademesh.strategy.StrategyEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-
-import com.trademesh.strategy.StrategyEngine;
 
 /**
  * Scheduled tasks for the TradeMesh platform.
