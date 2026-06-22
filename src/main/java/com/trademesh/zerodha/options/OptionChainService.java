@@ -121,8 +121,8 @@ public class OptionChainService {
 
     /**
      * Parses the Kite API response and builds an OptionChain object.
-     * For now, returns a minimal OptionChain with spot price and empty strikes.
-     * In production, you would fetch individual strike data from the API.
+     * Fetches all option instruments for the symbol, filters by nearest weekly expiry,
+     * and fetches quote data for each strike.
      */
     private Mono<OptionChain> parseOptionChain(String symbol, KiteQuoteResponse response) {
         if (response == null || response.getData() == null) {
@@ -132,23 +132,201 @@ public class OptionChainService {
         KiteQuoteResponse.QuoteData data = response.getData();
         BigDecimal spotPrice = BigDecimal.valueOf(data.getLastPrice());
 
-        // For a complete implementation, you would:
-        // 1. Fetch the list of all option instruments for this symbol
-        // 2. Filter by the nearest weekly expiry
-        // 3. Fetch quote data for each strike
-        // 4. Build the OptionChain with all strikes
+        // Fetch all option instruments for this symbol
+        return authService.getAccessToken()
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "No Zerodha access token found in Redis. Please authenticate first.")))
+                .flatMap(accessToken -> {
+                    WebClient client = webClientBuilder
+                            .baseUrl(config.getBaseUrl())
+                            .defaultHeader("Authorization", "Bearer " + accessToken)
+                            .build();
 
-        // For now, return a basic structure
-        OptionChain optionChain = OptionChain.builder()
-                .symbol(symbol)
-                .spotPrice(spotPrice)
-                .expiryDate(LocalDate.now().plusDays(7)) // Placeholder: nearest weekly expiry
-                .strikes(new ArrayList<>()) // Empty for now
-                .fetchedAt(Instant.now())
-                .build();
+                    // Fetch all instruments to find option strikes
+                    return client.get()
+                            .uri("/instruments")
+                            .retrieve()
+                            .bodyToMono(KiteInstrumentsResponse.class)
+                            .flatMap(instrumentsResponse -> buildOptionChain(symbol, spotPrice, instrumentsResponse, accessToken, client))
+                            .doOnError(e -> log.error("Failed to fetch instruments for {}: {}", symbol, e.getMessage()));
+                });
+    }
 
-        log.info("Parsed option chain for {}: spot price = {}", symbol, spotPrice);
-        return Mono.just(optionChain);
+    /**
+     * Builds the complete OptionChain by filtering instruments and fetching strike data.
+     */
+    private Mono<OptionChain> buildOptionChain(String symbol, BigDecimal spotPrice,
+                                               KiteInstrumentsResponse instrumentsResponse,
+                                               String accessToken, WebClient client) {
+        if (instrumentsResponse == null || instrumentsResponse.getData() == null) {
+            return Mono.error(new IllegalStateException("Invalid instruments response"));
+        }
+
+        // Find the nearest weekly expiry date
+        LocalDate nearestExpiry = findNearestWeeklyExpiry(instrumentsResponse.getData(), symbol);
+        if (nearestExpiry == null) {
+            log.warn("No option instruments found for {} with weekly expiry", symbol);
+            return Mono.just(OptionChain.builder()
+                    .symbol(symbol)
+                    .spotPrice(spotPrice)
+                    .expiryDate(LocalDate.now().plusDays(7))
+                    .strikes(new ArrayList<>())
+                    .fetchedAt(Instant.now())
+                    .build());
+        }
+
+        // Filter instruments for this symbol and expiry
+        List<KiteInstrumentsResponse.Instrument> optionInstruments = instrumentsResponse.getData()
+                .stream()
+                .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO"))
+                .filter(inst -> inst.getExpiryDate() != null && inst.getExpiryDate().equals(nearestExpiry))
+                .filter(inst -> inst.getInstrumentType() != null && 
+                        (inst.getInstrumentType().equals("CE") || inst.getInstrumentType().equals("PE")))
+                .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().contains(symbol))
+                .toList();
+
+        if (optionInstruments.isEmpty()) {
+            log.warn("No option instruments found for {} with expiry {}", symbol, nearestExpiry);
+            return Mono.just(OptionChain.builder()
+                    .symbol(symbol)
+                    .spotPrice(spotPrice)
+                    .expiryDate(nearestExpiry)
+                    .strikes(new ArrayList<>())
+                    .fetchedAt(Instant.now())
+                    .build());
+        }
+
+        // Group by strike price
+        Map<BigDecimal, List<KiteInstrumentsResponse.Instrument>> strikeGroups = optionInstruments
+                .stream()
+                .collect(java.util.stream.Collectors.groupingBy(inst -> 
+                        new BigDecimal(inst.getStrikePrice())));
+
+        // Fetch quote data for all strikes
+        List<String> instrumentTokens = optionInstruments.stream()
+                .map(inst -> "NFO:" + inst.getTradingSymbol())
+                .distinct()
+                .toList();
+
+        return fetchQuotesForStrikes(client, instrumentTokens)
+                .map(quotesResponse -> buildStrikesFromQuotes(symbol, spotPrice, nearestExpiry, 
+                        strikeGroups, quotesResponse))
+                .map(strikes -> OptionChain.builder()
+                        .symbol(symbol)
+                        .spotPrice(spotPrice)
+                        .expiryDate(nearestExpiry)
+                        .strikes(strikes)
+                        .fetchedAt(Instant.now())
+                        .build());
+    }
+
+    /**
+     * Fetches quote data for all option strikes.
+     */
+    private Mono<KiteQuotesResponse> fetchQuotesForStrikes(WebClient client, List<String> instrumentTokens) {
+        if (instrumentTokens.isEmpty()) {
+            return Mono.just(new KiteQuotesResponse());
+        }
+
+        // Build comma-separated list of instrument tokens
+        String tokens = String.join(",", instrumentTokens);
+        
+        return client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/quote")
+                        .queryParam("i", tokens)
+                        .queryParam("mode", "full")
+                        .build())
+                .retrieve()
+                .bodyToMono(KiteQuotesResponse.class)
+                .onErrorResume(e -> {
+                    log.error("Failed to fetch quotes for strikes: {}", e.getMessage());
+                    return Mono.just(new KiteQuotesResponse());
+                });
+    }
+
+    /**
+     * Builds OptionStrike objects from quote data.
+     */
+    private List<OptionStrike> buildStrikesFromQuotes(String symbol, BigDecimal spotPrice,
+                                                      LocalDate expiryDate,
+                                                      Map<BigDecimal, List<KiteInstrumentsResponse.Instrument>> strikeGroups,
+                                                      KiteQuotesResponse quotesResponse) {
+        List<OptionStrike> strikes = new ArrayList<>();
+
+        if (quotesResponse == null || quotesResponse.getData() == null) {
+            return strikes;
+        }
+
+        Map<String, KiteQuotesResponse.QuoteData> quoteMap = quotesResponse.getData();
+
+        for (Map.Entry<BigDecimal, List<KiteInstrumentsResponse.Instrument>> entry : strikeGroups.entrySet()) {
+            BigDecimal strikePrice = entry.getKey();
+            List<KiteInstrumentsResponse.Instrument> instruments = entry.getValue();
+
+            KiteQuotesResponse.QuoteData callQuote = null;
+            KiteQuotesResponse.QuoteData putQuote = null;
+
+            // Find call and put quotes for this strike
+            for (KiteInstrumentsResponse.Instrument inst : instruments) {
+                String tradingSymbol = "NFO:" + inst.getTradingSymbol();
+                KiteQuotesResponse.QuoteData quote = quoteMap.get(tradingSymbol);
+
+                if (quote != null) {
+                    if ("CE".equals(inst.getInstrumentType())) {
+                        callQuote = quote;
+                    } else if ("PE".equals(inst.getInstrumentType())) {
+                        putQuote = quote;
+                    }
+                }
+            }
+
+            // Build OptionStrike with available data
+            OptionStrike.OptionStrikeBuilder builder = OptionStrike.builder()
+                    .strikePrice(strikePrice);
+
+            if (callQuote != null) {
+                builder.callOI(callQuote.getOpenInterest())
+                        .callOIChange(callQuote.getOiDayChange())
+                        .callLTP(BigDecimal.valueOf(callQuote.getLastPrice()))
+                        .callIV(BigDecimal.valueOf(callQuote.getImpliedVolatility()));
+            } else {
+                builder.callOI(0).callOIChange(0).callLTP(BigDecimal.ZERO).callIV(BigDecimal.ZERO);
+            }
+
+            if (putQuote != null) {
+                builder.putOI(putQuote.getOpenInterest())
+                        .putOIChange(putQuote.getOiDayChange())
+                        .putLTP(BigDecimal.valueOf(putQuote.getLastPrice()))
+                        .putIV(BigDecimal.valueOf(putQuote.getImpliedVolatility()));
+            } else {
+                builder.putOI(0).putOIChange(0).putLTP(BigDecimal.ZERO).putIV(BigDecimal.ZERO);
+            }
+
+            long callOI = callQuote != null ? callQuote.getOpenInterest() : 0;
+            long putOI = putQuote != null ? putQuote.getOpenInterest() : 0;
+            builder.totalOI(callOI + putOI);
+
+            strikes.add(builder.build());
+        }
+
+        log.info("Built {} strikes for {} with expiry {}", strikes.size(), symbol, expiryDate);
+        return strikes;
+    }
+
+    /**
+     * Finds the nearest weekly expiry date (typically Thursday).
+     */
+    private LocalDate findNearestWeeklyExpiry(List<KiteInstrumentsResponse.Instrument> instruments, String symbol) {
+        return instruments.stream()
+                .filter(inst -> inst.getExpiryDate() != null)
+                .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO"))
+                .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().contains(symbol))
+                .map(KiteInstrumentsResponse.Instrument::getExpiryDate)
+                .distinct()
+                .filter(date -> date.isAfter(LocalDate.now()))
+                .min(LocalDate::compareTo)
+                .orElse(null);
     }
 
     // ─── Serialization / Deserialization ──────────────────────────────────────────
