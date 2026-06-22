@@ -27,16 +27,14 @@ import java.util.Map;
 /**
  * Zerodha KiteTicker WebSocket service.
  *
- * <p>Responsibilities:
- * <ul>
- *   <li>Fetches the current access token from Redis.</li>
- *   <li>Connects to the KiteTicker WebSocket feed.</li>
- *   <li>Subscribes to NIFTY 50 (token 256265) and NIFTY BANK (token 260105) in FULL mode.</li>
- *   <li>On each tick: logs the data, stores the latest price in Redis under
- *       {@code price:{symbol}} with a 60-second TTL, and emits to a reactive Flux.</li>
- * </ul>
+ * Responsibilities:
+ * - Fetches the current access token from Redis.
+ * - Connects to the KiteTicker WebSocket feed.
+ * - Subscribes to NIFTY 50 (token 256265) and NIFTY BANK (token 260105) in FULL mode.
+ * - On each tick: logs the data, stores the latest price in Redis under
+ *   {@code price:{symbol}} with a 60-second TTL, and emits to a reactive Flux.
  *
- * <p>Connection lifecycle (connect / disconnect / reconnect) is delegated to
+ * Connection lifecycle (connect / disconnect / reconnect) is delegated to
  * {@link TickerConnectionManager}.
  */
 @Slf4j

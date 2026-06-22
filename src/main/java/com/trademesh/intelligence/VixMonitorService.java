@@ -17,14 +17,12 @@ import java.time.Instant;
 
 /**
  * Service for fetching and caching VIX (Volatility Index) data from Zerodha Kite API.
- * 
- * <p>Responsibilities:
- * <ul>
- *   <li>Fetches INDIA VIX data from Zerodha Kite REST API (instrument token: 264969)</li>
- *   <li>Caches result in Redis with 5-minute TTL</li>
- *   <li>Calculates VIX level and percentage change</li>
- *   <li>Provides real-time VIX data for trading decisions</li>
- * </ul>
+ *
+ * Responsibilities:
+ * - Fetches INDIA VIX data from Zerodha Kite REST API (instrument token: 264969)
+ * - Caches result in Redis with 5-minute TTL
+ * - Calculates VIX level and percentage change
+ * - Provides real-time VIX data for trading decisions
  */
 @Slf4j
 @Service

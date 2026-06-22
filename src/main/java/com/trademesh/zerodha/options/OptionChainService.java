@@ -23,13 +23,11 @@ import java.util.Map;
 /**
  * Service for fetching and caching option chain data from Zerodha Kite REST API.
  *
- * <p>Responsibilities:
- * <ul>
- *   <li>Fetches access token from Redis.</li>
- *   <li>Calls Zerodha Kite REST API to fetch option chain data.</li>
- *   <li>Parses response and builds OptionChain object.</li>
- *   <li>Caches result in Redis with 3-minute TTL.</li>
- * </ul>
+ * Responsibilities:
+ * - Fetches access token from Redis.
+ * - Calls Zerodha Kite REST API to fetch option chain data.
+ * - Parses response and builds OptionChain object.
+ * - Caches result in Redis with 3-minute TTL.
  */
 @Slf4j
 @Service

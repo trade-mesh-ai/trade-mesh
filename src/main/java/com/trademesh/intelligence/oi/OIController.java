@@ -28,15 +28,13 @@ public class OIController {
 
     /**
      * Fetches the OI analysis for a given symbol.
-     * 
-     * <p>Returns the latest OI analysis including:
-     * <ul>
-     *   <li>Maximum call OI strike (resistance wall)</li>
-     *   <li>Maximum put OI strike (support wall)</li>
-     *   <li>Top 3 call and put OI walls</li>
-     *   <li>Overall market bias (BULLISH/BEARISH/NEUTRAL)</li>
-     *   <li>Analysis timestamp</li>
-     * </ul>
+     *
+     * Returns the latest OI analysis including:
+     * - Maximum call OI strike (resistance wall)
+     * - Maximum put OI strike (support wall)
+     * - Top 3 call and put OI walls
+     * - Overall market bias (BULLISH/BEARISH/NEUTRAL)
+     * - Analysis timestamp
      *
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the OIAnalysis with HTTP 200 OK, or error response

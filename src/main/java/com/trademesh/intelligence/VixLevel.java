@@ -2,15 +2,13 @@ package com.trademesh.intelligence;
 
 /**
  * Enumeration of VIX levels based on current VIX value.
- * 
- * <p>VIX (Volatility Index) ranges:
- * <ul>
- *   <li>LOW: VIX < 13 (Low volatility, calm market)</li>
- *   <li>NORMAL: VIX 13-17 (Normal volatility)</li>
- *   <li>ELEVATED: VIX 17-20 (Elevated volatility, caution advised)</li>
- *   <li>HIGH: VIX 20-25 (High volatility, risk alert)</li>
- *   <li>EXTREME: VIX > 25 (Extreme volatility, market stress)</li>
- * </ul>
+ *
+ * VIX (Volatility Index) ranges:
+ * - LOW: VIX < 13 (Low volatility, calm market)
+ * - NORMAL: VIX 13-17 (Normal volatility)
+ * - ELEVATED: VIX 17-20 (Elevated volatility, caution advised)
+ * - HIGH: VIX 20-25 (High volatility, risk alert)
+ * - EXTREME: VIX > 25 (Extreme volatility, market stress)
  */
 public enum VixLevel {
     LOW(0, 13),

@@ -12,11 +12,9 @@ import java.time.Instant;
 /**
  * Scheduled service for capturing option chain snapshots every 5 minutes.
  *
- * <p>Responsibilities:
- * <ul>
- *   <li>Fetches option chain data for NIFTY50 and NIFTYBANK every 5 minutes.</li>
- *   <li>Persists snapshots to PostgreSQL for historical analysis.</li>
- * </ul>
+ * Responsibilities:
+ * - Fetches option chain data for NIFTY50 and NIFTYBANK every 5 minutes.
+ * - Persists snapshots to PostgreSQL for historical analysis.
  */
 @Slf4j
 @Component

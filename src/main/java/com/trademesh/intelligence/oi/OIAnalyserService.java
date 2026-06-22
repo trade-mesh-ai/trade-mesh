@@ -17,14 +17,12 @@ import java.util.List;
 
 /**
  * Service for analyzing Open Interest (OI) patterns in option chains.
- * 
- * <p>Responsibilities:
- * <ul>
- *   <li>Analyzes option chain data to identify OI walls (resistance/support)</li>
- *   <li>Calculates market bias based on call vs put OI distribution</li>
- *   <li>Detects OI wall strength (WEAK, MODERATE, STRONG)</li>
- *   <li>Caches analysis results in Redis with 5-minute TTL</li>
- * </ul>
+ *
+ * Responsibilities:
+ * - Analyzes option chain data to identify OI walls (resistance/support)
+ * - Calculates market bias based on call vs put OI distribution
+ * - Detects OI wall strength (WEAK, MODERATE, STRONG)
+ * - Caches analysis results in Redis with 5-minute TTL
  */
 @Slf4j
 @Service
@@ -50,15 +48,13 @@ public class OIAnalyserService {
 
     /**
      * Analyzes the option chain and returns OI analysis.
-     * 
-     * <p>This method:
-     * <ol>
-     *   <li>Finds maximum call OI (resistance wall)</li>
-     *   <li>Finds maximum put OI (support wall)</li>
-     *   <li>Identifies top 3 call and put OI walls</li>
-     *   <li>Calculates market bias</li>
-     *   <li>Caches result in Redis with 5-minute TTL</li>
-     * </ol>
+     *
+     * This method:
+     * - Finds maximum call OI (resistance wall)
+     * - Finds maximum put OI (support wall)
+     * - Identifies top 3 call and put OI walls
+     * - Calculates market bias
+     * - Caches result in Redis with 5-minute TTL
      *
      * @param chain the option chain to analyze
      * @return Mono emitting the OIAnalysis
@@ -223,13 +219,11 @@ public class OIAnalyserService {
 
     /**
      * Calculates market bias based on call vs put OI distribution.
-     * 
-     * <p>Logic:
-     * <ul>
-     *   <li>If maxPutOI > maxCallOI by >10% → BULLISH (support dominant)</li>
-     *   <li>If maxCallOI > maxPutOI by >10% → BEARISH (resistance dominant)</li>
-     *   <li>Within 10% difference → NEUTRAL (balanced)</li>
-     * </ul>
+     *
+     * Logic:
+     * - If maxPutOI > maxCallOI by >10% → BULLISH (support dominant)
+     * - If maxCallOI > maxPutOI by >10% → BEARISH (resistance dominant)
+     * - Within 10% difference → NEUTRAL (balanced)
      *
      * @param maxCallOI maximum call OI
      * @param maxPutOI maximum put OI
@@ -260,13 +254,11 @@ public class OIAnalyserService {
 
     /**
      * Detects OI wall strength based on total open interest.
-     * 
-     * <p>Strength classification:
-     * <ul>
-     *   <li>OI > 50 lakh (5,000,000) → STRONG</li>
-     *   <li>OI 20-50 lakh (2,000,000-5,000,000) → MODERATE</li>
-     *   <li>OI < 20 lakh (2,000,000) → WEAK</li>
-     * </ul>
+     *
+     * Strength classification:
+     * - OI > 50 lakh (5,000,000) → STRONG
+     * - OI 20-50 lakh (2,000,000-5,000,000) → MODERATE
+     * - OI < 20 lakh (2,000,000) → WEAK
      *
      * @param oi the open interest value
      * @return the strength classification

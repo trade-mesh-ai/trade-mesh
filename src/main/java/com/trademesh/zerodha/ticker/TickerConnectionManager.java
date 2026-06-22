@@ -13,16 +13,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Manages the lifecycle of the {@link ZerodhaTickerService} WebSocket connection.
  *
- * <p>Responsibilities:
- * <ul>
- *   <li><strong>Auto-start</strong> – attempts to connect once the Spring application is ready.</li>
- *   <li><strong>Health check</strong> – polls the connection state every 30 seconds and
- *       triggers a reconnect if the socket is found to be closed.</li>
- *   <li><strong>Alerting</strong> – logs WARN / ERROR messages on disconnect so that
- *       log-based alerting pipelines (Grafana Loki, etc.) can fire notifications.</li>
- *   <li><strong>Reconnect back-off</strong> – tracks consecutive reconnect attempts and
- *       escalates log severity after repeated failures.</li>
- * </ul>
+ * Responsibilities:
+ * - Auto-start: attempts to connect once the Spring application is ready.
+ * - Health check: polls the connection state every 30 seconds and triggers a reconnect if closed.
+ * - Alerting: logs WARN / ERROR messages on disconnect so alerting pipelines can notify operators.
+ * - Reconnect back-off: tracks consecutive reconnect attempts and escalates log severity after failures.
  */
 @Slf4j
 @Component

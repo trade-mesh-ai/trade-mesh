@@ -4,8 +4,8 @@ Use R2DBC for PostgreSQL.
 Use existing Redis connection.
 
 ## Java Docs
-For Javadoc comments, use concise one to four lines summaries only. 
-No <p>, <ul>, <li> HTML tags. No "Responsibilities:" sections.
+For Javadoc comments
+No <p>, <ul>, <li> HTML tags
 
 
 ## Database

@@ -19,13 +19,12 @@ import java.util.Map;
 /**
  * REST controller exposing live market data sourced from the KiteTicker WebSocket feed.
  *
- * <ul>
- *   <li>{@code GET /market/price/{symbol}}   – latest price from Redis cache.</li>
- *   <li>{@code GET /market/stream/{symbol}}  – Server-Sent Events (SSE) live price stream.</li>
- *   <li>{@code GET /market/status}           – WebSocket connection health.</li>
- * </ul>
+ * Endpoints:
+ * - {@code GET /market/price/{symbol}}   – latest price from Redis cache.
+ * - {@code GET /market/stream/{symbol}}  – Server-Sent Events (SSE) live price stream.
+ * - {@code GET /market/status}           – WebSocket connection health.
  *
- * <p>Supported symbols: {@code NIFTY50}, {@code NIFTYBANK} (case-insensitive).
+ * Supported symbols: {@code NIFTY50}, {@code NIFTYBANK} (case-insensitive).
  */
 @Slf4j
 @RestController
