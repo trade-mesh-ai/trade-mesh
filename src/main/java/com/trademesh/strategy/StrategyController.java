@@ -1,7 +1,6 @@
 package com.trademesh.strategy;
 
 import com.trademesh.intelligence.MarketCondition;
-import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketIntelligenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,13 +20,11 @@ import java.util.stream.Collectors;
 
 /**
  * REST Controller for strategy evaluation and status endpoints.
- *
- * <p>Provides endpoints for:
- * <ul>
- *   <li>Evaluating strategies for a given symbol</li>
- *   <li>Checking which strategies are applicable for current market conditions</li>
- *   <li>Viewing all available strategies and their status</li>
- * </ul>
+ * <p>
+ * Provides endpoints for:
+ * - Evaluating strategies for a given symbol
+ * - Checking which strategies are applicable for current market conditions
+ * - Viewing all available strategies and their status
  */
 @Slf4j
 @RestController
@@ -41,8 +38,8 @@ public class StrategyController {
 
     /**
      * Evaluates strategies for a given symbol and returns the result.
-     *
-     * <p>Orchestrates the complete pipeline:
+     * <p>
+     * Orchestrates the complete pipeline:
      * 1. Fetch market intelligence
      * 2. Select appropriate strategy
      * 3. Evaluate strategy
@@ -72,8 +69,8 @@ public class StrategyController {
 
     /**
      * Returns which strategies are applicable for the current market condition of a symbol.
-     *
-     * <p>Response includes:
+     * <p>
+     * Response includes:
      * - Market condition
      * - List of applicable strategy names
      * - Configuration details for each applicable strategy
@@ -128,14 +125,14 @@ public class StrategyController {
 
     /**
      * Returns all available strategies and their status.
-     *
-     * <p>Response includes:
+     * <p>
+     * Response includes:
      * - Total number of strategies
      * - List of all strategies with:
-     *   - Name
-     *   - Enabled status
-     *   - Configuration details
-     *   - Applicable market conditions
+     * - Name
+     * - Enabled status
+     * - Configuration details
+     * - Applicable market conditions
      *
      * @return Mono emitting ResponseEntity with all strategies information
      */
@@ -144,49 +141,49 @@ public class StrategyController {
         log.info("Received request for strategy status");
 
         return Mono.fromCallable(() -> {
-            List<Map<String, Object>> strategyList = strategies.stream()
-                    .map(strategy -> {
-                        Map<String, Object> strategyInfo = new HashMap<>();
-                        strategyInfo.put("name", strategy.getName());
+                    List<Map<String, Object>> strategyList = strategies.stream()
+                            .map(strategy -> {
+                                Map<String, Object> strategyInfo = new HashMap<>();
+                                strategyInfo.put("name", strategy.getName());
 
-                        StrategyConfig config = strategy.getConfig();
-                        strategyInfo.put("enabled", config.getIsEnabled());
-                        strategyInfo.put("maxLotsPerTrade", config.getMaxLotsPerTrade());
-                        strategyInfo.put("stopLossPercent", config.getStopLossPercent());
-                        strategyInfo.put("targetProfitPercent", config.getTargetProfitPercent());
-                        strategyInfo.put("minVix", config.getMinVix());
-                        strategyInfo.put("maxVix", config.getMaxVix());
-                        strategyInfo.put("allowedDays", config.getAllowedDays());
+                                StrategyConfig config = strategy.getConfig();
+                                strategyInfo.put("enabled", config.getIsEnabled());
+                                strategyInfo.put("maxLotsPerTrade", config.getMaxLotsPerTrade());
+                                strategyInfo.put("stopLossPercent", config.getStopLossPercent());
+                                strategyInfo.put("targetProfitPercent", config.getTargetProfitPercent());
+                                strategyInfo.put("minVix", config.getMinVix());
+                                strategyInfo.put("maxVix", config.getMaxVix());
+                                strategyInfo.put("allowedDays", config.getAllowedDays());
 
-                        // Determine applicable conditions
-                        List<String> applicableConditions = List.of(
-                                MarketCondition.SIDEWAYS,
-                                MarketCondition.TRENDING_BULLISH,
-                                MarketCondition.TRENDING_BEARISH,
-                                MarketCondition.EXPIRY_DAY,
-                                MarketCondition.HIGH_VOLATILITY,
-                                MarketCondition.NO_TRADE
-                        ).stream()
-                                .filter(condition -> strategy.isApplicable(condition))
-                                .map(MarketCondition::name)
-                                .collect(Collectors.toList());
+                                // Determine applicable conditions
+                                List<String> applicableConditions = List.of(
+                                                MarketCondition.SIDEWAYS,
+                                                MarketCondition.TRENDING_BULLISH,
+                                                MarketCondition.TRENDING_BEARISH,
+                                                MarketCondition.EXPIRY_DAY,
+                                                MarketCondition.HIGH_VOLATILITY,
+                                                MarketCondition.NO_TRADE
+                                        ).stream()
+                                        .filter(condition -> strategy.isApplicable(condition))
+                                        .map(MarketCondition::name)
+                                        .collect(Collectors.toList());
 
-                        strategyInfo.put("applicableConditions", applicableConditions);
+                                strategyInfo.put("applicableConditions", applicableConditions);
 
-                        return strategyInfo;
-                    })
-                    .collect(Collectors.toList());
+                                return strategyInfo;
+                            })
+                            .collect(Collectors.toList());
 
-            // Build response
-            Map<String, Object> response = new HashMap<>();
-            response.put("totalStrategies", strategyList.size());
-            response.put("strategies", strategyList);
-            response.put("marketOpen", strategyOrchestrator.isMarketOpen());
+                    // Build response
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("totalStrategies", strategyList.size());
+                    response.put("strategies", strategyList);
+                    response.put("marketOpen", strategyOrchestrator.isMarketOpen());
 
-            log.info("Returning status for {} strategies", strategyList.size());
+                    log.info("Returning status for {} strategies", strategyList.size());
 
-            return ResponseEntity.ok(response);
-        })
+                    return ResponseEntity.ok(response);
+                })
                 .onErrorResume(e -> {
                     log.error("Error fetching strategy status", e);
                     Map<String, Object> errorResponse = new HashMap<>();

@@ -2,16 +2,8 @@ package com.trademesh.strategy.expiryday;
 
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
-import com.trademesh.strategy.StrategyConfig;
-import com.trademesh.strategy.StrategyResult;
-import com.trademesh.strategy.TradeLeg;
-import com.trademesh.strategy.TradeSignal;
-import com.trademesh.strategy.TradingStrategy;
-import com.trademesh.strategy.enums.Action;
-import com.trademesh.strategy.enums.Confidence;
-import com.trademesh.strategy.enums.LegType;
-import com.trademesh.strategy.enums.OptionType;
-import com.trademesh.strategy.enums.SignalType;
+import com.trademesh.strategy.*;
+import com.trademesh.strategy.enums.*;
 import com.trademesh.zerodha.options.OptionStrike;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -203,7 +195,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
     /**
      * Builds trade legs from selected strikes and option chain data.
      *
-     * @param intelligence market intelligence data
+     * @param intelligence    market intelligence data
      * @param strikeSelection selected strikes
      * @return TradeLegsResult with legs and total credit, or null if unable to build
      */
@@ -280,9 +272,9 @@ public class ExpiryDayStrategy implements TradingStrategy {
     /**
      * Builds a complete TradeSignal from strategy evaluation.
      *
-     * @param intelligence market intelligence data
+     * @param intelligence    market intelligence data
      * @param strikeSelection selected strikes
-     * @param legsResult trade legs and credit
+     * @param legsResult      trade legs and credit
      * @return TradeSignal ready for execution
      */
     private TradeSignal buildTradeSignal(MarketIntelligence intelligence,

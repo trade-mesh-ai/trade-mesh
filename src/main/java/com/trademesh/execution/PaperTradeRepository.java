@@ -10,8 +10,8 @@ import java.util.UUID;
 
 /**
  * Reactive R2DBC repository for {@link PaperTrade} entities.
- *
- * <p>Provides database access for paper trading records with custom query methods
+ * <p>
+ * Provides database access for paper trading records with custom query methods
  * for filtering by status, date, symbol, and other criteria.
  */
 @Repository
@@ -36,8 +36,8 @@ public interface PaperTradeRepository extends ReactiveCrudRepository<PaperTrade,
 
     /**
      * Finds all currently open paper trades.
-     *
-     * <p>Convenience method equivalent to findByStatus(TradeStatus.OPEN).
+     * <p>
+     * Convenience method equivalent to findByStatus(TradeStatus.OPEN).
      *
      * @return Flux of all open paper trades
      */

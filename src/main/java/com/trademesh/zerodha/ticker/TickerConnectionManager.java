@@ -37,9 +37,9 @@ public class TickerConnectionManager {
 
     /**
      * Triggered once the Spring context is fully started.
-     *
-     * <p>Attempts to connect to the KiteTicker WebSocket.  If the access token is not
-     * yet available in Redis (user hasn't authenticated), the error is logged as a WARN
+     * <p>
+     * Attempts to connect to the KiteTicker WebSocket. If the access token is not
+     * yet available in Redis (user hasn't authenticated), the error is logged as WARN
      * and the health-check scheduler will retry automatically.
      */
     @EventListener(ApplicationReadyEvent.class)
@@ -52,13 +52,11 @@ public class TickerConnectionManager {
 
     /**
      * Runs every 30 seconds to verify the WebSocket is still alive.
-     *
-     * <ul>
-     *   <li>If connected → resets the reconnect counter and logs INFO.</li>
-     *   <li>If disconnected → logs WARN/ERROR and triggers a reconnect.</li>
-     * </ul>
-     *
-     * <p>Cron: {@code "0/30 * * * * *"} (every 30 seconds)
+     * <p>
+     * - If connected → resets the reconnect counter and logs INFO.
+     * - If disconnected → logs WARN/ERROR and triggers a reconnect.
+     * <p>
+     * Cron: {@code "0/30 * * * * *"} (every 30 seconds)
      */
     @Scheduled(fixedDelay = 30_000)
     public void healthCheck() {
@@ -96,11 +94,9 @@ public class TickerConnectionManager {
 
     /**
      * Escalates log severity based on the number of consecutive reconnect attempts.
-     *
-     * <ul>
-     *   <li>Attempts 1–{@value #MAX_RECONNECT_ALERTS}: WARN</li>
-     *   <li>Attempts &gt; {@value #MAX_RECONNECT_ALERTS}: ERROR (triggers alerting pipelines)</li>
-     * </ul>
+     * <p>
+     * - Attempts 1–{@value #MAX_RECONNECT_ALERTS}: WARN
+     * - Attempts &gt; {@value #MAX_RECONNECT_ALERTS}: ERROR (triggers alerting pipelines)
      */
     private void logDisconnectAlert(int attempts) {
         String msg = "[TickerConnectionManager] ⚠️  KiteTicker WebSocket is DISCONNECTED "

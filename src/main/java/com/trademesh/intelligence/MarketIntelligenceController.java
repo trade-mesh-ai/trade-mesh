@@ -13,8 +13,8 @@ import reactor.core.publisher.Mono;
 
 /**
  * REST Controller for market intelligence endpoints.
- *
- * <p>Provides comprehensive market intelligence including VIX, OI analysis,
+ * <p>
+ * Provides comprehensive market intelligence including VIX, OI analysis,
  * max pain, market condition classification, and trading safety assessment.
  */
 @Slf4j
@@ -27,8 +27,8 @@ public class MarketIntelligenceController {
 
     /**
      * Fetches complete market intelligence for a given symbol.
-     *
-     * <p>Returns all components: VIX data, OI analysis, max pain, market condition,
+     * <p>
+     * Returns all components: VIX data, OI analysis, max pain, market condition,
      * and trading safety assessment. Data is cached for 5 minutes.
      *
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
@@ -58,8 +58,8 @@ public class MarketIntelligenceController {
 
     /**
      * Fetches only the market condition for a given symbol.
-     *
-     * <p>Returns the classified market condition (SIDEWAYS, TRENDING_BULLISH, etc.)
+     * <p>
+     * Returns the classified market condition (SIDEWAYS, TRENDING_BULLISH, etc.)
      * without other intelligence components.
      *
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
@@ -82,8 +82,8 @@ public class MarketIntelligenceController {
 
     /**
      * Fetches a one-line summary of market intelligence for a given symbol.
-     *
-     * <p>Returns a formatted summary string with key metrics:
+     * <p>
+     * Returns a formatted summary string with key metrics:
      * "CONDITION | VIX:value | Support:strike | Resistance:strike | MaxPain:strike"
      *
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")

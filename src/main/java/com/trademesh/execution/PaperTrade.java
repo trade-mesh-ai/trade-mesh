@@ -15,17 +15,15 @@ import java.util.UUID;
 
 /**
  * PostgreSQL entity representing a paper (simulated) trade.
- *
- * <p>Tracks the complete lifecycle of a simulated trade including:
- * <ul>
- *   <li>Entry and exit details (date, time, symbol, strategy)</li>
- *   <li>Trade legs (stored as JSONB)</li>
- *   <li>Credit collected and current value</li>
- *   <li>Realized and unrealized P&L</li>
- *   <li>Exit reason and timestamps</li>
- * </ul>
- *
- * <p>Maps to the {@code paper_trades} table in PostgreSQL.
+ * <p>
+ * Tracks the complete lifecycle of a simulated trade including:
+ * - Entry and exit details (date, time, symbol, strategy)
+ * - Trade legs (stored as JSONB)
+ * - Credit collected and current value
+ * - Realized and unrealized P&L
+ * - Exit reason and timestamps
+ * <p>
+ * Maps to the {@code paper_trades} table in PostgreSQL.
  */
 @Data
 @Builder

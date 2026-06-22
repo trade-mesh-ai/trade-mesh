@@ -21,11 +21,11 @@ import static com.trademesh.config.ApplicationConstants.REDIS_KEY_INTELLIGENCE_P
 
 /**
  * Service for generating comprehensive market intelligence.
- *
- * <p>Aggregates VIX data, OI analysis, and max pain calculations into a unified
+ * <p>
+ * Aggregates VIX data, OI analysis, and max pain calculations into a unified
  * intelligence object with market condition classification and trading safety assessment.
- *
- * <p>Responsibilities:
+ * <p>
+ * Responsibilities:
  * - Fetches all intelligence components in parallel using Mono.zip()
  * - Classifies market condition based on VIX, OI bias, and calendar
  * - Assesses trading safety
@@ -136,8 +136,8 @@ public class MarketIntelligenceService {
 
     /**
      * Classifies the market condition based on VIX, OI bias, and calendar.
-     *
-     * <p>Classification logic:
+     * <p>
+     * Classification logic:
      * 1. If today is expiry day (Tuesday for NIFTY50, last Tuesday for BANKNIFTY) → EXPIRY_DAY
      * 2. If VIX > 25 → NO_TRADE (extreme volatility)
      * 3. If VIX > 20 → HIGH_VOLATILITY
@@ -186,8 +186,8 @@ public class MarketIntelligenceService {
 
     /**
      * Assesses whether it is safe to trade based on VIX level and market condition.
-     *
-     * <p>Safe to trade if:
+     * <p>
+     * Safe to trade if:
      * - VIX is in LOW or NORMAL range (< 17)
      * - Market condition is not NO_TRADE
      *
@@ -203,8 +203,8 @@ public class MarketIntelligenceService {
 
     /**
      * Determines if today is an expiry day for the given symbol.
-     *
-     * <p>NIFTY50: Every Tuesday
+     * <p>
+     * NIFTY50: Every Tuesday
      * BANKNIFTY: Last Tuesday of the month
      *
      * @param symbol trading symbol

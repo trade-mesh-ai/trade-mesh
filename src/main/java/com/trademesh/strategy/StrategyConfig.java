@@ -10,12 +10,12 @@ import java.util.List;
 
 /**
  * Configuration parameters for a trading strategy.
- *
- * <p>Defines the operational constraints and parameters that govern how a
+ * <p>
+ * Defines the operational constraints and parameters that govern how a
  * strategy behaves, including position sizing, risk limits, market conditions,
  * and trading hours.
- *
- * <p>This configuration is typically loaded from a database or configuration
+ * <p>
+ * This configuration is typically loaded from a database or configuration
  * file and used by the strategy implementation to make decisions.
  */
 @Data

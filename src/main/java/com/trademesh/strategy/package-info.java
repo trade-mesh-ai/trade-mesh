@@ -1,97 +1,74 @@
 /**
  * Core Strategy Domain Layer.
- *
- * <p>This package provides the foundational domain model and interfaces for all trading strategies
+ * <p>
+ * This package provides the foundational domain model and interfaces for all trading strategies
  * in the trade-mesh platform. It defines the contract that all strategy implementations must follow
  * and provides the data structures for signal generation and execution.
- *
- * <p><strong>Core Components:</strong>
- *
- * <p><strong>Interfaces:</strong>
- * <ul>
- *   <li>{@link com.trademesh.strategy.TradingStrategy} - Core contract for all strategy implementations
- *     <ul>
- *       <li>getName() - Returns strategy identifier</li>
- *       <li>isApplicable(MarketCondition) - Checks if strategy fits market condition</li>
- *       <li>evaluate(MarketIntelligence) - Main evaluation method returning Mono&lt;StrategyResult&gt;</li>
- *       <li>getConfig() - Returns strategy configuration</li>
- *     </ul>
- *   </li>
- * </ul>
- *
- * <p><strong>Domain Classes:</strong>
- * <ul>
- *   <li>{@link com.trademesh.strategy.TradeSignal} - Complete trading signal with multi-leg structure
- *     <ul>
- *       <li>signalId (UUID) - Unique identifier</li>
- *       <li>symbol - Trading symbol (NIFTY50, BANKNIFTY, etc.)</li>
- *       <li>strategyName - Name of generating strategy</li>
- *       <li>signalType - ENTER, EXIT, or ADJUST</li>
- *       <li>legs - List of TradeLeg objects</li>
- *       <li>expectedCredit - Expected profit/loss</li>
- *       <li>maxLoss - Maximum loss if strategy fails</li>
- *       <li>confidence - LOW, MEDIUM, or HIGH</li>
- *       <li>reason - Plain English explanation</li>
- *       <li>generatedAt - Timestamp</li>
- *     </ul>
- *   </li>
- *
- *   <li>{@link com.trademesh.strategy.TradeLeg} - Individual leg of a multi-leg strategy
- *     <ul>
- *       <li>instrument - Trading instrument identifier (e.g., NIFTY26JUN22300CE)</li>
- *       <li>action - BUY or SELL</li>
- *       <li>optionType - CE (Call) or PE (Put)</li>
- *       <li>strikePrice - Strike price of the option</li>
- *       <li>expiryDate - Expiry date</li>
- *       <li>quantity - Quantity in lots</li>
- *       <li>limitPrice - Order limit price</li>
- *       <li>legType - ENTRY or HEDGE</li>
- *     </ul>
- *   </li>
- *
- *   <li>{@link com.trademesh.strategy.StrategyResult} - Result of strategy evaluation
- *     <ul>
- *       <li>signal - The generated TradeSignal (may be null)</li>
- *       <li>isExecutable - Whether signal should be executed</li>
- *       <li>skipReason - Reason for skipping (if not executable)</li>
- *       <li>executedAt - Timestamp of evaluation</li>
- *     </ul>
- *   </li>
- *
- *   <li>{@link com.trademesh.strategy.StrategyConfig} - Configuration for a strategy
- *     <ul>
- *       <li>strategyName - Strategy identifier</li>
- *       <li>maxLotsPerTrade - Maximum position size</li>
- *       <li>stopLossPercent - Stop loss threshold</li>
- *       <li>targetProfitPercent - Profit target threshold</li>
- *       <li>allowedDays - Days of week to trade</li>
- *       <li>minVix - Minimum VIX to trade</li>
- *       <li>maxVix - Maximum VIX to trade</li>
- *       <li>isEnabled - Whether strategy is active</li>
- *     </ul>
- *   </li>
- * </ul>
- *
- * <p><strong>Enumerations:</strong>
- * <ul>
- *   <li>{@link com.trademesh.strategy.enums.SignalType} - ENTER, EXIT, ADJUST</li>
- *   <li>{@link com.trademesh.strategy.enums.Confidence} - LOW, MEDIUM, HIGH</li>
- *   <li>{@link com.trademesh.strategy.enums.Action} - BUY, SELL</li>
- *   <li>{@link com.trademesh.strategy.enums.OptionType} - CE, PE</li>
- *   <li>{@link com.trademesh.strategy.enums.LegType} - ENTRY, HEDGE</li>
- * </ul>
- *
- * <p><strong>Architecture:</strong>
- *
- * <p>The strategy layer follows a reactive, non-blocking architecture:
- * <ul>
- *   <li>All strategy evaluations return Mono&lt;StrategyResult&gt; for async processing</li>
- *   <li>Strategies are stateless and can be evaluated concurrently</li>
- *   <li>Configuration is externalized and can be updated without code changes</li>
- *   <li>Market intelligence is aggregated from multiple sources (VIX, OI, max pain, etc.)</li>
- * </ul>
- *
- * <p><strong>Usage Example:</strong>
+ * <p>
+ * Core Components:
+ * <p>
+ * Interfaces:
+ * - {@link com.trademesh.strategy.TradingStrategy} - Core contract for all strategy implementations
+ * - getName() - Returns strategy identifier
+ * - isApplicable(MarketCondition) - Checks if strategy fits market condition
+ * - evaluate(MarketIntelligence) - Main evaluation method returning Mono&lt;StrategyResult&gt;
+ * - getConfig() - Returns strategy configuration
+ * <p>
+ * Domain Classes:
+ * - {@link com.trademesh.strategy.TradeSignal} - Complete trading signal with multi-leg structure
+ * - signalId (UUID) - Unique identifier
+ * - symbol - Trading symbol (NIFTY50, BANKNIFTY, etc.)
+ * - strategyName - Name of generating strategy
+ * - signalType - ENTER, EXIT, or ADJUST
+ * - legs - List of TradeLeg objects
+ * - expectedCredit - Expected profit/loss
+ * - maxLoss - Maximum loss if strategy fails
+ * - confidence - LOW, MEDIUM, or HIGH
+ * - reason - Plain English explanation
+ * - generatedAt - Timestamp
+ * <p>
+ * - {@link com.trademesh.strategy.TradeLeg} - Individual leg of a multi-leg strategy
+ * - instrument - Trading instrument identifier (e.g., NIFTY26JUN22300CE)
+ * - action - BUY or SELL
+ * - optionType - CE (Call) or PE (Put)
+ * - strikePrice - Strike price of the option
+ * - expiryDate - Expiry date
+ * - quantity - Quantity in lots
+ * - limitPrice - Order limit price
+ * - legType - ENTRY or HEDGE
+ * <p>
+ * - {@link com.trademesh.strategy.StrategyResult} - Result of strategy evaluation
+ * - signal - The generated TradeSignal (may be null)
+ * - isExecutable - Whether signal should be executed
+ * - skipReason - Reason for skipping (if not executable)
+ * - executedAt - Timestamp of evaluation
+ * <p>
+ * - {@link com.trademesh.strategy.StrategyConfig} - Configuration for a strategy
+ * - strategyName - Strategy identifier
+ * - maxLotsPerTrade - Maximum position size
+ * - stopLossPercent - Stop loss threshold
+ * - targetProfitPercent - Profit target threshold
+ * - allowedDays - Days of week to trade
+ * - minVix - Minimum VIX to trade
+ * - maxVix - Maximum VIX to trade
+ * - isEnabled - Whether strategy is active
+ * <p>
+ * Enumerations:
+ * - {@link com.trademesh.strategy.enums.SignalType} - ENTER, EXIT, ADJUST
+ * - {@link com.trademesh.strategy.enums.Confidence} - LOW, MEDIUM, HIGH
+ * - {@link com.trademesh.strategy.enums.Action} - BUY, SELL
+ * - {@link com.trademesh.strategy.enums.OptionType} - CE, PE
+ * - {@link com.trademesh.strategy.enums.LegType} - ENTRY, HEDGE
+ * <p>
+ * Architecture:
+ * <p>
+ * The strategy layer follows a reactive, non-blocking architecture:
+ * - All strategy evaluations return Mono&lt;StrategyResult&gt; for async processing
+ * - Strategies are stateless and can be evaluated concurrently
+ * - Configuration is externalized and can be updated without code changes
+ * - Market intelligence is aggregated from multiple sources (VIX, OI, max pain, etc.)
+ * <p>
+ * Usage Example:
  *
  * <pre>
  * // Implement a strategy
@@ -145,13 +122,11 @@
  *     }
  * }
  * </pre>
- *
- * <p><strong>Integration Points:</strong>
- * <ul>
- *   <li>Input: {@link com.trademesh.intelligence.MarketIntelligence} - Aggregated market data</li>
- *   <li>Output: {@link com.trademesh.strategy.StrategyResult} - Signal or skip decision</li>
- *   <li>Downstream: Execution pipeline (order placement, position tracking, P&L)</li>
- * </ul>
+ * <p>
+ * Integration Points:
+ * - Input: {@link com.trademesh.intelligence.MarketIntelligence} - Aggregated market data
+ * - Output: {@link com.trademesh.strategy.StrategyResult} - Signal or skip decision
+ * - Downstream: Execution pipeline (order placement, position tracking, P&L)
  *
  * @see com.trademesh.strategy.TradingStrategy
  * @see com.trademesh.strategy.TradeSignal

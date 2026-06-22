@@ -141,7 +141,7 @@ public class StrategySelector {
      * </ul>
      *
      * @param applicableStrategies list of strategies applicable to the condition
-     * @param condition market condition
+     * @param condition            market condition
      * @return selected strategy or null if none match priority
      */
     private TradingStrategy selectByPriority(List<TradingStrategy> applicableStrategies,

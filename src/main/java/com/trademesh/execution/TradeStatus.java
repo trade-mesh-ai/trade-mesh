@@ -2,13 +2,11 @@ package com.trademesh.execution;
 
 /**
  * Enumeration of paper trade statuses.
- *
- * <p>Represents the lifecycle state of a paper trade:
- * <ul>
- *   <li>OPEN - Trade is currently active and being monitored</li>
- *   <li>CLOSED - Trade has been exited and P&L is realized</li>
- *   <li>CANCELLED - Trade was cancelled before execution</li>
- * </ul>
+ * <p>
+ * Represents the lifecycle state of a paper trade:
+ * - OPEN - Trade is currently active and being monitored
+ * - CLOSED - Trade has been exited and P&L is realized
+ * - CANCELLED - Trade was cancelled before execution
  */
 public enum TradeStatus {
     OPEN("Trade is currently active"),

@@ -12,8 +12,8 @@ import java.time.Instant;
 
 /**
  * Comprehensive market intelligence aggregating all analysis components.
- *
- * <p>Combines VIX data, OI analysis, max pain calculation, and option chain data
+ * <p>
+ * Combines VIX data, OI analysis, max pain calculation, and option chain data
  * into a single unified intelligence object with market condition classification
  * and trading safety assessment.
  */
@@ -70,8 +70,8 @@ public class MarketIntelligence {
 
     /**
      * Generates a one-line summary of the market intelligence.
-     *
-     * <p>Format: "CONDITION | VIX:value | Support:strike | Resistance:strike | MaxPain:strike"
+     * <p>
+     * Format: "CONDITION | VIX:value | Support:strike | Resistance:strike | MaxPain:strike"
      * Example: "SIDEWAYS | VIX:14.2 | Support:21500 | Resistance:22500 | MaxPain:22000"
      *
      * @return formatted summary string

@@ -2,7 +2,6 @@ package com.trademesh.execution;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.alert.AlertService;
-import com.trademesh.config.ApplicationConstants;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
@@ -21,37 +20,34 @@ import java.util.UUID;
 
 /**
  * Paper Trading Engine for simulating trades without real money.
- *
- * <p>Manages the complete lifecycle of paper trades:
- * <ul>
- *   <li>Executing trades from strategy signals</li>
- *   <li>Marking positions to market (updating P&L)</li>
- *   <li>Closing trades with stop loss/target triggers</li>
- *   <li>Sending Telegram alerts for all events</li>
- * </ul>
- *
- * <p>Uses Redis for fetching current option prices and PostgreSQL for persistence.
+ * <p>
+ * Manages the complete lifecycle of paper trades:
+ * - Executing trades from strategy signals
+ * - Marking positions to market (updating P&L)
+ * - Closing trades with stop loss/target triggers
+ * - Sending Telegram alerts for all events
+ * <p>
+ * Uses Redis for fetching current option prices and PostgreSQL for persistence.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PaperTradingEngine {
 
-    private final PaperTradeRepository paperTradeRepository;
-    private final ReactiveRedisTemplate<String, String> redisTemplate;
-    private final AlertService alertService;
-    private final ObjectMapper objectMapper;
-
     // Lot sizes from application.yml
     private static final Map<String, Integer> LOT_SIZES = Map.of(
             "NIFTY50", 75,
             "NIFTYBANK", 30
     );
+    private final PaperTradeRepository paperTradeRepository;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
+    private final AlertService alertService;
+    private final ObjectMapper objectMapper;
 
     /**
      * Executes a trade from a strategy signal.
-     *
-     * <p>Process:
+     * <p>
+     * Process:
      * 1. Check if signal is executable
      * 2. Create PaperTrade entity from signal
      * 3. Save to PostgreSQL
@@ -106,8 +102,8 @@ public class PaperTradingEngine {
 
     /**
      * Marks a paper trade to market (updates current value and P&L).
-     *
-     * <p>Process:
+     * <p>
+     * Process:
      * 1. Fetch current option prices from Redis
      * 2. Calculate current value of position
      * 3. Update unrealizedPnl
@@ -135,14 +131,14 @@ public class PaperTradingEngine {
 
                     // Check stop loss: if currentValue > entryCredit × 2
                     if (currentValue > trade.getEntryCredit() * 2) {
-                        log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}", 
+                        log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}",
                                 trade.getId(), currentValue, trade.getEntryCredit() * 2);
                         return closeTrade(trade, "STOP_LOSS");
                     }
 
                     // Check target: if currentValue < entryCredit × 0.5
                     if (currentValue < trade.getEntryCredit() * 0.5) {
-                        log.info("Target hit for trade {}: currentValue={}, threshold={}", 
+                        log.info("Target hit for trade {}: currentValue={}, threshold={}",
                                 trade.getId(), currentValue, trade.getEntryCredit() * 0.5);
                         return closeTrade(trade, "TARGET_HIT");
                     }
@@ -155,8 +151,8 @@ public class PaperTradingEngine {
 
     /**
      * Closes a paper trade and realizes P&L.
-     *
-     * <p>Process:
+     * <p>
+     * Process:
      * 1. Fetch final prices from Redis
      * 2. Calculate realized P&L
      * 3. Update status to CLOSED
@@ -190,15 +186,15 @@ public class PaperTradingEngine {
                     return alertService.sendAlert(createAlert(closedTrade, alert))
                             .then(Mono.just(closedTrade));
                 })
-                .doOnSuccess(closedTrade -> log.info("Paper trade closed: {} with P&L: {}", 
+                .doOnSuccess(closedTrade -> log.info("Paper trade closed: {} with P&L: {}",
                         closedTrade.getId(), closedTrade.getRealizedPnl()))
                 .doOnError(error -> log.error("Error closing paper trade: {}", trade.getId(), error));
     }
 
     /**
      * Fetches current option prices from Redis for all legs of a trade.
-     *
-     * <p>Calculates the current value of the position based on:
+     * <p>
+     * Calculates the current value of the position based on:
      * - Current prices of all legs
      * - Action (BUY/SELL) for each leg
      * - Quantity of each leg

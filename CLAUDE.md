@@ -5,7 +5,7 @@ Use existing Redis connection.
 
 ## Java Docs
 For Javadoc comments
-No <p>, <ul>, <li> HTML tags
+No <p>, <ul>, <b>, </b>, <li> HTML tags
 
 
 ## Database

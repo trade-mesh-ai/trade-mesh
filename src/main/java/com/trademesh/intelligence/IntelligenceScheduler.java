@@ -12,14 +12,12 @@ import static com.trademesh.config.ApplicationConstants.*;
 
 /**
  * Scheduled service for auto-refreshing market intelligence every 5 minutes.
- *
- * <p>Responsibilities:
- * <ul>
- *   <li>Refreshes market intelligence for NIFTY50 and NIFTYBANK every 5 minutes</li>
- *   <li>Only runs during market hours (9:15 AM to 3:30 PM IST)</li>
- *   <li>Logs summary after each refresh</li>
- *   <li>Detects market condition changes and sends Telegram alerts</li>
- * </ul>
+ * <p>
+ * Responsibilities:
+ * - Refreshes market intelligence for NIFTY50 and NIFTYBANK every 5 minutes
+ * - Only runs during market hours (9:15 AM to 3:30 PM IST)
+ * - Logs summary after each refresh
+ * - Detects market condition changes and sends Telegram alerts
  */
 @Slf4j
 @Component

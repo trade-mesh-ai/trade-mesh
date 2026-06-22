@@ -6,20 +6,18 @@ import reactor.core.publisher.Mono;
 
 /**
  * Core interface for all trading strategies.
- *
- * <p>Defines the contract that all strategy implementations must follow.
+ * <p>
+ * Defines the contract that all strategy implementations must follow.
  * Strategies are responsible for:
- * <ul>
- *   <li>Identifying themselves with a unique name</li>
- *   <li>Determining applicability to market conditions</li>
- *   <li>Evaluating market intelligence to generate trade signals</li>
- *   <li>Providing their configuration parameters</li>
- * </ul>
- *
- * <p>All methods use reactive types (Mono) to support non-blocking,
+ * - Identifying themselves with a unique name
+ * - Determining applicability to market conditions
+ * - Evaluating market intelligence to generate trade signals
+ * - Providing their configuration parameters
+ * <p>
+ * All methods use reactive types (Mono) to support non-blocking,
  * asynchronous evaluation in a WebFlux environment.
- *
- * <p>Example implementation:
+ * <p>
+ * Example implementation:
  * <pre>
  * @Component
  * public class IronCondorStrategy implements TradingStrategy {
@@ -51,8 +49,8 @@ public interface TradingStrategy {
 
     /**
      * Returns the unique name of this strategy.
-     *
-     * <p>Used for identification, logging, and configuration lookup.
+     * <p>
+     * Used for identification, logging, and configuration lookup.
      *
      * @return strategy name (e.g., "IronCondor", "CallSpread", "CashSecuredPut")
      */
@@ -60,8 +58,8 @@ public interface TradingStrategy {
 
     /**
      * Determines if this strategy is applicable to the given market condition.
-     *
-     * <p>Strategies may only be suitable for specific market conditions.
+     * <p>
+     * Strategies may only be suitable for specific market conditions.
      * For example, an iron condor works best in sideways markets, while
      * a call spread works better in bullish markets.
      *
@@ -72,18 +70,16 @@ public interface TradingStrategy {
 
     /**
      * Evaluates market intelligence and generates a trade signal (or skip decision).
-     *
-     * <p>This is the main method where the strategy logic resides. It analyzes
+     * <p>
+     * This is the main method where the strategy logic resides. It analyzes
      * the provided market intelligence (VIX, OI, max pain, option chain, etc.)
      * and decides whether to generate a trade signal or skip.
-     *
-     * <p>The method is non-blocking and returns a Mono that emits a StrategyResult.
+     * <p>
+     * The method is non-blocking and returns a Mono that emits a StrategyResult.
      * The result contains either:
-     * <ul>
-     *   <li>A TradeSignal with isExecutable=true (ready for execution)</li>
-     *   <li>A TradeSignal with isExecutable=false and skipReason (skipped)</li>
-     *   <li>No signal at all (null signal)</li>
-     * </ul>
+     * - A TradeSignal with isExecutable=true (ready for execution)
+     * - A TradeSignal with isExecutable=false and skipReason (skipped)
+     * - No signal at all (null signal)
      *
      * @param intelligence comprehensive market intelligence data
      * @return Mono emitting a StrategyResult with signal or skip decision
@@ -92,8 +88,8 @@ public interface TradingStrategy {
 
     /**
      * Returns the configuration for this strategy.
-     *
-     * <p>Configuration includes operational constraints like position sizing,
+     * <p>
+     * Configuration includes operational constraints like position sizing,
      * risk limits, allowed trading days, and VIX thresholds.
      *
      * @return the strategy configuration

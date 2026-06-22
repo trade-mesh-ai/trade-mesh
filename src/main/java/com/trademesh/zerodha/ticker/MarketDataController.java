@@ -46,12 +46,12 @@ public class MarketDataController {
 
     /**
      * Returns the latest cached price for the given symbol from Redis.
-     *
-     * <p>Prices are written by {@link ZerodhaTickerService} on every tick with a
+     * <p>
+     * Prices are written by {@link ZerodhaTickerService} on every tick with a
      * 60-second TTL.  If the key has expired (no tick in the last 60 s) or the symbol
      * is unknown, a 404 is returned.
-     *
-     * <p>Example: {@code GET /market/price/NIFTY50}
+     * <p>
+     * Example: {@code GET /market/price/NIFTY50}
      *
      * @param symbol instrument symbol, e.g. {@code NIFTY50} or {@code NIFTYBANK}
      */
@@ -104,11 +104,11 @@ public class MarketDataController {
 
     /**
      * Server-Sent Events endpoint that streams live tick prices for a given symbol.
-     *
-     * <p>Clients can subscribe with {@code EventSource} in the browser or
+     * <p>
+     * Clients can subscribe with {@code EventSource} in the browser or
      * {@code curl -N http://localhost:8080/market/stream/NIFTY50}.
-     *
-     * <p>Example: {@code GET /market/stream/NIFTY50}
+     * <p>
+     * Example: {@code GET /market/stream/NIFTY50}
      *
      * @param symbol instrument symbol, e.g. {@code NIFTY50} or {@code NIFTYBANK}
      */
@@ -138,8 +138,8 @@ public class MarketDataController {
 
     /**
      * Returns the current KiteTicker WebSocket connection status.
-     *
-     * <p>Example: {@code GET /market/status}
+     * <p>
+     * Example: {@code GET /market/status}
      */
     @Operation(summary = "KiteTicker WebSocket connection health status")
     @GetMapping("/status")
