@@ -88,6 +88,14 @@ vix:
   persist-interval-minutes: 15
   alert-threshold: 20.0
 
+# ─── Max Pain Calculator ──────────────────────────────────────────────────────────
+maxpain:
+  persist-interval-minutes: 30
+  cache-ttl-minutes: 15
+  lot-sizes:
+    NIFTY50: 75
+    NIFTYBANK: 30
+
 # ─── Telegram Alerts ──────────────────────────────────────────────────────────────
 telegram:
   bot-token: ${TELEGRAM_BOT_TOKEN:}
