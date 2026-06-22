@@ -1,0 +1,13 @@
+-- Create vix_history table for storing historical VIX data
+CREATE TABLE IF NOT EXISTS vix_history (
+    id BIGSERIAL PRIMARY KEY,
+    vix_value DECIMAL(10, 2) NOT NULL,
+    vix_level VARCHAR(20) NOT NULL,
+    change_percent DECIMAL(10, 4),
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_vix_history_recorded_at ON vix_history(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_vix_history_vix_level ON vix_history(vix_level);
+CREATE INDEX IF NOT EXISTS idx_vix_history_vix_value ON vix_history(vix_value);
