@@ -22,21 +22,31 @@ public class OptionChainSnapshot {
     @Id
     private Long id;
 
-    /** Trading symbol (e.g., "NIFTY50", "NIFTYBANK"). */
+    /**
+     * Trading symbol (e.g., "NIFTY50", "NIFTYBANK").
+     */
     private String symbol;
 
-    /** Expiry date of the option chain. */
+    /**
+     * Expiry date of the option chain.
+     */
     @Column("expiry_date")
     private LocalDate expiryDate;
 
-    /** Spot price of the underlying at the time of snapshot. */
+    /**
+     * Spot price of the underlying at the time of snapshot.
+     */
     @Column("spot_price")
     private BigDecimal spotPrice;
 
-    /** Full option chain data serialized as JSON. */
+    /**
+     * Full option chain data serialized as JSON.
+     */
     private String data;
 
-    /** Timestamp when this snapshot was created. */
+    /**
+     * Timestamp when this snapshot was created.
+     */
     @Column("created_at")
     private Instant createdAt;
 }

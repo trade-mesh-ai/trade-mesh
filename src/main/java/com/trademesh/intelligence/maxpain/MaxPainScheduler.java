@@ -55,7 +55,7 @@ public class MaxPainScheduler {
                 .flatMap(result -> {
                     // Set the ID to null to ensure a new record is created
                     result.setId(null);
-                    
+
                     // Ensure calculatedAt is set
                     if (result.getCalculatedAt() == null) {
                         result.setCalculatedAt(Instant.now());
@@ -63,7 +63,7 @@ public class MaxPainScheduler {
 
                     // Save to PostgreSQL
                     return maxPainHistoryRepository.save(result)
-                            .doOnSuccess(saved -> log.info("Saved max pain snapshot for {} (id={}, strike={})", 
+                            .doOnSuccess(saved -> log.info("Saved max pain snapshot for {} (id={}, strike={})",
                                     symbol, saved.getId(), saved.getMaxPainStrike()))
                             .then();
                 });

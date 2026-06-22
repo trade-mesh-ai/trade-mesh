@@ -16,18 +16,28 @@ import java.util.List;
 @Builder
 public class OptionChain {
 
-    /** Trading symbol (e.g., "NIFTY50", "NIFTYBANK"). */
+    /**
+     * Trading symbol (e.g., "NIFTY50", "NIFTYBANK").
+     */
     private String symbol;
 
-    /** Expiry date of the option chain. */
+    /**
+     * Expiry date of the option chain.
+     */
     private LocalDate expiryDate;
 
-    /** Current spot price of the underlying. */
+    /**
+     * Current spot price of the underlying.
+     */
     private BigDecimal spotPrice;
 
-    /** List of all strikes for this option chain. */
+    /**
+     * List of all strikes for this option chain.
+     */
     private List<OptionStrike> strikes;
 
-    /** Timestamp when this option chain was fetched. */
+    /**
+     * Timestamp when this option chain was fetched.
+     */
     private Instant fetchedAt;
 }

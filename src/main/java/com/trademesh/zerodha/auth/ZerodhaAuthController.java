@@ -133,7 +133,7 @@ public class ZerodhaAuthController {
 
     private String buildHtmlPage(String title, String message, boolean success) {
         String color = success ? "#2e7d32" : "#c62828";
-        String icon  = success ? "✅" : "❌";
+        String icon = success ? "✅" : "❌";
         return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">"
                 + "<title>" + title + "</title>"
                 + "<style>body{font-family:sans-serif;display:flex;justify-content:center;"

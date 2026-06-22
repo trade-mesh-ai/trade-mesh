@@ -11,7 +11,7 @@ import java.time.LocalDate;
 
 /**
  * R2DBC repository for MaxPainResult entities.
- * 
+ *
  * <p>Provides reactive database operations for max pain history records.
  */
 @Repository
@@ -28,20 +28,20 @@ public interface MaxPainHistoryRepository extends ReactiveCrudRepository<MaxPain
     /**
      * Finds all max pain records for a given symbol and expiry date.
      *
-     * @param symbol trading symbol
+     * @param symbol     trading symbol
      * @param expiryDate option expiry date
      * @return Flux emitting all matching MaxPainResult records
      */
     Flux<MaxPainResult> findBySymbolAndExpiryDateOrderByCalculatedAtDesc(
-            @Param("symbol") String symbol, 
+            @Param("symbol") String symbol,
             @Param("expiryDate") LocalDate expiryDate);
 
     /**
      * Finds all max pain records for a given symbol within a time range.
      *
-     * @param symbol trading symbol
+     * @param symbol    trading symbol
      * @param startTime start of time range
-     * @param endTime end of time range
+     * @param endTime   end of time range
      * @return Flux emitting all matching MaxPainResult records
      */
     Flux<MaxPainResult> findBySymbolAndCalculatedAtBetweenOrderByCalculatedAtDesc(

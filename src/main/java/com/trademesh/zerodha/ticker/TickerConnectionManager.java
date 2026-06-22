@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Manages the lifecycle of the {@link ZerodhaTickerService} WebSocket connection.
- *
+ * <p>
  * Responsibilities:
  * - Auto-start: attempts to connect once the Spring application is ready.
  * - Health check: polls the connection state every 30 seconds and triggers a reconnect if closed.
@@ -28,7 +28,9 @@ public class TickerConnectionManager {
 
     private final ZerodhaTickerService tickerService;
 
-    /** Counts consecutive failed reconnect attempts since last successful connection. */
+    /**
+     * Counts consecutive failed reconnect attempts since last successful connection.
+     */
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
 
     // ─── Application startup ──────────────────────────────────────────────────────

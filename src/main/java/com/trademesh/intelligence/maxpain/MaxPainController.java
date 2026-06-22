@@ -14,7 +14,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * REST Controller for Max Pain calculation endpoints.
- * 
+ *
  * <p>Provides endpoints to fetch and calculate max pain for trading symbols.
  * Max Pain is the strike price at which the maximum number of options expire worthless.
  */
@@ -43,8 +43,8 @@ public class MaxPainController {
         return optionChainService.fetchOptionChain(symbol)
                 .flatMap(maxPainCalculatorService::calculate)
                 .map(result -> {
-                    log.info("Successfully calculated max pain for {}: strike={}, distance={}%", 
-                            symbol, result.getMaxPainStrike(), 
+                    log.info("Successfully calculated max pain for {}: strike={}, distance={}%",
+                            symbol, result.getMaxPainStrike(),
                             String.format("%.2f", result.getDistancePercent()));
                     return ResponseEntity.ok(result);
                 })

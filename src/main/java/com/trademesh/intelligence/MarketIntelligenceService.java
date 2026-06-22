@@ -1,8 +1,8 @@
 package com.trademesh.intelligence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trademesh.config.ApplicationConstants;
 import com.trademesh.intelligence.maxpain.MaxPainCalculatorService;
-import com.trademesh.intelligence.oi.MarketBias;
 import com.trademesh.intelligence.oi.OIAnalyserService;
 import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
@@ -14,8 +14,10 @@ import reactor.core.publisher.Mono;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.Duration;
+
+
+import static com.trademesh.config.ApplicationConstants.REDIS_KEY_INTELLIGENCE_PREFIX;
+
 
 /**
  * Service for generating comprehensive market intelligence.
@@ -34,12 +36,6 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class MarketIntelligenceService {
 
-    // ─── Constants ─────────────────────────────────────────────────────────────────
-    private static final String REDIS_KEY_PREFIX = "market:intelligence:";
-    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
-    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-
-    // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final VixMonitorService vixMonitorService;
     private final OptionChainService optionChainService;
     private final OIAnalyserService oiAnalyserService;
@@ -47,7 +43,6 @@ public class MarketIntelligenceService {
     private final ReactiveStringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
-    // ─── Public API ────────────────────────────────────────────────────────────────
 
     /**
      * Generates comprehensive market intelligence for a given symbol.
@@ -58,7 +53,7 @@ public class MarketIntelligenceService {
      * @return {@link Mono} emitting the MarketIntelligence
      */
     public Mono<MarketIntelligence> generateIntelligence(String symbol) {
-        String redisKey = REDIS_KEY_PREFIX + symbol;
+        String redisKey = REDIS_KEY_INTELLIGENCE_PREFIX + symbol;
 
         // Try to get from cache first
         return redisTemplate.opsForValue().get(redisKey)
@@ -77,9 +72,9 @@ public class MarketIntelligenceService {
                     try {
                         String json = objectMapper.writeValueAsString(intelligence);
                         return redisTemplate.opsForValue()
-                                .set(redisKey, json, CACHE_TTL)
+                                .set(redisKey, json, ApplicationConstants.CACHE_INTELLIGENCE_TTL)
                                 .thenReturn(intelligence)
-                                .doOnSuccess(i -> log.info("Cached market intelligence for {} in Redis (TTL=5m): condition={}", 
+                                .doOnSuccess(i -> log.info("Cached market intelligence for {} in Redis (TTL=5m): condition={}",
                                         symbol, i.getMarketCondition()));
                     } catch (Exception e) {
                         log.error("Failed to cache intelligence: {}", e.getMessage());
@@ -89,7 +84,6 @@ public class MarketIntelligenceService {
                 .doOnError(e -> log.error("Failed to generate intelligence for {}: {}", symbol, e.getMessage(), e));
     }
 
-    // ─── Generation Methods ────────────────────────────────────────────────────────
 
     /**
      * Performs the actual intelligence generation by fetching all components in parallel.
@@ -97,47 +91,47 @@ public class MarketIntelligenceService {
     private Mono<MarketIntelligence> performGeneration(String symbol) {
         // Fetch VIX and option chain in parallel
         return Mono.zip(
-                vixMonitorService.fetchCurrentVix(),
-                optionChainService.fetchOptionChain(symbol)
-        )
-        .flatMap(tuple -> {
-            var vixData = tuple.getT1();
-            var optionChain = tuple.getT2();
+                        vixMonitorService.fetchCurrentVix(),
+                        optionChainService.fetchOptionChain(symbol)
+                )
+                .flatMap(tuple -> {
+                    var vixData = tuple.getT1();
+                    var optionChain = tuple.getT2();
 
-            // Fetch OI analysis and max pain in parallel
-            return Mono.zip(
-                    oiAnalyserService.analyseOI(optionChain),
-                    maxPainCalculatorService.calculate(optionChain)
-            )
-            .map(tuple2 -> {
-                var oiAnalysis = tuple2.getT1();
-                var maxPainResult = tuple2.getT2();
+                    // Fetch OI analysis and max pain in parallel
+                    return Mono.zip(
+                                    oiAnalyserService.analyseOI(optionChain),
+                                    maxPainCalculatorService.calculate(optionChain)
+                            )
+                            .map(tuple2 -> {
+                                var oiAnalysis = tuple2.getT1();
+                                var maxPainResult = tuple2.getT2();
 
-                // Classify market condition
-                MarketCondition condition = classifyMarketCondition(symbol, vixData, oiAnalysis);
+                                // Classify market condition
+                                MarketCondition condition = classifyMarketCondition(symbol, vixData, oiAnalysis);
 
-                // Assess trading safety
-                Boolean isSafeToTrade = assessTradingSafety(vixData, condition);
+                                // Assess trading safety
+                                Boolean isSafeToTrade = assessTradingSafety(vixData, condition);
 
-                // Build intelligence
-                MarketIntelligence intelligence = MarketIntelligence.builder()
-                        .symbol(symbol)
-                        .spotPrice(optionChain.getSpotPrice().doubleValue())
-                        .vixData(vixData)
-                        .oiAnalysis(oiAnalysis)
-                        .maxPainResult(maxPainResult)
-                        .optionChain(optionChain)
-                        .marketCondition(condition)
-                        .isSafeToTrade(isSafeToTrade)
-                        .generatedAt(Instant.now())
-                        .build();
+                                // Build intelligence
+                                MarketIntelligence intelligence = MarketIntelligence.builder()
+                                        .symbol(symbol)
+                                        .spotPrice(optionChain.getSpotPrice().doubleValue())
+                                        .vixData(vixData)
+                                        .oiAnalysis(oiAnalysis)
+                                        .maxPainResult(maxPainResult)
+                                        .optionChain(optionChain)
+                                        .marketCondition(condition)
+                                        .isSafeToTrade(isSafeToTrade)
+                                        .generatedAt(Instant.now())
+                                        .build();
 
-                log.info("Generated market intelligence for {}: condition={}, safe={}, summary={}",
-                        symbol, condition, isSafeToTrade, intelligence.summary());
+                                log.info("Generated market intelligence for {}: condition={}, safe={}, summary={}",
+                                        symbol, condition, isSafeToTrade, intelligence.summary());
 
-                return intelligence;
-            });
-        });
+                                return intelligence;
+                            });
+                });
     }
 
     /**
@@ -151,8 +145,8 @@ public class MarketIntelligenceService {
      * 5. If OI bias is BULLISH → TRENDING_BULLISH
      * 6. If OI bias is BEARISH → TRENDING_BEARISH
      *
-     * @param symbol trading symbol
-     * @param vixData current VIX data
+     * @param symbol     trading symbol
+     * @param vixData    current VIX data
      * @param oiAnalysis OI analysis result
      * @return classified market condition
      */
@@ -173,7 +167,7 @@ public class MarketIntelligenceService {
 
         // Check OI bias
         String bias = oiAnalysis.getMarketBias();
-        
+
         if ("NEUTRAL".equals(bias) && vixData.getCurrentVix() < 17) {
             return MarketCondition.SIDEWAYS;
         }
@@ -197,7 +191,7 @@ public class MarketIntelligenceService {
      * - VIX is in LOW or NORMAL range (< 17)
      * - Market condition is not NO_TRADE
      *
-     * @param vixData current VIX data
+     * @param vixData   current VIX data
      * @param condition market condition
      * @return true if safe to trade, false otherwise
      */
@@ -217,7 +211,7 @@ public class MarketIntelligenceService {
      * @return true if today is expiry day for the symbol
      */
     private boolean isExpiryDay(String symbol) {
-        LocalDate today = LocalDate.now(IST);
+        LocalDate today = LocalDate.now(ApplicationConstants.IST);
         DayOfWeek dayOfWeek = today.getDayOfWeek();
 
         if ("NIFTY50".equals(symbol)) {
@@ -225,7 +219,7 @@ public class MarketIntelligenceService {
             return dayOfWeek == DayOfWeek.TUESDAY;
         } else if ("NIFTYBANK".equals(symbol)) {
             // BANKNIFTY expires on last Tuesday of the month
-            return dayOfWeek == DayOfWeek.TUESDAY 
+            return dayOfWeek == DayOfWeek.TUESDAY
                     && today.plusDays(7).getMonthValue() != today.getMonthValue();
         }
 

@@ -26,7 +26,7 @@ public class ExecutionService {
     /**
      * Executes a trading signal after passing risk validation.
      *
-     * @param signal the trading signal to act on
+     * @param signal   the trading signal to act on
      * @param quantity desired quantity (pre-calculated by risk module)
      * @return Zerodha order ID or empty if risk check fails
      */
@@ -38,9 +38,9 @@ public class ExecutionService {
                         return Mono.empty();
                     }
                     String txType = switch (signal.getDirection()) {
-                        case LONG  -> "BUY";
+                        case LONG -> "BUY";
                         case SHORT -> "SELL";
-                        default    -> null;
+                        default -> null;
                     };
                     if (txType == null) {
                         log.info("Neutral signal – no order placed for {}", signal.getTradingSymbol());

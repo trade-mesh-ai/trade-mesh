@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Service for handling VIX alerts and Telegram notifications.
- * 
+ *
  * <p>Responsibilities:
  * <ul>
  *   <li>Checks if VIX has crossed the alert threshold</li>
@@ -43,7 +43,7 @@ public class VixAlertService {
 
     /**
      * Processes a VIX data point and triggers alerts if threshold is crossed.
-     * 
+     *
      * <p>This method:
      * <ol>
      *   <li>Checks if VIX has crossed the alert threshold</li>
@@ -56,7 +56,7 @@ public class VixAlertService {
      */
     public Mono<VixAlert> processVixAlert(VixData vixData) {
         if (vixData.getCurrentVix() < alertThreshold) {
-            log.debug("VIX {} is below threshold {}, no alert triggered", 
+            log.debug("VIX {} is below threshold {}, no alert triggered",
                     vixData.getCurrentVix(), alertThreshold);
             return Mono.empty();
         }
@@ -71,9 +71,9 @@ public class VixAlertService {
         // Save alert to database
         return vixAlertRepository.save(alert)
                 .flatMap(savedAlert -> {
-                    log.warn("VIX Alert triggered: {} (Level: {})", 
+                    log.warn("VIX Alert triggered: {} (Level: {})",
                             alertMessage, vixData.getVixLevel());
-                    
+
                     // Send Telegram notification if configured
                     if (isTelegramConfigured()) {
                         return sendTelegramAlert(alertMessage)
@@ -89,7 +89,7 @@ public class VixAlertService {
                                     return Mono.just(savedAlert);
                                 });
                     }
-                    
+
                     return Mono.just(savedAlert);
                 })
                 .doOnError(e -> log.error("Failed to process VIX alert: {}", e.getMessage(), e));

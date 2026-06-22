@@ -17,7 +17,7 @@ import java.time.Instant;
 
 /**
  * Service for fetching and caching VIX (Volatility Index) data from Zerodha Kite API.
- *
+ * <p>
  * Responsibilities:
  * - Fetches INDIA VIX data from Zerodha Kite REST API (instrument token: 264969)
  * - Caches result in Redis with 5-minute TTL
@@ -60,16 +60,16 @@ public class VixMonitorService {
                     return Mono.just(deserializeVixData(cached));
                 })
                 .switchIfEmpty(
-                    // Cache miss: fetch from Kite API
-                    fetchFromKiteAPI()
-                            .flatMap(vixData -> {
-                                // Cache the result
-                                String json = serializeVixData(vixData);
-                                return redisTemplate.opsForValue()
-                                        .set(REDIS_KEY, json, CACHE_TTL)
-                                        .thenReturn(vixData)
-                                        .doOnSuccess(vd -> log.info("Cached VIX data in Redis (TTL=5m): {}", vd.getCurrentVix()));
-                            })
+                        // Cache miss: fetch from Kite API
+                        fetchFromKiteAPI()
+                                .flatMap(vixData -> {
+                                    // Cache the result
+                                    String json = serializeVixData(vixData);
+                                    return redisTemplate.opsForValue()
+                                            .set(REDIS_KEY, json, CACHE_TTL)
+                                            .thenReturn(vixData)
+                                            .doOnSuccess(vd -> log.info("Cached VIX data in Redis (TTL=5m): {}", vd.getCurrentVix()));
+                                })
                 )
                 .doOnError(e -> log.error("Failed to fetch VIX data: {}", e.getMessage(), e));
     }
@@ -131,7 +131,7 @@ public class VixMonitorService {
         }
 
         KiteQuoteResponse.QuoteData data = response.getData();
-        
+
         Double currentVix = data.getLastPrice();
         Double previousClose = data.getPrevDayClose();
         Double changePercent = previousClose != null && previousClose > 0
@@ -148,7 +148,7 @@ public class VixMonitorService {
                 .fetchedAt(Instant.now())
                 .build();
 
-        log.info("Parsed VIX data: value={}, level={}, change={}%", 
+        log.info("Parsed VIX data: value={}, level={}, change={}%",
                 currentVix, vixLevel, String.format("%.2f", changePercent));
 
         return Mono.just(vixData);

@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * JdbcConfig sets up the DataSource for database connectivity and configures OpenAPI for API documentation.
- * It reads database connection properties from the application.yml file and initializes a HikariDataSource.    
+ * It reads database connection properties from the application.yml file and initializes a HikariDataSource.
  */
 @Configuration
 public class JdbcConfig {
@@ -39,10 +39,10 @@ public class JdbcConfig {
 
     /**
      * Configures OpenAPI for API documentation. This bean initializes the OpenAPI specification with basic information about the API.
-     *  
+     *
      * @return
      */
-     @Bean
+    @Bean
     public OpenAPI tradeMeshOpenAPI() {
         return new OpenAPI()
                 .info(new io.swagger.v3.oas.models.info.Info()

@@ -2,7 +2,7 @@ package com.trademesh.intelligence.oi;
 
 /**
  * Enumeration of market bias based on OI analysis.
- * 
+ *
  * <p>Market bias classification:
  * <ul>
  *   <li>BULLISH - Put OI significantly higher than call OI (support dominant)</li>

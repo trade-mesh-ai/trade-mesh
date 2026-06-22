@@ -28,8 +28,8 @@ public class RiskManager {
     /**
      * Calculates the recommended position size based on account equity and risk %.
      *
-     * @param accountEquity total account equity
-     * @param riskPercent   percentage of equity to risk per trade (e.g. 1.0 = 1%)
+     * @param accountEquity  total account equity
+     * @param riskPercent    percentage of equity to risk per trade (e.g. 1.0 = 1%)
      * @param stopLossPoints stop-loss distance in price points
      * @return recommended quantity
      */

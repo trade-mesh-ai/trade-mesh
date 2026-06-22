@@ -10,7 +10,7 @@ import java.time.Instant;
 
 /**
  * R2DBC repository for VixAlert entities.
- * 
+ *
  * <p>Provides reactive CRUD operations and custom queries for VIX alert events.
  */
 @Repository
@@ -28,7 +28,7 @@ public interface VixAlertRepository extends ReactiveCrudRepository<VixAlert, Lon
      * Finds all VIX alerts within a time range.
      *
      * @param startTime the start of the time range
-     * @param endTime the end of the time range
+     * @param endTime   the end of the time range
      * @return Flux emitting VixAlert records in the time range
      */
     @Query("SELECT * FROM vix_alerts WHERE triggered_at >= :startTime AND triggered_at <= :endTime ORDER BY triggered_at DESC")

@@ -2,7 +2,7 @@ package com.trademesh.intelligence;
 
 /**
  * Enumeration of VIX levels based on current VIX value.
- *
+ * <p>
  * VIX (Volatility Index) ranges:
  * - LOW: VIX < 13 (Low volatility, calm market)
  * - NORMAL: VIX 13-17 (Normal volatility)

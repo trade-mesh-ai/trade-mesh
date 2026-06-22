@@ -58,7 +58,7 @@ public class OIAnalysisScheduler {
                     try {
                         // Set the ID to null to ensure a new record is created
                         analysis.setId(null);
-                        
+
                         // Ensure analyzedAt is set
                         if (analysis.getAnalyzedAt() == null) {
                             analysis.setAnalyzedAt(Instant.now());
@@ -70,7 +70,7 @@ public class OIAnalysisScheduler {
 
                         // Save to PostgreSQL
                         return analysisRepository.save(analysis)
-                                .doOnSuccess(saved -> log.info("Saved OI analysis snapshot for {} (id={}, bias={})", 
+                                .doOnSuccess(saved -> log.info("Saved OI analysis snapshot for {} (id={}, bias={})",
                                         symbol, saved.getId(), saved.getMarketBias()))
                                 .then();
                     } catch (Exception e) {

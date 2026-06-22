@@ -32,7 +32,9 @@ import java.util.HexFormat;
 @RequiredArgsConstructor
 public class ZerodhaAuthService {
 
-    /** Redis key under which the Zerodha access token is stored. */
+    /**
+     * Redis key under which the Zerodha access token is stored.
+     */
     public static final String ACCESS_TOKEN_KEY = "zerodha:access_token";
 
     private final ZerodhaConfig config;
@@ -45,7 +47,7 @@ public class ZerodhaAuthService {
      * Builds the Kite Connect OAuth2 login URL.
      *
      * @return fully-qualified login URL, e.g.
-     *         {@code https://kite.zerodha.com/connect/login?api_key=xxx&v=3}
+     * {@code https://kite.zerodha.com/connect/login?api_key=xxx&v=3}
      */
     public String generateLoginUrl() {
         String url = config.getLoginUrl() + "?api_key=" + config.getApiKey() + "&v=3";
@@ -165,27 +167,29 @@ public class ZerodhaAuthService {
 
     // ─── Inner DTO ────────────────────────────────────────────────────────────────
 
-    /** Minimal representation of the Kite Connect {@code POST /session/token} response. */
-@lombok.Data
-static class KiteSessionResponse {
-
-    private String status;
-    private SessionData data;
-
+    /**
+     * Minimal representation of the Kite Connect {@code POST /session/token} response.
+     */
     @lombok.Data
-    static class SessionData {
+    static class KiteSessionResponse {
 
-        @JsonProperty("access_token")
-        private String accessToken;
+        private String status;
+        private SessionData data;
 
-        @JsonProperty("public_token")
-        private String publicToken;
+        @lombok.Data
+        static class SessionData {
 
-        @JsonProperty("user_id")
-        private String userId;
+            @JsonProperty("access_token")
+            private String accessToken;
 
-        @JsonProperty("login_time")
-        private String loginTime;
+            @JsonProperty("public_token")
+            private String publicToken;
+
+            @JsonProperty("user_id")
+            private String userId;
+
+            @JsonProperty("login_time")
+            private String loginTime;
+        }
     }
-}
 }

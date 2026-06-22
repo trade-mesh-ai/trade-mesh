@@ -23,31 +23,49 @@ import java.time.Instant;
 @Builder
 public class MarketIntelligence {
 
-    /** Trading symbol (e.g., "NIFTY50", "NIFTYBANK"). */
+    /**
+     * Trading symbol (e.g., "NIFTY50", "NIFTYBANK").
+     */
     private String symbol;
 
-    /** Current spot price of the underlying. */
+    /**
+     * Current spot price of the underlying.
+     */
     private Double spotPrice;
 
-    /** Current VIX data. */
+    /**
+     * Current VIX data.
+     */
     private VixData vixData;
 
-    /** OI analysis including walls and market bias. */
+    /**
+     * OI analysis including walls and market bias.
+     */
     private OIAnalysis oiAnalysis;
 
-    /** Max pain calculation result. */
+    /**
+     * Max pain calculation result.
+     */
     private MaxPainResult maxPainResult;
 
-    /** Complete option chain data. */
+    /**
+     * Complete option chain data.
+     */
     private OptionChain optionChain;
 
-    /** Classified market condition. */
+    /**
+     * Classified market condition.
+     */
     private MarketCondition marketCondition;
 
-    /** Whether it is safe to trade based on current conditions. */
+    /**
+     * Whether it is safe to trade based on current conditions.
+     */
     private Boolean isSafeToTrade;
 
-    /** Timestamp when this intelligence was generated. */
+    /**
+     * Timestamp when this intelligence was generated.
+     */
     private Instant generatedAt;
 
     /**

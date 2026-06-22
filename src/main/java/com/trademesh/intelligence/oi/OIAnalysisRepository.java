@@ -7,7 +7,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * R2DBC repository for OIAnalysis entities.
- * 
+ *
  * <p>Provides reactive database operations for OI analysis snapshots.
  */
 @Repository

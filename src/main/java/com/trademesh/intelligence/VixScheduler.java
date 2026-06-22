@@ -12,7 +12,7 @@ import java.time.Instant;
 
 /**
  * Scheduler for VIX monitoring tasks.
- * 
+ *
  * <p>Responsibilities:
  * <ul>
  *   <li>Fetches VIX data every 5 minutes (configurable)</li>
@@ -46,7 +46,7 @@ public class VixScheduler {
 
     /**
      * Fetches VIX data at the configured interval (default: every 5 minutes).
-     * 
+     *
      * <p>This task:
      * <ol>
      *   <li>Fetches current VIX from Zerodha API (or Redis cache)</li>
@@ -62,32 +62,32 @@ public class VixScheduler {
         vixMonitorService.fetchCurrentVix()
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
-                    vixData -> {
-                        log.info("VIX fetched: value={}, level={}, safeToTrade={}",
-                                vixData.getCurrentVix(),
-                                vixData.getVixLevel(),
-                                vixData.isSafeToTrade());
+                        vixData -> {
+                            log.info("VIX fetched: value={}, level={}, safeToTrade={}",
+                                    vixData.getCurrentVix(),
+                                    vixData.getVixLevel(),
+                                    vixData.isSafeToTrade());
 
-                        // Store in memory for persistence checks
-                        lastFetchedVixData = vixData;
+                            // Store in memory for persistence checks
+                            lastFetchedVixData = vixData;
 
-                        // Check for threshold crossing and trigger alerts
-                        vixAlertService.processVixAlert(vixData)
-                                .subscribeOn(Schedulers.boundedElastic())
-                                .subscribe(
-                                    alert -> log.warn("VIX alert processed: {}", alert.getAlertMessage()),
-                                    error -> log.error("Error processing VIX alert: {}", error.getMessage()),
-                                    () -> log.debug("VIX alert processing completed")
-                                );
-                    },
-                    error -> log.error("Error fetching VIX data: {}", error.getMessage(), error),
-                    () -> log.debug("VIX fetch completed")
+                            // Check for threshold crossing and trigger alerts
+                            vixAlertService.processVixAlert(vixData)
+                                    .subscribeOn(Schedulers.boundedElastic())
+                                    .subscribe(
+                                            alert -> log.warn("VIX alert processed: {}", alert.getAlertMessage()),
+                                            error -> log.error("Error processing VIX alert: {}", error.getMessage()),
+                                            () -> log.debug("VIX alert processing completed")
+                                    );
+                        },
+                        error -> log.error("Error fetching VIX data: {}", error.getMessage(), error),
+                        () -> log.debug("VIX fetch completed")
                 );
     }
 
     /**
      * Persists VIX data to the database at the configured interval (default: every 15 minutes).
-     * 
+     *
      * <p>This task:
      * <ol>
      *   <li>Checks if VIX data has been fetched since last persistence</li>
@@ -109,15 +109,15 @@ public class VixScheduler {
         vixHistoryRepository.save(vixHistory)
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
-                    savedHistory -> {
-                        log.info("VIX data persisted to database: id={}, value={}, level={}",
-                                savedHistory.getId(),
-                                savedHistory.getVixValue(),
-                                savedHistory.getVixLevel());
-                        lastPersistTime = Instant.now();
-                    },
-                    error -> log.error("Error persisting VIX data: {}", error.getMessage(), error),
-                    () -> log.debug("VIX persistence completed")
+                        savedHistory -> {
+                            log.info("VIX data persisted to database: id={}, value={}, level={}",
+                                    savedHistory.getId(),
+                                    savedHistory.getVixValue(),
+                                    savedHistory.getVixLevel());
+                            lastPersistTime = Instant.now();
+                        },
+                        error -> log.error("Error persisting VIX data: {}", error.getMessage(), error),
+                        () -> log.debug("VIX persistence completed")
                 );
     }
 
@@ -142,8 +142,8 @@ public class VixScheduler {
         vixHistoryRepository.countRecords()
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
-                    count -> log.info("Total VIX history records in database: {}", count),
-                    error -> log.error("Error counting VIX history records: {}", error.getMessage())
+                        count -> log.info("Total VIX history records in database: {}", count),
+                        error -> log.error("Error counting VIX history records: {}", error.getMessage())
                 );
     }
 }

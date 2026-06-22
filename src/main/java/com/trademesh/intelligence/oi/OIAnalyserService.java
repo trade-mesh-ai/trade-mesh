@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * Service for analyzing Open Interest (OI) patterns in option chains.
- *
+ * <p>
  * Responsibilities:
  * - Analyzes option chain data to identify OI walls (resistance/support)
  * - Calculates market bias based on call vs put OI distribution
@@ -32,11 +32,11 @@ public class OIAnalyserService {
     // ─── Constants ─────────────────────────────────────────────────────────────────
     private static final String REDIS_KEY_PREFIX = "market:oi:analysis:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
-    
+
     // OI Wall strength thresholds (in number of contracts)
     private static final long STRONG_THRESHOLD = 5_000_000L;      // 50 lakh
     private static final long MODERATE_THRESHOLD = 2_000_000L;    // 20 lakh
-    
+
     // Market bias threshold (10% difference)
     private static final double BIAS_THRESHOLD = 0.10;
 
@@ -48,7 +48,7 @@ public class OIAnalyserService {
 
     /**
      * Analyzes the option chain and returns OI analysis.
-     *
+     * <p>
      * This method:
      * - Finds maximum call OI (resistance wall)
      * - Finds maximum put OI (support wall)
@@ -177,7 +177,7 @@ public class OIAnalyserService {
      * Gets the top N call OI walls (highest call OI concentrations).
      *
      * @param strikes list of option strikes
-     * @param limit number of top walls to return
+     * @param limit   number of top walls to return
      * @return list of top call OI walls
      */
     public List<OIWall> getTopCallWalls(List<OptionStrike> strikes, int limit) {
@@ -199,7 +199,7 @@ public class OIAnalyserService {
      * Gets the top N put OI walls (highest put OI concentrations).
      *
      * @param strikes list of option strikes
-     * @param limit number of top walls to return
+     * @param limit   number of top walls to return
      * @return list of top put OI walls
      */
     public List<OIWall> getTopPutWalls(List<OptionStrike> strikes, int limit) {
@@ -219,14 +219,14 @@ public class OIAnalyserService {
 
     /**
      * Calculates market bias based on call vs put OI distribution.
-     *
+     * <p>
      * Logic:
      * - If maxPutOI > maxCallOI by >10% → BULLISH (support dominant)
      * - If maxCallOI > maxPutOI by >10% → BEARISH (resistance dominant)
      * - Within 10% difference → NEUTRAL (balanced)
      *
      * @param maxCallOI maximum call OI
-     * @param maxPutOI maximum put OI
+     * @param maxPutOI  maximum put OI
      * @return the market bias
      */
     public MarketBias calculateMarketBias(long maxCallOI, long maxPutOI) {
@@ -254,7 +254,7 @@ public class OIAnalyserService {
 
     /**
      * Detects OI wall strength based on total open interest.
-     *
+     * <p>
      * Strength classification:
      * - OI > 50 lakh (5,000,000) → STRONG
      * - OI 20-50 lakh (2,000,000-5,000,000) → MODERATE
@@ -277,7 +277,7 @@ public class OIAnalyserService {
      * Calculates OI change percentage.
      *
      * @param currentOI current open interest
-     * @param oiChange change in open interest
+     * @param oiChange  change in open interest
      * @return percentage change, or 0 if current OI is 0
      */
     private Double calculateOIChangePercent(long currentOI, long oiChange) {

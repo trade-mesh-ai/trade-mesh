@@ -13,7 +13,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * REST Controller for market intelligence endpoints.
- * 
+ *
  * <p>Provides comprehensive market intelligence including VIX, OI analysis,
  * max pain, market condition classification, and trading safety assessment.
  */
@@ -40,7 +40,7 @@ public class MarketIntelligenceController {
 
         return marketIntelligenceService.generateIntelligence(symbol)
                 .map(intelligence -> {
-                    log.info("Successfully generated intelligence for {}: condition={}, safe={}", 
+                    log.info("Successfully generated intelligence for {}: condition={}, safe={}",
                             symbol, intelligence.getMarketCondition(), intelligence.getIsSafeToTrade());
                     return ResponseEntity.ok(intelligence);
                 })

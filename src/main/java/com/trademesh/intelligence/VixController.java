@@ -11,7 +11,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * REST Controller for VIX (Volatility Index) monitoring endpoints.
- * 
+ *
  * <p>Provides real-time VIX data and market intelligence for trading decisions.
  */
 @Slf4j
@@ -24,7 +24,7 @@ public class VixController {
 
     /**
      * Fetches the current VIX data.
-     * 
+     *
      * <p>Returns the latest VIX value, its level classification, previous close,
      * percentage change, and timestamp. Data is cached for 5 minutes.
      *
@@ -33,7 +33,7 @@ public class VixController {
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<VixData>> getCurrentVix() {
         log.debug("Received request for current VIX data");
-        
+
         return vixMonitorService.fetchCurrentVix()
                 .map(vixData -> {
                     log.info("Returning VIX data: value={}, level={}, safeToTrade={}",

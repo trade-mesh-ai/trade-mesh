@@ -1,6 +1,7 @@
 package com.trademesh.intelligence.maxpain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trademesh.config.ApplicationConstants;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionStrike;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import static com.trademesh.config.ApplicationConstants.REDIS_KEY_MAX_PAIN_PREFIX;
+
 /**
  * Service for calculating Max Pain for option chains.
  *
@@ -29,9 +32,9 @@ import java.util.Map;
  *
  * <p>Algorithm:
  * For each strike price X:
- *   - Call buyer loss = Sum of (all call strikes below X × their OI × lot size)
- *   - Put buyer loss = Sum of (all put strikes above X × their OI × lot size)
- *   - Total pain at X = call buyer loss + put buyer loss
+ * - Call buyer loss = Sum of (all call strikes below X × their OI × lot size)
+ * - Put buyer loss = Sum of (all put strikes above X × their OI × lot size)
+ * - Total pain at X = call buyer loss + put buyer loss
  * Strike with MINIMUM total pain = Max Pain strike
  */
 @Slf4j
@@ -39,19 +42,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MaxPainCalculatorService {
 
-    // ─── Constants ─────────────────────────────────────────────────────────────────
-    private static final String REDIS_KEY_PREFIX = "market:maxpain:";
-    private static final Duration CACHE_TTL = Duration.ofMinutes(15);
-
-    // ─── Configuration ────────────────────────────────────────────────────────────
-    @Value("#{${maxpain.lot-sizes:{NIFTY50: 75, NIFTYBANK: 30}}}") 
+    @Value("#{${maxpain.lot-sizes:{NIFTY50: 75, NIFTYBANK: 30}}}")
     private Map<String, Integer> lotSizes;
 
-    // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final ReactiveStringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
-    // ─── Public API ────────────────────────────────────────────────────────────────
 
     /**
      * Calculates the Max Pain for a given option chain.
@@ -67,7 +63,7 @@ public class MaxPainCalculatorService {
         }
 
         String symbol = chain.getSymbol();
-        String redisKey = REDIS_KEY_PREFIX + symbol;
+        String redisKey = REDIS_KEY_MAX_PAIN_PREFIX + symbol;
 
         // Try to get from cache first
         return redisTemplate.opsForValue().get(redisKey)
@@ -86,9 +82,9 @@ public class MaxPainCalculatorService {
                     try {
                         String json = objectMapper.writeValueAsString(result);
                         return redisTemplate.opsForValue()
-                                .set(redisKey, json, CACHE_TTL)
+                                .set(redisKey, json, ApplicationConstants.CACHE_MAX_PAIN_TTL)
                                 .thenReturn(result)
-                                .doOnSuccess(r -> log.info("Cached max pain for {} in Redis (TTL=15m): strike={}", 
+                                .doOnSuccess(r -> log.info("Cached max pain for {} in Redis (TTL=15m): strike={}",
                                         symbol, r.getMaxPainStrike()));
                     } catch (Exception e) {
                         log.error("Failed to cache max pain result: {}", e.getMessage());
@@ -98,7 +94,6 @@ public class MaxPainCalculatorService {
                 .doOnError(e -> log.error("Failed to calculate max pain for {}: {}", symbol, e.getMessage(), e));
     }
 
-    // ─── Calculation Methods ───────────────────────────────────────────────────────
 
     /**
      * Performs the actual max pain calculation on the option chain.
@@ -110,7 +105,7 @@ public class MaxPainCalculatorService {
             BigDecimal spotPrice = chain.getSpotPrice();
             int lotSize = getLotSize(symbol);
 
-            log.debug("Calculating max pain for {} with {} strikes, lot size: {}", 
+            log.debug("Calculating max pain for {} with {} strikes, lot size: {}",
                     symbol, strikes.size(), lotSize);
 
             // Sort strikes by price for easier iteration
@@ -124,7 +119,7 @@ public class MaxPainCalculatorService {
 
             for (OptionStrike currentStrike : sortedStrikes) {
                 BigDecimal strikePrice = currentStrike.getStrikePrice();
-                
+
                 // Calculate call buyer loss: sum of all call strikes below current strike
                 double callBuyerLoss = sortedStrikes.stream()
                         .filter(s -> s.getStrikePrice().compareTo(strikePrice) < 0)
@@ -140,7 +135,7 @@ public class MaxPainCalculatorService {
                 // Total pain at this strike
                 double totalPain = callBuyerLoss + putBuyerLoss;
 
-                log.trace("Strike {}: callLoss={}, putLoss={}, totalPain={}", 
+                log.trace("Strike {}: callLoss={}, putLoss={}, totalPain={}",
                         strikePrice, callBuyerLoss, putBuyerLoss, totalPain);
 
                 // Track minimum pain strike
@@ -158,8 +153,8 @@ public class MaxPainCalculatorService {
 
             // Calculate distance metrics
             double distanceFromSpot = Math.abs(maxPainStrike - spotPrice.doubleValue());
-            double distancePercent = spotPrice.doubleValue() > 0 
-                    ? (distanceFromSpot / spotPrice.doubleValue()) * 100 
+            double distancePercent = spotPrice.doubleValue() > 0
+                    ? (distanceFromSpot / spotPrice.doubleValue()) * 100
                     : 0.0;
 
             // Build result
@@ -173,9 +168,9 @@ public class MaxPainCalculatorService {
                     .calculatedAt(Instant.now())
                     .build();
 
-            log.info("Max Pain calculated for {}: strike={}, spot={}, distance={} ({}%)", 
-                    symbol, maxPainStrike, spotPrice, 
-                    String.format("%.2f", distanceFromSpot), 
+            log.info("Max Pain calculated for {}: strike={}, spot={}, distance={} ({}%)",
+                    symbol, maxPainStrike, spotPrice,
+                    String.format("%.2f", distanceFromSpot),
                     String.format("%.2f", distancePercent));
 
             return result;

@@ -26,14 +26,14 @@ import java.util.Map;
 
 /**
  * Zerodha KiteTicker WebSocket service.
- *
+ * <p>
  * Responsibilities:
  * - Fetches the current access token from Redis.
  * - Connects to the KiteTicker WebSocket feed.
  * - Subscribes to NIFTY 50 (token 256265) and NIFTY BANK (token 260105) in FULL mode.
  * - On each tick: logs the data, stores the latest price in Redis under
- *   {@code price:{symbol}} with a 60-second TTL, and emits to a reactive Flux.
- *
+ * {@code price:{symbol}} with a 60-second TTL, and emits to a reactive Flux.
+ * <p>
  * Connection lifecycle (connect / disconnect / reconnect) is delegated to
  * {@link TickerConnectionManager}.
  */
@@ -43,30 +43,38 @@ import java.util.Map;
 public class ZerodhaTickerService {
 
     // ─── Instrument tokens ────────────────────────────────────────────────────────
-    public static final long TOKEN_NIFTY_50   = 256265L;
+    public static final long TOKEN_NIFTY_50 = 256265L;
     public static final long TOKEN_NIFTY_BANK = 260105L;
 
-    /** Human-readable symbol map keyed by instrument token. */
+    /**
+     * Human-readable symbol map keyed by instrument token.
+     */
     private static final Map<Long, String> TOKEN_SYMBOL_MAP = Map.of(
-            TOKEN_NIFTY_50,   "NIFTY50",
+            TOKEN_NIFTY_50, "NIFTY50",
             TOKEN_NIFTY_BANK, "NIFTYBANK"
     );
 
-    /** Redis key prefix for latest price cache. */
+    /**
+     * Redis key prefix for latest price cache.
+     */
     private static final String PRICE_KEY_PREFIX = "price:";
 
-    /** Price TTL in Redis – 60 seconds. */
+    /**
+     * Price TTL in Redis – 60 seconds.
+     */
     private static final Duration PRICE_TTL = Duration.ofSeconds(60);
 
     // ─── Dependencies ─────────────────────────────────────────────────────────────
-    private final ZerodhaConfig               config;
-    private final ZerodhaAuthService          authService;
+    private final ZerodhaConfig config;
+    private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
 
     // ─── Internal state ───────────────────────────────────────────────────────────
     private volatile KiteTicker kiteTicker;
 
-    /** Hot Flux sink – all subscribers receive every tick. */
+    /**
+     * Hot Flux sink – all subscribers receive every tick.
+     */
     private final Sinks.Many<TickData> tickSink =
             Sinks.many().multicast().onBackpressureBuffer();
 
@@ -215,7 +223,7 @@ public class ZerodhaTickerService {
         redisTemplate.opsForValue()
                 .set(redisKey, tickData.getLastPrice().toPlainString(), PRICE_TTL)
                 .subscribe(
-                        ok  -> log.trace("Stored price in Redis: {}={}", redisKey, tickData.getLastPrice()),
+                        ok -> log.trace("Stored price in Redis: {}={}", redisKey, tickData.getLastPrice()),
                         err -> log.error("Failed to store price in Redis for {}: {}", symbol, err.getMessage())
                 );
     }

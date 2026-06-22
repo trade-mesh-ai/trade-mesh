@@ -18,12 +18,12 @@ import java.util.Map;
 
 /**
  * REST controller exposing live market data sourced from the KiteTicker WebSocket feed.
- *
+ * <p>
  * Endpoints:
  * - {@code GET /market/price/{symbol}}   – latest price from Redis cache.
  * - {@code GET /market/stream/{symbol}}  – Server-Sent Events (SSE) live price stream.
  * - {@code GET /market/status}           – WebSocket connection health.
- *
+ * <p>
  * Supported symbols: {@code NIFTY50}, {@code NIFTYBANK} (case-insensitive).
  */
 @Slf4j
@@ -36,7 +36,7 @@ public class MarketDataController {
     private static final String PRICE_KEY_PREFIX = "price:";
 
     private final ReactiveStringRedisTemplate redisTemplate;
-    private final ZerodhaTickerService        tickerService;
+    private final ZerodhaTickerService tickerService;
 
     // ─── Latest price (Redis cache) ───────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ public class MarketDataController {
             @PathVariable String symbol) {
 
         String normalised = symbol.toUpperCase();
-        String redisKey   = PRICE_KEY_PREFIX + normalised;
+        String redisKey = PRICE_KEY_PREFIX + normalised;
 
         log.debug("Fetching price from Redis for key: {}", redisKey);
 
@@ -67,9 +67,9 @@ public class MarketDataController {
                 .map(price -> {
                     log.debug("Price found in Redis: {}={}", redisKey, price);
                     Map<String, Object> body = Map.of(
-                            "symbol",    normalised,
+                            "symbol", normalised,
                             "lastPrice", new BigDecimal(price),
-                            "source",    "redis-cache",
+                            "source", "redis-cache",
                             "ttlSeconds", 60
                     );
                     return ResponseEntity.ok(body);
@@ -77,10 +77,10 @@ public class MarketDataController {
                 .switchIfEmpty(Mono.defer(() -> {
                     log.warn("No price found in Redis for symbol: {}", normalised);
                     Map<String, Object> body = Map.of(
-                            "symbol",  normalised,
-                            "error",   "Price not available. Either the symbol is unknown or "
-                                     + "no tick has been received in the last 60 seconds.",
-                            "hint",    "Supported symbols: NIFTY50, NIFTYBANK"
+                            "symbol", normalised,
+                            "error", "Price not available. Either the symbol is unknown or "
+                                    + "no tick has been received in the last 60 seconds.",
+                            "hint", "Supported symbols: NIFTY50, NIFTYBANK"
                     );
                     return Mono.just(ResponseEntity.status(HttpStatus.NOT_FOUND)
                             .<Map<String, Object>>body(body));
@@ -89,7 +89,7 @@ public class MarketDataController {
                     log.error("Redis error fetching price for {}: {}", normalised, ex.getMessage(), ex);
                     Map<String, Object> body = Map.of(
                             "symbol", normalised,
-                            "error",  "Internal error fetching price: " + ex.getMessage()
+                            "error", "Internal error fetching price: " + ex.getMessage()
                     );
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                             .<Map<String, Object>>body(body));
@@ -120,11 +120,11 @@ public class MarketDataController {
         return tickerService.tickStream()
                 .filter(tick -> normalised.equalsIgnoreCase(tick.getTradingSymbol()))
                 .map(tick -> Map.<String, Object>of(
-                        "symbol",    tick.getTradingSymbol(),
+                        "symbol", tick.getTradingSymbol(),
                         "lastPrice", tick.getLastPrice(),
-                        "high",      tick.getHighPrice(),
-                        "low",       tick.getLowPrice(),
-                        "volume",    tick.getVolume(),
+                        "high", tick.getHighPrice(),
+                        "low", tick.getLowPrice(),
+                        "volume", tick.getVolume(),
                         "timestamp", tick.getTimestamp().toString()
                 ))
                 .doOnCancel(() -> log.info("SSE client disconnected from stream: {}", normalised));
@@ -145,7 +145,7 @@ public class MarketDataController {
                 "websocketConnected", connected,
                 "status", connected ? "CONNECTED" : "DISCONNECTED",
                 "instruments", Map.of(
-                        "NIFTY50",   ZerodhaTickerService.TOKEN_NIFTY_50,
+                        "NIFTY50", ZerodhaTickerService.TOKEN_NIFTY_50,
                         "NIFTYBANK", ZerodhaTickerService.TOKEN_NIFTY_BANK
                 )
         );

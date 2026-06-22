@@ -76,9 +76,9 @@ public class IntelligenceScheduler {
                     MarketCondition previousCondition = getPreviousCondition(symbol);
 
                     if (previousCondition != null && !previousCondition.equals(currentCondition)) {
-                        log.warn("Market condition changed for {}: {} → {}", 
+                        log.warn("Market condition changed for {}: {} → {}",
                                 symbol, previousCondition, currentCondition);
-                        
+
                         // Send Telegram alert
                         String alertMessage = String.format(
                                 "📊 Market Condition Change: %s\n%s → %s\n%s",
@@ -87,7 +87,7 @@ public class IntelligenceScheduler {
                                 currentCondition.name(),
                                 intelligence.summary()
                         );
-                        
+
                         return sendConditionChangeAlert(alertMessage)
                                 .doOnSuccess(success -> {
                                     if (success) {
@@ -114,7 +114,7 @@ public class IntelligenceScheduler {
         // Use VixAlertService's Telegram capability
         // Since VixAlertService.sendTelegramAlert is private, we'll use a workaround
         // by creating a temporary VixAlert and processing it
-        
+
         return Mono.fromCallable(() -> {
             try {
                 // Send via WebClient directly (similar to VixAlertService)

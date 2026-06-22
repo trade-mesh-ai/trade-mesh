@@ -22,7 +22,7 @@ import java.util.Map;
 
 /**
  * Service for fetching and caching option chain data from Zerodha Kite REST API.
- *
+ * <p>
  * Responsibilities:
  * - Fetches access token from Redis.
  * - Calls Zerodha Kite REST API to fetch option chain data.
@@ -38,7 +38,9 @@ public class OptionChainService {
     private static final String REDIS_KEY_PREFIX = "optionchain:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(3);
 
-    /** Mapping of trading symbols to Zerodha instrument tokens. */
+    /**
+     * Mapping of trading symbols to Zerodha instrument tokens.
+     */
     private static final Map<String, Long> SYMBOL_TOKEN_MAP = Map.of(
             "NIFTY50", 256265L,
             "NIFTYBANK", 260105L
@@ -69,16 +71,16 @@ public class OptionChainService {
                     return Mono.just(deserializeOptionChain(cached));
                 })
                 .switchIfEmpty(
-                    // Cache miss: fetch from Kite API
-                    fetchFromKiteAPI(symbol)
-                            .flatMap(optionChain -> {
-                                // Cache the result
-                                String json = serializeOptionChain(optionChain);
-                                return redisTemplate.opsForValue()
-                                        .set(redisKey, json, CACHE_TTL)
-                                        .thenReturn(optionChain)
-                                        .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
-                            })
+                        // Cache miss: fetch from Kite API
+                        fetchFromKiteAPI(symbol)
+                                .flatMap(optionChain -> {
+                                    // Cache the result
+                                    String json = serializeOptionChain(optionChain);
+                                    return redisTemplate.opsForValue()
+                                            .set(redisKey, json, CACHE_TTL)
+                                            .thenReturn(optionChain)
+                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
+                                })
                 )
                 .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", symbol, e.getMessage(), e));
     }
@@ -178,7 +180,7 @@ public class OptionChainService {
                 .stream()
                 .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO"))
                 .filter(inst -> inst.getExpiryDate() != null && inst.getExpiryDate().equals(nearestExpiry))
-                .filter(inst -> inst.getInstrumentType() != null && 
+                .filter(inst -> inst.getInstrumentType() != null &&
                         (inst.getInstrumentType().equals("CE") || inst.getInstrumentType().equals("PE")))
                 .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().contains(symbol))
                 .toList();
@@ -197,7 +199,7 @@ public class OptionChainService {
         // Group by strike price
         Map<BigDecimal, List<KiteInstrumentsResponse.Instrument>> strikeGroups = optionInstruments
                 .stream()
-                .collect(java.util.stream.Collectors.groupingBy(inst -> 
+                .collect(java.util.stream.Collectors.groupingBy(inst ->
                         new BigDecimal(inst.getStrikePrice())));
 
         // Fetch quote data for all strikes
@@ -207,7 +209,7 @@ public class OptionChainService {
                 .toList();
 
         return fetchQuotesForStrikes(client, instrumentTokens)
-                .map(quotesResponse -> buildStrikesFromQuotes(symbol, spotPrice, nearestExpiry, 
+                .map(quotesResponse -> buildStrikesFromQuotes(symbol, spotPrice, nearestExpiry,
                         strikeGroups, quotesResponse))
                 .map(strikes -> OptionChain.builder()
                         .symbol(symbol)
@@ -228,7 +230,7 @@ public class OptionChainService {
 
         // Build comma-separated list of instrument tokens
         String tokens = String.join(",", instrumentTokens);
-        
+
         return client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/quote")

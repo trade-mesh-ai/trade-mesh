@@ -12,7 +12,7 @@ import java.time.Instant;
 
 /**
  * R2DBC entity representing a historical VIX record.
- * 
+ *
  * <p>Persisted to the {@code vix_history} table for audit and backtesting purposes.
  * Records are saved every 15 minutes.
  */

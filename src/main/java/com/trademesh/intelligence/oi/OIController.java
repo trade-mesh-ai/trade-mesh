@@ -14,7 +14,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * REST Controller for OI (Open Interest) analysis endpoints.
- * 
+ *
  * <p>Provides endpoints to fetch and analyze OI patterns for trading symbols.
  */
 @Slf4j
@@ -28,7 +28,7 @@ public class OIController {
 
     /**
      * Fetches the OI analysis for a given symbol.
-     *
+     * <p>
      * Returns the latest OI analysis including:
      * - Maximum call OI strike (resistance wall)
      * - Maximum put OI strike (support wall)

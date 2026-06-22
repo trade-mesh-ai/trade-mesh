@@ -12,7 +12,7 @@ import java.time.Instant;
 
 /**
  * R2DBC entity representing a VIX alert event.
- * 
+ *
  * <p>Persisted to the {@code vix_alerts} table for audit and backtesting purposes.
  * Alerts are triggered when VIX crosses the configured threshold (default: 20.0).
  */
