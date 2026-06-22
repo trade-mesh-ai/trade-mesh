@@ -1,0 +1,213 @@
+package com.trademesh.zerodha.options;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.trademesh.zerodha.auth.ZerodhaAuthService;
+import com.trademesh.zerodha.auth.ZerodhaConfig;
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Service for fetching and caching option chain data from Zerodha Kite REST API.
+ *
+ * <p>Responsibilities:
+ * <ul>
+ *   <li>Fetches access token from Redis.</li>
+ *   <li>Calls Zerodha Kite REST API to fetch option chain data.</li>
+ *   <li>Parses response and builds OptionChain object.</li>
+ *   <li>Caches result in Redis with 3-minute TTL.</li>
+ * </ul>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class OptionChainService {
+
+    // ─── Constants ─────────────────────────────────────────────────────────────────
+    private static final String REDIS_KEY_PREFIX = "optionchain:";
+    private static final Duration CACHE_TTL = Duration.ofMinutes(3);
+
+    /** Mapping of trading symbols to Zerodha instrument tokens. */
+    private static final Map<String, Long> SYMBOL_TOKEN_MAP = Map.of(
+            "NIFTY50", 256265L,
+            "NIFTYBANK", 260105L
+    );
+
+    // ─── Dependencies ─────────────────────────────────────────────────────────────
+    private final ZerodhaConfig config;
+    private final ZerodhaAuthService authService;
+    private final ReactiveStringRedisTemplate redisTemplate;
+    private final WebClient.Builder webClientBuilder;
+
+    // ─── Public API ────────────────────────────────────────────────────────────────
+
+    /**
+     * Fetches the option chain for a given symbol (NIFTY50 or NIFTYBANK).
+     * Attempts to retrieve from Redis cache first; if not found, fetches from Kite API.
+     *
+     * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @return {@link Mono} emitting the OptionChain
+     */
+    public Mono<OptionChain> fetchOptionChain(String symbol) {
+        String redisKey = REDIS_KEY_PREFIX + symbol;
+
+        // Try to get from cache first
+        return redisTemplate.opsForValue().get(redisKey)
+                .flatMap(cached -> {
+                    log.debug("Option chain for {} found in cache", symbol);
+                    return Mono.just(deserializeOptionChain(cached));
+                })
+                .switchIfEmpty(
+                    // Cache miss: fetch from Kite API
+                    fetchFromKiteAPI(symbol)
+                            .flatMap(optionChain -> {
+                                // Cache the result
+                                String json = serializeOptionChain(optionChain);
+                                return redisTemplate.opsForValue()
+                                        .set(redisKey, json, CACHE_TTL)
+                                        .thenReturn(optionChain)
+                                        .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
+                            })
+                )
+                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", symbol, e.getMessage(), e));
+    }
+
+    // ─── Kite API Integration ─────────────────────────────────────────────────────
+
+    /**
+     * Fetches option chain data from Zerodha Kite REST API.
+     * Uses the Quote API to fetch data for all strikes of the nearest weekly expiry.
+     */
+    private Mono<OptionChain> fetchFromKiteAPI(String symbol) {
+        return authService.getAccessToken()
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "No Zerodha access token found in Redis. Please authenticate first.")))
+                .flatMap(accessToken -> {
+                    log.info("Fetching option chain for {} from Kite API", symbol);
+
+                    Long instrumentToken = SYMBOL_TOKEN_MAP.get(symbol);
+                    if (instrumentToken == null) {
+                        return Mono.error(new IllegalArgumentException(
+                                "Unknown symbol: " + symbol + ". Supported: NIFTY50, NIFTYBANK"));
+                    }
+
+                    WebClient client = webClientBuilder
+                            .baseUrl(config.getBaseUrl())
+                            .defaultHeader("Authorization", "Bearer " + accessToken)
+                            .build();
+
+                    // Fetch quote data for the underlying
+                    return client.get()
+                            .uri("/quote/?i=NSE:" + symbol + "&mode=full")
+                            .retrieve()
+                            .bodyToMono(KiteQuoteResponse.class)
+                            .flatMap(response -> parseOptionChain(symbol, response))
+                            .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
+                });
+    }
+
+    /**
+     * Parses the Kite API response and builds an OptionChain object.
+     * For now, returns a minimal OptionChain with spot price and empty strikes.
+     * In production, you would fetch individual strike data from the API.
+     */
+    private Mono<OptionChain> parseOptionChain(String symbol, KiteQuoteResponse response) {
+        if (response == null || response.getData() == null) {
+            return Mono.error(new IllegalStateException("Invalid Kite API response"));
+        }
+
+        KiteQuoteResponse.QuoteData data = response.getData();
+        BigDecimal spotPrice = BigDecimal.valueOf(data.getLastPrice());
+
+        // For a complete implementation, you would:
+        // 1. Fetch the list of all option instruments for this symbol
+        // 2. Filter by the nearest weekly expiry
+        // 3. Fetch quote data for each strike
+        // 4. Build the OptionChain with all strikes
+
+        // For now, return a basic structure
+        OptionChain optionChain = OptionChain.builder()
+                .symbol(symbol)
+                .spotPrice(spotPrice)
+                .expiryDate(LocalDate.now().plusDays(7)) // Placeholder: nearest weekly expiry
+                .strikes(new ArrayList<>()) // Empty for now
+                .fetchedAt(Instant.now())
+                .build();
+
+        log.info("Parsed option chain for {}: spot price = {}", symbol, spotPrice);
+        return Mono.just(optionChain);
+    }
+
+    // ─── Serialization / Deserialization ──────────────────────────────────────────
+
+    /**
+     * Serializes an OptionChain to JSON string for Redis caching.
+     */
+    private String serializeOptionChain(OptionChain optionChain) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .writeValueAsString(optionChain);
+        } catch (Exception e) {
+            log.error("Failed to serialize OptionChain: {}", e.getMessage());
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Deserializes a JSON string from Redis back to an OptionChain object.
+     */
+    private OptionChain deserializeOptionChain(String json) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(json, OptionChain.class);
+        } catch (Exception e) {
+            log.error("Failed to deserialize OptionChain: {}", e.getMessage());
+            throw new RuntimeException(e);
+        }
+    }
+
+    // ─── Inner DTOs for Kite API Response ──────────────────────────────────────────
+
+    /**
+     * Minimal representation of Kite Connect Quote API response.
+     */
+    @Data
+    static class KiteQuoteResponse {
+        private String status;
+        private QuoteData data;
+
+        @Data
+        static class QuoteData {
+            @JsonProperty("instrument_token")
+            private long instrumentToken;
+
+            @JsonProperty("trading_symbol")
+            private String tradingSymbol;
+
+            @JsonProperty("last_price")
+            private double lastPrice;
+
+            @JsonProperty("open_interest")
+            private long openInterest;
+
+            @JsonProperty("volume")
+            private long volume;
+
+            @JsonProperty("timestamp")
+            private String timestamp;
+        }
+    }
+}
