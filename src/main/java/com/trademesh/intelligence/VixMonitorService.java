@@ -1,6 +1,7 @@
 package com.trademesh.intelligence;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
@@ -41,7 +42,8 @@ public class VixMonitorService {
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
     private final TokenAvailabilityTracker tokenTracker;
-    // ─── Configuration ────────────────────────────────────────────────────────────
+    private final ObjectMapper objectMapper;
+    // ─── Configuration ────────────────────────────────────────────────────────
     @Value("${vix.alert-threshold:20.0}")
     private Double alertThreshold;
 
@@ -124,6 +126,7 @@ public class VixMonitorService {
                             .uri("/quote/?i=NSE:INDIAVIX&mode=full")
                             .retrieve()
                             .bodyToMono(KiteQuoteResponse.class)
+                            .timeout(Duration.ofSeconds(10))
                             .flatMap(this::parseVixData)
                             .doOnError(e -> log.error("Kite API error fetching VIX: {}", e.getMessage(), e));
                 })
@@ -190,11 +193,10 @@ public class VixMonitorService {
      */
     private String serializeVixData(VixData vixData) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                    .writeValueAsString(vixData);
-        } catch (Exception e) {
+            return objectMapper.writeValueAsString(vixData);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("Failed to serialize VixData: {}", e.getMessage());
-            throw new RuntimeException(e);
+            throw new RuntimeException("VixData serialization failed", e);
         }
     }
 
@@ -203,11 +205,10 @@ public class VixMonitorService {
      */
     private VixData deserializeVixData(String json) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(json, VixData.class);
-        } catch (Exception e) {
+            return objectMapper.readValue(json, VixData.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("Failed to deserialize VixData: {}", e.getMessage());
-            throw new RuntimeException(e);
+            throw new RuntimeException("VixData deserialization failed", e);
         }
     }
 

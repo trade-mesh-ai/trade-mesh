@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.options;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
@@ -13,6 +14,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -43,6 +45,7 @@ public class OptionChainService {
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
     private final TokenAvailabilityTracker tokenTracker;
+    private final ObjectMapper objectMapper;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
 
@@ -117,6 +120,7 @@ public class OptionChainService {
                             .uri("/quote/?i=NSE:" + symbol + "&mode=full")
                             .retrieve()
                             .bodyToMono(KiteQuoteResponse.class)
+                            .timeout(Duration.ofSeconds(10))
                             .doOnSuccess(quoteResp -> log.info("Successfully fetched quote data for {} from Kite API", symbol))
                             .flatMap(response -> parseOptionChain(symbol, response))
                             .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
@@ -166,6 +170,7 @@ public class OptionChainService {
                             .uri("/instruments")
                             .retrieve()
                             .bodyToMono(KiteInstrumentsResponse.class)
+                            .timeout(Duration.ofSeconds(15))
                             .doOnSuccess(instrumentsResp -> log.info("Successfully fetched instruments for {}", symbol))
                             .flatMap(instrumentsResponse -> buildOptionChain(symbol, spotPrice, instrumentsResponse, accessToken, client))
                             .doOnError(e -> log.error("Failed to fetch instruments for {}: {}", symbol, e.getMessage()));
@@ -267,6 +272,7 @@ public class OptionChainService {
                         .build())
                 .retrieve()
                 .bodyToMono(com.trademesh.zerodha.options.KiteQuotesResponse.class)
+                .timeout(Duration.ofSeconds(10))
                 .onErrorResume(e -> {
                     log.error("Failed to fetch quotes for strikes: {}", e.getMessage());
                     return Mono.just(new com.trademesh.zerodha.options.KiteQuotesResponse());
@@ -364,11 +370,10 @@ public class OptionChainService {
      */
     private String serializeOptionChain(OptionChain optionChain) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                    .writeValueAsString(optionChain);
-        } catch (Exception e) {
+            return objectMapper.writeValueAsString(optionChain);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("Failed to serialize OptionChain: {}", e.getMessage());
-            throw new RuntimeException(e);
+            throw new RuntimeException("OptionChain serialization failed", e);
         }
     }
 
@@ -377,11 +382,10 @@ public class OptionChainService {
      */
     private OptionChain deserializeOptionChain(String json) {
         try {
-            return new com.fasterxml.jackson.databind.ObjectMapper()
-                    .readValue(json, OptionChain.class);
-        } catch (Exception e) {
+            return objectMapper.readValue(json, OptionChain.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("Failed to deserialize OptionChain: {}", e.getMessage());
-            throw new RuntimeException(e);
+            throw new RuntimeException("OptionChain deserialization failed", e);
         }
     }
 

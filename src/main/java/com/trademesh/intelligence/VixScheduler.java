@@ -13,13 +13,9 @@ import java.time.Instant;
 
 /**
  * Scheduler for VIX monitoring tasks.
- *
- * <p>Responsibilities:
- * <ul>
- *   <li>Fetches VIX data every 5 minutes (configurable)</li>
- *   <li>Persists VIX data to database every 15 minutes (configurable)</li>
- *   <li>Checks for VIX threshold crossings and triggers alerts</li>
- * </ul>
+ * Fetches VIX data every 5 minutes (configurable).
+ * Persists VIX data to database every 15 minutes (configurable).
+ * Checks for VIX threshold crossings and triggers alerts.
  */
 @Slf4j
 @Component

@@ -173,15 +173,15 @@ public class MarketIntelligenceService {
         // Check OI bias
         String bias = oiAnalysis.getMarketBias();
 
-        if ("NEUTRAL".equals(bias) && vixData.getCurrentVix() < 17) {
+        if (bias != null && "NEUTRAL".equals(bias) && vixData.getCurrentVix() < 17) {
             return MarketCondition.SIDEWAYS;
         }
 
-        if ("BULLISH".equals(bias)) {
+        if (bias != null && "BULLISH".equals(bias)) {
             return MarketCondition.TRENDING_BULLISH;
         }
 
-        if ("BEARISH".equals(bias)) {
+        if (bias != null && "BEARISH".equals(bias)) {
             return MarketCondition.TRENDING_BEARISH;
         }
 
