@@ -124,6 +124,16 @@ trading:
       NIFTY: 75
       BANKNIFTY: 30
 
+# ─── Risk Configuration ──────────────────────────────────────────────────────────
+risk:
+  max-position-size-per-symbol: 5
+  daily-loss-limit-percent: 2.0
+  max-sector-exposure: 50000
+  min-margin-buffer-percent: 10
+  position-sizing:
+    risk-percent: 1.0
+    max-quantity: 10
+
 # ─── Logging ─────────────────────────────────────────────────────────────────────
 logging:
   level:
