@@ -72,7 +72,12 @@ public class VixMonitorService {
                                             .doOnSuccess(vd -> log.info("Cached VIX data in Redis (TTL=5m): {}", vd.getCurrentVix()));
                                 })
                 )
-                .doOnError(e -> log.error("Failed to fetch VIX data: {}", e.getMessage(), e));
+                .doOnError(e -> log.error("Failed to fetch VIX data: {}", e.getMessage(), e))
+                .onErrorResume(e -> {
+                    // Suppress error propagation to prevent ErrorCallbackNotImplemented
+                    log.debug("VIX fetch failed, returning empty to allow scheduler to continue");
+                    return Mono.empty();
+                });
     }
 
     /**
@@ -124,8 +129,16 @@ public class VixMonitorService {
                 })
                 .doOnError(e -> {
                     if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.setTokenUnavailable();
                         tokenTracker.trackTokenMissing(SCHEDULER_NAME);
                     }
+                })
+                .onErrorResume(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        log.debug("VIX fetch failed due to missing token, returning empty to allow scheduler to continue");
+                        return Mono.empty();
+                    }
+                    return Mono.error(e);
                 });
     }
 

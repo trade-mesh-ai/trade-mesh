@@ -54,6 +54,11 @@ public class IntelligenceScheduler {
         for (String symbol : SYMBOLS) {
             refreshIntelligence(symbol)
                     .doOnError(e -> log.error("Failed to refresh intelligence for {}: {}", symbol, e.getMessage()))
+                    .onErrorResume(e -> {
+                        // Suppress error propagation to prevent ErrorCallbackNotImplemented
+                        log.debug("Intelligence refresh failed for {}, continuing with next symbol", symbol);
+                        return Mono.empty();
+                    })
                     .subscribe();
         }
     }
@@ -103,6 +108,13 @@ public class IntelligenceScheduler {
                     } else {
                         log.error("Failed to refresh intelligence for {}: {}", symbol, e.getMessage());
                     }
+                })
+                .onErrorResume(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        log.debug("Intelligence refresh failed due to missing token, continuing with next symbol");
+                        return Mono.empty();
+                    }
+                    return Mono.error(e);
                 })
                 .then();
     }

@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
@@ -60,24 +61,32 @@ public class VixScheduler {
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
                         vixData -> {
-                            log.info("VIX fetched: value={}, level={}, safeToTrade={}",
-                                    vixData.getCurrentVix(),
-                                    vixData.getVixLevel(),
-                                    vixData.isSafeToTrade());
+                            if (vixData != null) {
+                                log.info("VIX fetched: value={}, level={}, safeToTrade={}",
+                                        vixData.getCurrentVix(),
+                                        vixData.getVixLevel(),
+                                        vixData.isSafeToTrade());
 
-                            // Store in memory for persistence checks
-                            lastFetchedVixData = vixData;
+                                // Store in memory for persistence checks
+                                lastFetchedVixData = vixData;
 
-                            // Check for threshold crossing and trigger alerts
-                            vixAlertService.processVixAlert(vixData)
-                                    .subscribeOn(Schedulers.boundedElastic())
-                                    .subscribe(
-                                            alert -> log.warn("VIX alert processed: {}", alert.getAlertMessage()),
-                                            error -> log.error("Error processing VIX alert: {}", error.getMessage()),
-                                            () -> log.debug("VIX alert processing completed")
-                                    );
+                                // Check for threshold crossing and trigger alerts
+                                vixAlertService.processVixAlert(vixData)
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .onErrorResume(error -> {
+                                            log.error("Error processing VIX alert: {}", error.getMessage());
+                                            return Mono.empty();
+                                        })
+                                        .subscribe(
+                                                alert -> log.warn("VIX alert processed: {}", alert.getAlertMessage()),
+                                                error -> log.error("Unhandled error in VIX alert processing: {}", error.getMessage()),
+                                                () -> log.debug("VIX alert processing completed")
+                                        );
+                            } else {
+                                log.debug("No VIX data available (token may be missing)");
+                            }
                         },
-                        error -> log.error("Error fetching VIX data: {}", error.getMessage(), error),
+                        error -> log.error("Error fetching VIX data: {}", error.getMessage()),
                         () -> log.debug("VIX fetch completed")
                 );
     }

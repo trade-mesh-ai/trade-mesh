@@ -88,6 +88,7 @@ public class TickerConnectionManager {
                 .onErrorResume(ex -> {
                     // Check if this is a token missing error
                     if (ex instanceof IllegalStateException && ex.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.setTokenUnavailable();
                         tokenTracker.trackTokenMissing(SCHEDULER_NAME);
                     } else {
                         log.warn("[TickerConnectionManager] ⚠️  KiteTicker connect attempt failed: {}",

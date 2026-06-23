@@ -1,5 +1,6 @@
 package com.trademesh.intelligence.maxpain;
 
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,9 +27,12 @@ import static com.trademesh.config.ApplicationConstants.SYMBOLS;
 @RequiredArgsConstructor
 public class MaxPainScheduler {
 
+    private static final String SCHEDULER_NAME = "MaxPainScheduler";
+
     private final OptionChainService optionChainService;
     private final MaxPainCalculatorService maxPainCalculatorService;
     private final MaxPainHistoryRepository maxPainHistoryRepository;
+    private final TokenAvailabilityTracker tokenTracker;
 
     /**
      * Captures max pain calculation snapshots every 30 minutes (1,800,000 milliseconds).
@@ -65,6 +69,20 @@ public class MaxPainScheduler {
                             .doOnSuccess(saved -> log.info("Saved max pain snapshot for {} (id={}, strike={})",
                                     symbol, saved.getId(), saved.getMaxPainStrike()))
                             .then();
+                })
+                .doOnError(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    } else {
+                        log.error("Failed to capture max pain for {}: {}", symbol, e.getMessage());
+                    }
+                })
+                .onErrorResume(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        log.debug("Max pain capture failed due to missing token, continuing with next symbol");
+                        return Mono.empty();
+                    }
+                    return Mono.error(e);
                 });
     }
 }

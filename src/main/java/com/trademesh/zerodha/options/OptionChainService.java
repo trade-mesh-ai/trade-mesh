@@ -112,8 +112,16 @@ public class OptionChainService {
                 })
                 .doOnError(e -> {
                     if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.setTokenUnavailable();
                         tokenTracker.trackTokenMissing(SCHEDULER_NAME);
                     }
+                })
+                .onErrorResume(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        log.debug("Option chain fetch failed due to missing token, returning empty to allow scheduler to continue");
+                        return Mono.empty();
+                    }
+                    return Mono.error(e);
                 });
     }
 
@@ -152,6 +160,7 @@ public class OptionChainService {
                 })
                 .doOnError(e -> {
                     if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.setTokenUnavailable();
                         tokenTracker.trackTokenMissing(SCHEDULER_NAME);
                     }
                 });

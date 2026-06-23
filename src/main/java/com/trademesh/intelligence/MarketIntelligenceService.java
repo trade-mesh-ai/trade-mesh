@@ -81,7 +81,12 @@ public class MarketIntelligenceService {
                         return Mono.just(intelligence);
                     }
                 })
-                .doOnError(e -> log.error("Failed to generate intelligence for {}: {}", symbol, e.getMessage(), e));
+                .doOnError(e -> log.error("Failed to generate intelligence for {}: {}", symbol, e.getMessage(), e))
+                .onErrorResume(e -> {
+                    // Suppress error propagation to prevent ErrorCallbackNotImplemented
+                    log.debug("Intelligence generation failed for {}, returning empty", symbol);
+                    return Mono.empty();
+                });
     }
 
 
