@@ -78,7 +78,7 @@ public class ZerodhaAuthController {
             @Parameter(description = "Status flag from Kite Connect (success / error)")
             @RequestParam(value = "status", required = false) String status) {
 
-        log.info("Kite callback received – request_token={}, status={}", requestToken, status);
+        log.info("Kite callback received – request_token={}, status={}", SensitiveDataMasker.maskRequestToken(requestToken), status);
 
         if ("error".equalsIgnoreCase(status)) {
             log.warn("Kite Connect returned error status during callback");

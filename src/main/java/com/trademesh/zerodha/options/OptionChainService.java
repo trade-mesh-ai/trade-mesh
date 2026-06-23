@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.options;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import lombok.Data;
@@ -34,12 +35,14 @@ import static com.trademesh.config.ApplicationConstants.*;
 @RequiredArgsConstructor
 public class OptionChainService {
 
+    private static final String SCHEDULER_NAME = "OptionChainService";
 
-    // ─── Dependencies ─────────────────────────────────────────────────────────────
+    // ─── Dependencies ─────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
     private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
+    private final TokenAvailabilityTracker tokenTracker;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
 
@@ -86,6 +89,7 @@ public class OptionChainService {
                         "No Zerodha access token found in Redis. Please authenticate first.")))
                 .flatMap(accessToken -> {
                     log.info("Fetching option chain for {} from Kite API", symbol);
+                    tokenTracker.resetTracking(SCHEDULER_NAME);
 
                     Long instrumentToken = SYMBOL_TOKEN_MAP.get(symbol);
                     if (instrumentToken == null) {
@@ -105,6 +109,11 @@ public class OptionChainService {
                             .bodyToMono(KiteQuoteResponse.class)
                             .flatMap(response -> parseOptionChain(symbol, response))
                             .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
+                })
+                .doOnError(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    }
                 });
     }
 
@@ -126,6 +135,8 @@ public class OptionChainService {
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "No Zerodha access token found in Redis. Please authenticate first.")))
                 .flatMap(accessToken -> {
+                    tokenTracker.resetTracking(SCHEDULER_NAME);
+
                     WebClient client = webClientBuilder
                             .baseUrl(config.getBaseUrl())
                             .defaultHeader("Authorization", "Bearer " + accessToken)
@@ -138,6 +149,11 @@ public class OptionChainService {
                             .bodyToMono(KiteInstrumentsResponse.class)
                             .flatMap(instrumentsResponse -> buildOptionChain(symbol, spotPrice, instrumentsResponse, accessToken, client))
                             .doOnError(e -> log.error("Failed to fetch instruments for {}: {}", symbol, e.getMessage()));
+                })
+                .doOnError(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    }
                 });
     }
 

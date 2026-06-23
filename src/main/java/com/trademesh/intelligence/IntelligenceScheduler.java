@@ -1,5 +1,6 @@
 package com.trademesh.intelligence;
 
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,9 +25,12 @@ import static com.trademesh.config.ApplicationConstants.*;
 @RequiredArgsConstructor
 public class IntelligenceScheduler {
 
+    private static final String SCHEDULER_NAME = "IntelligenceScheduler";
+
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final MarketIntelligenceService marketIntelligenceService;
     private final VixAlertService vixAlertService;
+    private final TokenAvailabilityTracker tokenTracker;
 
     // ─── State tracking for condition changes ──────────────────────────────────────
     private MarketCondition previousConditionNifty50 = null;
@@ -91,6 +95,13 @@ public class IntelligenceScheduler {
                         // Update previous condition even if no change
                         setPreviousCondition(symbol, currentCondition);
                         return Mono.empty();
+                    }
+                })
+                .doOnError(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    } else {
+                        log.error("Failed to refresh intelligence for {}: {}", symbol, e.getMessage());
                     }
                 })
                 .then();

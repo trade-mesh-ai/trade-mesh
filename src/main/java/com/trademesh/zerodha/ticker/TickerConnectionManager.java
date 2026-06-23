@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.ticker;
 
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -25,8 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TickerConnectionManager {
 
     private static final int MAX_RECONNECT_ALERTS = 3;
+    private static final String SCHEDULER_NAME = "TickerConnectionManager";
 
     private final ZerodhaTickerService tickerService;
+    private final TokenAvailabilityTracker tokenTracker;
 
     /**
      * Counts consecutive failed reconnect attempts since last successful connection.
@@ -83,10 +86,16 @@ public class TickerConnectionManager {
     private void attemptConnect() {
         tickerService.connect()
                 .onErrorResume(ex -> {
-                    log.warn("[TickerConnectionManager] ⚠️  KiteTicker connect attempt failed: {}",
-                            ex.getMessage());
+                    // Check if this is a token missing error
+                    if (ex instanceof IllegalStateException && ex.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    } else {
+                        log.warn("[TickerConnectionManager] ⚠️  KiteTicker connect attempt failed: {}",
+                                ex.getMessage());
+                    }
                     return Mono.empty();
                 })
+                .doOnSuccess(v -> tokenTracker.resetTracking(SCHEDULER_NAME))
                 .subscribe();
     }
 

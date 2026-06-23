@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.ticker;
 
 import com.trademesh.config.ApplicationConstants;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
@@ -40,9 +41,12 @@ import static com.trademesh.config.ApplicationConstants.PRICE_KEY_PREFIX;
 @RequiredArgsConstructor
 public class ZerodhaTickerService {
 
+    private static final String SCHEDULER_NAME = "ZerodhaTickerService";
+
     private final ZerodhaConfig config;
     private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
+    private final TokenAvailabilityTracker tokenTracker;
     /**
      * Hot Flux sink – all subscribers receive every tick.
      */
@@ -73,10 +77,17 @@ public class ZerodhaTickerService {
                                 + "Please authenticate via GET /zerodha/login first.")))
                 .flatMap(accessToken -> {
                     log.info("Initialising KiteTicker WebSocket connection …");
+                    tokenTracker.resetTracking(SCHEDULER_NAME);
                     initKiteTicker(accessToken);
                     return Mono.<Void>empty();
                 })
-                .doOnError(e -> log.error("Failed to connect KiteTicker: {}", e.getMessage(), e));
+                .doOnError(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    } else {
+                        log.error("Failed to connect KiteTicker: {}", e.getMessage(), e);
+                    }
+                });
     }
 
     /**

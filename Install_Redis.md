@@ -92,3 +92,43 @@ Should return: PONG ✅
 ---
 
 Go ahead and restart your PC — come back once Ubuntu opens and share what you see!
+
+## Common Redis Commands:
+```bash
+sudo service redis-server start
+redis-cli ping
+```
+
+```bash
+redis-cli SET "zerodha:access_token" "TU5DdOLDmHfiKr9wKrRK6IeFlrTuFTl2"
+redis-cli GET "zerodha:access_token"
+redis-cli DEL "zerodha:access_token"  
+redis-cli KEYS "zerodha:*"
+redis-cli --scan --pattern "zerodha:*"
+```
+
+```bash
+redis-cli DEL "zerodha:access_token"
+redis-cli DEL "price:*"
+redis-cli DEL "market:intelligence:*"
+redis-cli DEL "market:maxpain:*"
+redis-cli DEL "optionchain:*"
+```
+
+```bash
+redis-cli KEYS "zerodha:*"
+redis-cli KEYS "market:intelligence:*"
+redis-cli KEYS "market:maxpain:*"
+redis-cli KEYS "optionchain:*"
+redis-cli KEYS "price:*"
+```
+
+kuldeep@kuldeep:~$ redis-cli GET zerodha:access_token
+(nil)
+kuldeep@kuldeep:~$ redis-cli SET zerodha:access_token TU5DdOLDmHfiKr9wKrRK6IeFlrTuFTl2
+OK
+kuldeep@kuldeep:~$ redis-cli GET zerodha:access_token
+"TU5DdOLDmHfiKr9wKrRK6IeFlrTuFTl2"
+kuldeep@kuldeep:~$ redis-cli DEL zerodha:access_token
+(integer) 1
+kuldeep@kuldeep:~$ redis-cli GET zerodha:access_token

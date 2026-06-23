@@ -119,7 +119,7 @@ public class ZerodhaAuthService {
         }
 
         String accessToken = data.getAccessToken();
-        log.info("Access token received: [{}]", accessToken);
+        log.info("Access token received: [{}]", SensitiveDataMasker.maskToken(accessToken));
 
         if (accessToken == null || accessToken.isBlank()) {
             return Mono.error(new IllegalStateException("Access token is null or empty"));

@@ -1,6 +1,7 @@
 package com.trademesh.intelligence;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import lombok.Data;
@@ -33,11 +34,13 @@ public class VixMonitorService {
     private static final String REDIS_KEY = "market:vix";
     private static final long INDIA_VIX_TOKEN = 264969L;
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    private static final String SCHEDULER_NAME = "VixMonitorService";
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
     private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
+    private final TokenAvailabilityTracker tokenTracker;
     // ─── Configuration ────────────────────────────────────────────────────────────
     @Value("${vix.alert-threshold:20.0}")
     private Double alertThreshold;
@@ -104,6 +107,7 @@ public class VixMonitorService {
                         "No Zerodha access token found in Redis. Please authenticate first.")))
                 .flatMap(accessToken -> {
                     log.info("Fetching VIX data from Kite API");
+                    tokenTracker.resetTracking(SCHEDULER_NAME);
 
                     WebClient client = webClientBuilder
                             .baseUrl(config.getBaseUrl())
@@ -117,6 +121,11 @@ public class VixMonitorService {
                             .bodyToMono(KiteQuoteResponse.class)
                             .flatMap(this::parseVixData)
                             .doOnError(e -> log.error("Kite API error: {}", e.getMessage()));
+                })
+                .doOnError(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    }
                 });
     }
 
