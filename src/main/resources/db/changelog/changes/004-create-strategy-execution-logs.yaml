@@ -1,0 +1,102 @@
+databaseChangeLog:
+
+  # ─── strategy_execution_logs ────────────────────────────────────────────────────
+  - changeSet:
+      id: 004-create-strategy-execution-logs
+      author: trade-mesh
+      comment: "Audit log for strategy execution events"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: strategy_execution_logs
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: symbol
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: strategy_name
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: market_condition
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: action
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: vix_level
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: executed_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: NOW()
+                  constraints:
+                    nullable: false
+
+        # Create indexes for common queries
+        - createIndex:
+            schemaName: trade_mesh
+            tableName: strategy_execution_logs
+            indexName: idx_strategy_execution_logs_symbol
+            columns:
+              - column:
+                  name: symbol
+
+        - createIndex:
+            schemaName: trade_mesh
+            tableName: strategy_execution_logs
+            indexName: idx_strategy_execution_logs_strategy_name
+            columns:
+              - column:
+                  name: strategy_name
+
+        - createIndex:
+            schemaName: trade_mesh
+            tableName: strategy_execution_logs
+            indexName: idx_strategy_execution_logs_market_condition
+            columns:
+              - column:
+                  name: market_condition
+
+        - createIndex:
+            schemaName: trade_mesh
+            tableName: strategy_execution_logs
+            indexName: idx_strategy_execution_logs_executed_at
+            columns:
+              - column:
+                  name: executed_at
+
+        - createIndex:
+            schemaName: trade_mesh
+            tableName: strategy_execution_logs
+            indexName: idx_strategy_execution_logs_symbol_executed_at
+            columns:
+              - column:
+                  name: symbol
+              - column:
+                  name: executed_at

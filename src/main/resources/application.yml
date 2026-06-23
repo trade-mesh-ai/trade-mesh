@@ -112,6 +112,18 @@ strategy:
     stop-loss-percent: 100
     target-profit-percent: 50
 
+# ─── Trading Configuration ───────────────────────────────────────────────────────
+trading:
+  mode: paper
+  symbols:
+    - NIFTY
+    - BANKNIFTY
+  paper:
+    enabled: true
+    lot-size:
+      NIFTY: 75
+      BANKNIFTY: 30
+
 # ─── Logging ─────────────────────────────────────────────────────────────────────
 logging:
   level:

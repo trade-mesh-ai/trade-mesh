@@ -2,7 +2,6 @@ package com.trademesh.strategy.expiryday;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 /**
  * Configuration properties for the Expiry Day Strangle strategy.
@@ -24,7 +23,6 @@ import org.springframework.stereotype.Component;
  * </pre>
  */
 @Data
-@Component
 @ConfigurationProperties(prefix = "strategy.expiry-day")
 public class ExpiryDayConfig {
 
