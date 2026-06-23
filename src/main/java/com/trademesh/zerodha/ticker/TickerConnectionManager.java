@@ -27,19 +27,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TickerConnectionManager {
 
     private static final String SCHEDULER_NAME = "TickerConnectionManager";
-
+    private static final Object TOKEN_LOCK = new Object();
     private final ZerodhaTickerService tickerService;
     private final TokenAvailabilityTracker tokenTracker;
-
-    @Value("${zerodha.ticker.max-reconnect-alerts:10}")
-    private int maxReconnectAlerts;
-
-    private static final Object TOKEN_LOCK = new Object();
-
     /**
      * Counts consecutive failed reconnect attempts since last successful connection.
      */
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
+    @Value("${zerodha.ticker.max-reconnect-alerts:10}")
+    private int maxReconnectAlerts;
 
     // ─── Application startup ──────────────────────────────────────────────────────
 

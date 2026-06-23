@@ -125,7 +125,7 @@ public class VixMonitorService {
                             .retrieve()
                             .bodyToMono(KiteQuoteResponse.class)
                             .flatMap(this::parseVixData)
-                            .doOnError(e -> log.error("Kite API error: {}", e.getMessage()));
+                            .doOnError(e -> log.error("Kite API error fetching VIX: {}", e.getMessage(), e));
                 })
                 .doOnError(e -> {
                     if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
@@ -138,7 +138,8 @@ public class VixMonitorService {
                         log.debug("VIX fetch failed due to missing token, returning empty to allow scheduler to continue");
                         return Mono.empty();
                     }
-                    return Mono.error(e);
+                    log.warn("VIX fetch failed with error: {}, returning empty", e.getMessage());
+                    return Mono.empty();
                 });
     }
 
@@ -153,10 +154,18 @@ public class VixMonitorService {
         KiteQuoteResponse.QuoteData data = response.getData();
 
         Double currentVix = data.getLastPrice();
+        if (currentVix == null || currentVix <= 0) {
+            return Mono.error(new IllegalStateException("Invalid VIX value: " + currentVix));
+        }
+
         Double previousClose = data.getPrevDayClose();
-        Double changePercent = previousClose != null && previousClose > 0
-                ? ((currentVix - previousClose) / previousClose) * 100
-                : 0.0;
+        Double changePercent = 0.0;
+
+        if (previousClose != null && previousClose > 0) {
+            changePercent = ((currentVix - previousClose) / previousClose) * 100;
+        } else {
+            log.debug("Previous close not available for VIX, using 0% change");
+        }
 
         VixLevel vixLevel = VixLevel.fromValue(currentVix);
 

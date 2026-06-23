@@ -192,12 +192,12 @@ public class ZerodhaTickerService {
                 .timestamp(Instant.now())
                 .build();
 
-        log.debug("Tick [{}] LTP={} H={} L={} V={}",
+      /*  log.debug("Tick [{}] LTP={} H={} L={} V={}",
                 symbol,
                 tickData.getLastPrice(),
                 tickData.getHighPrice(),
                 tickData.getLowPrice(),
-                tickData.getVolume());
+                tickData.getVolume());*/
 
         // Emit to reactive stream
         tickSink.tryEmitNext(tickData);

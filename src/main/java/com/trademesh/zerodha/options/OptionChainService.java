@@ -60,7 +60,9 @@ public class OptionChainService {
         return redisTemplate.opsForValue().get(redisKey)
                 .flatMap(cached -> {
                     log.debug("Option chain for {} found in cache", symbol);
-                    return Mono.just(deserializeOptionChain(cached));
+                    OptionChain optionChain = deserializeOptionChain(cached);
+                    log.info("Successfully retrieved option chain for {} from cache", symbol);
+                    return Mono.just(optionChain);
                 })
                 .switchIfEmpty(
                         // Cache miss: fetch from Kite API
@@ -74,6 +76,8 @@ public class OptionChainService {
                                             .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
                                 })
                 )
+                .doOnSuccess(optionChain -> log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
+                        symbol, optionChain.getStrikes().size(), optionChain.getExpiryDate()))
                 .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", symbol, e.getMessage(), e));
     }
 
@@ -107,6 +111,7 @@ public class OptionChainService {
                             .uri("/quote/?i=NSE:" + symbol + "&mode=full")
                             .retrieve()
                             .bodyToMono(KiteQuoteResponse.class)
+                            .doOnSuccess(quoteResp -> log.info("Successfully fetched quote data for {} from Kite API", symbol))
                             .flatMap(response -> parseOptionChain(symbol, response))
                             .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
                 })
@@ -155,6 +160,7 @@ public class OptionChainService {
                             .uri("/instruments")
                             .retrieve()
                             .bodyToMono(KiteInstrumentsResponse.class)
+                            .doOnSuccess(instrumentsResp -> log.info("Successfully fetched instruments for {}", symbol))
                             .flatMap(instrumentsResponse -> buildOptionChain(symbol, spotPrice, instrumentsResponse, accessToken, client))
                             .doOnError(e -> log.error("Failed to fetch instruments for {}: {}", symbol, e.getMessage()));
                 })
@@ -231,15 +237,17 @@ public class OptionChainService {
                         .expiryDate(nearestExpiry)
                         .strikes(strikes)
                         .fetchedAt(Instant.now())
-                        .build());
+                        .build())
+                .doOnSuccess(optionChain -> log.info("Successfully built option chain for {} with {} strikes, expiry: {}, spot price: {}",
+                        symbol, optionChain.getStrikes().size(), nearestExpiry, spotPrice));
     }
 
     /**
      * Fetches quote data for all option strikes.
      */
-    private Mono<KiteQuotesResponse> fetchQuotesForStrikes(WebClient client, List<String> instrumentTokens) {
+    private Mono<com.trademesh.zerodha.options.KiteQuotesResponse> fetchQuotesForStrikes(WebClient client, List<String> instrumentTokens) {
         if (instrumentTokens.isEmpty()) {
-            return Mono.just(new KiteQuotesResponse());
+            return Mono.just(new com.trademesh.zerodha.options.KiteQuotesResponse());
         }
 
         // Build comma-separated list of instrument tokens
@@ -252,10 +260,10 @@ public class OptionChainService {
                         .queryParam("mode", "full")
                         .build())
                 .retrieve()
-                .bodyToMono(KiteQuotesResponse.class)
+                .bodyToMono(com.trademesh.zerodha.options.KiteQuotesResponse.class)
                 .onErrorResume(e -> {
                     log.error("Failed to fetch quotes for strikes: {}", e.getMessage());
-                    return Mono.just(new KiteQuotesResponse());
+                    return Mono.just(new com.trademesh.zerodha.options.KiteQuotesResponse());
                 });
     }
 
@@ -265,14 +273,14 @@ public class OptionChainService {
     private List<OptionStrike> buildStrikesFromQuotes(String symbol, BigDecimal spotPrice,
                                                       LocalDate expiryDate,
                                                       Map<BigDecimal, List<KiteInstrumentsResponse.Instrument>> strikeGroups,
-                                                      KiteQuotesResponse quotesResponse) {
+                                                      com.trademesh.zerodha.options.KiteQuotesResponse quotesResponse) {
         List<OptionStrike> strikes = new ArrayList<>();
 
         if (quotesResponse == null || quotesResponse.getData() == null) {
             return strikes;
         }
 
-        Map<String, KiteQuotesResponse.QuoteData> quoteMap = quotesResponse.getData();
+        Map<String, com.trademesh.zerodha.options.KiteQuotesResponse.QuoteData> quoteMap = quotesResponse.getData();
 
         for (Map.Entry<BigDecimal, List<KiteInstrumentsResponse.Instrument>> entry : strikeGroups.entrySet()) {
             BigDecimal strikePrice = entry.getKey();
@@ -284,7 +292,7 @@ public class OptionChainService {
             // Find call and put quotes for this strike
             for (KiteInstrumentsResponse.Instrument inst : instruments) {
                 String tradingSymbol = "NFO:" + inst.getTradingSymbol();
-                KiteQuotesResponse.QuoteData quote = quoteMap.get(tradingSymbol);
+                com.trademesh.zerodha.options.KiteQuotesResponse.QuoteData quote = quoteMap.get(tradingSymbol);
 
                 if (quote != null) {
                     if ("CE".equals(inst.getInstrumentType())) {
@@ -374,7 +382,7 @@ public class OptionChainService {
     // ─── Inner DTOs for Kite API Response ──────────────────────────────────────────
 
     /**
-     * Minimal representation of Kite Connect Quote API response.
+     * Minimal representation of Kite Connect Quote API response for single instrument.
      */
     @Data
     static class KiteQuoteResponse {
