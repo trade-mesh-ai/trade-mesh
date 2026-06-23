@@ -77,14 +77,11 @@ public class ZerodhaTickerService {
                                 + "Please authenticate via GET /zerodha/login first.")))
                 .flatMap(accessToken -> {
                     log.info("Initialising KiteTicker WebSocket connection …");
-                    tokenTracker.resetTracking(SCHEDULER_NAME);
                     initKiteTicker(accessToken);
                     return Mono.<Void>empty();
                 })
                 .doOnError(e -> {
-                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
-                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
-                    } else {
+                    if (!(e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token"))) {
                         log.error("Failed to connect KiteTicker: {}", e.getMessage(), e);
                     }
                 });

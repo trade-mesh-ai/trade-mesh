@@ -14,6 +14,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * - Subsequent occurrences: logs a simple one-line WARN (no stack trace)
  * - Token becomes available: automatically resets tracking
  * <p>
+ * Deduplicates concurrent calls from the same scheduler to prevent log bursts
+ * when multiple operations fire simultaneously (e.g., 4 option chain calls at startup).
+ * <p>
  * This prevents log spam during development/testing while ensuring operators
  * are alerted on first occurrence.
  * <p>
@@ -30,6 +33,13 @@ public class TokenAvailabilityTracker {
     private final ConcurrentHashMap<String, AtomicBoolean> firstWarningLogged = new ConcurrentHashMap<>();
 
     /**
+     * Tracks whether a scheduler is currently logging a token-missing warning.
+     * Prevents concurrent calls from the same scheduler from logging multiple times.
+     * Key: scheduler name, Value: true if logging is in progress
+     */
+    private final ConcurrentHashMap<String, AtomicBoolean> loggingInProgress = new ConcurrentHashMap<>();
+
+    /**
      * Global token availability state. Prevents race conditions where one service
      * resets tracking while another is still processing a token-missing error.
      * true = token is available, false = token is missing
@@ -39,6 +49,7 @@ public class TokenAvailabilityTracker {
     /**
      * Logs a warning when token is missing, suppressing stack traces on subsequent calls.
      * Only logs if the token is not already marked as available (prevents race condition logging).
+     * Deduplicates concurrent calls from the same scheduler to prevent log bursts.
      *
      * @param schedulerName name of the scheduler (e.g., "TickerConnectionManager", "IntelligenceScheduler")
      */
@@ -50,17 +61,35 @@ public class TokenAvailabilityTracker {
             return;
         }
 
-        AtomicBoolean logged = firstWarningLogged.computeIfAbsent(
+        // Deduplicate concurrent calls from the same scheduler
+        // Only allow one thread to log per scheduler per token-missing event
+        AtomicBoolean logging = loggingInProgress.computeIfAbsent(
                 schedulerName,
                 key -> new AtomicBoolean(false)
         );
 
-        if (!logged.getAndSet(true)) {
-            // First occurrence: log detailed warning
-            log.warn("Zerodha not authenticated. Skipping [{}] until login.", schedulerName);
-        } else {
-            // Subsequent occurrences: log simple one-liner (no stack trace)
-            log.warn("[{}] Zerodha token still missing.", schedulerName);
+        // Use compare-and-set to ensure only one thread logs
+        if (!logging.compareAndSet(false, true)) {
+            // Another thread is already logging for this scheduler, skip
+            return;
+        }
+
+        try {
+            AtomicBoolean logged = firstWarningLogged.computeIfAbsent(
+                    schedulerName,
+                    key -> new AtomicBoolean(false)
+            );
+
+            if (!logged.getAndSet(true)) {
+                // First occurrence: log detailed warning
+                log.warn("Zerodha not authenticated. Skipping [{}] until login.", schedulerName);
+            } else {
+                // Subsequent occurrences: log simple one-liner (no stack trace)
+                log.warn("[{}] Zerodha token still missing.", schedulerName);
+            }
+        } finally {
+            // Always clear the logging flag to allow future logging
+            logging.set(false);
         }
     }
 
@@ -68,6 +97,7 @@ public class TokenAvailabilityTracker {
      * Resets tracking for a scheduler when token becomes available.
      * This allows the next missing token event to log the full warning again.
      * Also marks the global token state as available to prevent race condition logging.
+     * Clears the logging-in-progress flag to allow future logging.
      *
      * @param schedulerName name of the scheduler
      */
@@ -79,6 +109,12 @@ public class TokenAvailabilityTracker {
         AtomicBoolean logged = firstWarningLogged.get(schedulerName);
         if (logged != null && logged.getAndSet(false)) {
             log.info("[{}] Zerodha token is now available. Resuming normal operations.", schedulerName);
+        }
+
+        // Clear the logging-in-progress flag to allow future logging when token becomes unavailable again
+        AtomicBoolean logging = loggingInProgress.get(schedulerName);
+        if (logging != null) {
+            logging.set(false);
         }
     }
 

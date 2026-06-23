@@ -76,8 +76,14 @@ public class OptionChainService {
                                             .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
                                 })
                 )
-                .doOnSuccess(optionChain -> log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
-                        symbol, optionChain.getStrikes().size(), optionChain.getExpiryDate()))
+                .doOnNext(optionChain -> {
+                    if (optionChain != null) {
+                        log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
+                                symbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
+                    } else {
+                        log.warn("Option chain for {} is null after fetch operation", symbol);
+                    }
+                })
                 .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", symbol, e.getMessage(), e));
     }
 
