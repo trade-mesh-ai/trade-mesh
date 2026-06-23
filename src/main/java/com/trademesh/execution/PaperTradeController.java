@@ -17,14 +17,12 @@ import java.util.UUID;
 
 /**
  * REST Controller for paper trading endpoints.
- *
- * <p>Provides endpoints for:
- * <ul>
- *   <li>Viewing all open paper trades</li>
- *   <li>Viewing closed trades history</li>
- *   <li>Calculating weekly P&L summary</li>
- *   <li>Manually closing a paper trade</li>
- * </ul>
+ * <p>
+ * Provides endpoints for:
+ * - Viewing all open paper trades
+ * - Viewing closed trades history
+ * - Calculating weekly P&L summary
+ * - Manually closing a paper trade
  */
 @Slf4j
 @RestController
@@ -37,8 +35,8 @@ public class PaperTradeController {
 
     /**
      * GET /paper/trades/open
-     *
-     * <p>Returns all currently open paper trades.
+     * <p>
+     * Returns all currently open paper trades.
      *
      * @return Flux of open PaperTrade objects
      */
@@ -51,8 +49,8 @@ public class PaperTradeController {
 
     /**
      * GET /paper/trades/history
-     *
-     * <p>Returns all closed paper trades (history).
+     * <p>
+     * Returns all closed paper trades (history).
      *
      * @return Flux of closed PaperTrade objects
      */
@@ -65,10 +63,10 @@ public class PaperTradeController {
 
     /**
      * GET /paper/trades/pnl/weekly
-     *
-     * <p>Returns weekly P&L summary aggregated by date.
-     *
-     * <p>Response format:
+     * <p>
+     * Returns weekly P&L summary aggregated by date.
+     * <p>
+     * Response format:
      * <pre>
      * {
      *   "weekStartDate": "2026-06-15",
@@ -127,8 +125,8 @@ public class PaperTradeController {
                     // Daily breakdown
                     Map<LocalDate, Double> dailyPnL = new HashMap<>();
                     for (PaperTrade trade : trades) {
-                        dailyPnL.merge(trade.getTradeDate(), 
-                                trade.getRealizedPnl() != null ? trade.getRealizedPnl() : 0, 
+                        dailyPnL.merge(trade.getTradeDate(),
+                                trade.getRealizedPnl() != null ? trade.getRealizedPnl() : 0,
                                 Double::sum);
                     }
 
@@ -149,10 +147,10 @@ public class PaperTradeController {
 
     /**
      * POST /paper/trades/{id}/close
-     *
-     * <p>Manually closes a paper trade with an optional reason.
-     *
-     * <p>Request body (optional):
+     * <p>
+     * Manually closes a paper trade with an optional reason.
+     * <p>
+     * Request body (optional):
      * <pre>
      * {
      *   "reason": "MANUAL_EXIT"
@@ -173,7 +171,7 @@ public class PaperTradeController {
                 .flatMap(trade -> {
                     if (trade.getStatus() != TradeStatus.OPEN) {
                         log.warn("Trade {} is not open, cannot close", id);
-                        return Mono.just(ResponseEntity.badRequest().build());
+                        return Mono.just(ResponseEntity.badRequest().<PaperTrade>build());
                     }
                     return paperTradingEngine.closeTrade(trade, reason)
                             .map(ResponseEntity::ok);
@@ -183,12 +181,13 @@ public class PaperTradeController {
                     log.error("Error closing paper trade: {}", id, error);
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
                 });
+
     }
 
     /**
      * GET /paper/trades/{id}
-     *
-     * <p>Retrieves a specific paper trade by ID.
+     * <p>
+     * Retrieves a specific paper trade by ID.
      *
      * @param id the UUID of the paper trade
      * @return Mono emitting ResponseEntity with the PaperTrade
@@ -207,8 +206,8 @@ public class PaperTradeController {
 
     /**
      * GET /paper/trades/symbol/{symbol}
-     *
-     * <p>Retrieves all paper trades for a specific symbol.
+     * <p>
+     * Retrieves all paper trades for a specific symbol.
      *
      * @param symbol the trading symbol (e.g., "NIFTY50", "BANKNIFTY")
      * @return Flux of PaperTrade objects for the symbol
@@ -222,8 +221,8 @@ public class PaperTradeController {
 
     /**
      * GET /paper/trades/strategy/{strategyName}
-     *
-     * <p>Retrieves all paper trades for a specific strategy.
+     * <p>
+     * Retrieves all paper trades for a specific strategy.
      *
      * @param strategyName the strategy name
      * @return Flux of PaperTrade objects for the strategy
@@ -237,10 +236,10 @@ public class PaperTradeController {
 
     /**
      * GET /paper/trades/stats
-     *
-     * <p>Returns overall paper trading statistics.
-     *
-     * <p>Response format:
+     * <p>
+     * Returns overall paper trading statistics.
+     * <p>
+     * Response format:
      * <pre>
      * {
      *   "totalTrades": 100,
