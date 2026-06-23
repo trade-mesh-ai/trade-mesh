@@ -71,8 +71,8 @@ zerodha:
     price-cache-ttl-seconds: 60
     # WebSocket health-check interval (milliseconds)
     health-check-interval-ms: 30000
-    # Max consecutive reconnect attempts before escalating to ERROR log
-    max-reconnect-alerts: 3
+    # Max consecutive reconnect attempts before escalating to ERROR log (default: 10 cycles = 5 minutes)
+    max-reconnect-alerts: 10
 
 # ─── SpringDoc / Swagger UI ──────────────────────────────────────────────────────
 springdoc:

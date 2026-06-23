@@ -3,6 +3,7 @@ package com.trademesh.zerodha.ticker;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -25,11 +26,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class TickerConnectionManager {
 
-    private static final int MAX_RECONNECT_ALERTS = 3;
     private static final String SCHEDULER_NAME = "TickerConnectionManager";
 
     private final ZerodhaTickerService tickerService;
     private final TokenAvailabilityTracker tokenTracker;
+
+    @Value("${zerodha.ticker.max-reconnect-alerts:10}")
+    private int maxReconnectAlerts;
+
+    private static final Object TOKEN_LOCK = new Object();
 
     /**
      * Counts consecutive failed reconnect attempts since last successful connection.
@@ -88,15 +93,21 @@ public class TickerConnectionManager {
                 .onErrorResume(ex -> {
                     // Check if this is a token missing error
                     if (ex instanceof IllegalStateException && ex.getMessage().contains("No Zerodha access token")) {
-                        tokenTracker.setTokenUnavailable();
-                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                        synchronized (TOKEN_LOCK) {
+                            tokenTracker.setTokenUnavailable();
+                            tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                        }
                     } else {
                         log.warn("[TickerConnectionManager] ⚠️  KiteTicker connect attempt failed: {}",
                                 ex.getMessage());
                     }
                     return Mono.empty();
                 })
-                .doOnSuccess(v -> tokenTracker.resetTracking(SCHEDULER_NAME))
+                .doOnSuccess(v -> {
+                    synchronized (TOKEN_LOCK) {
+                        tokenTracker.resetTracking(SCHEDULER_NAME);
+                    }
+                })
                 .subscribe();
     }
 
@@ -105,8 +116,10 @@ public class TickerConnectionManager {
     /**
      * Escalates log severity based on the number of consecutive reconnect attempts.
      * <p>
-     * - Attempts 1–{@value #MAX_RECONNECT_ALERTS}: WARN
-     * - Attempts &gt; {@value #MAX_RECONNECT_ALERTS}: ERROR (triggers alerting pipelines)
+     * - Attempts 1–maxReconnectAlerts: WARN
+     * - Attempts &gt; maxReconnectAlerts: ERROR (triggers alerting pipelines)
+     * <p>
+     * The threshold is configurable via zerodha.ticker.max-reconnect-alerts (default: 10 cycles = 5 minutes).
      */
     private void logDisconnectAlert(int attempts) {
         String msg = "[TickerConnectionManager] ⚠️  KiteTicker WebSocket is DISCONNECTED "
@@ -114,7 +127,7 @@ public class TickerConnectionManager {
                 + "Live market data is UNAVAILABLE. "
                 + "Strategies relying on real-time prices may produce stale signals.";
 
-        if (attempts <= MAX_RECONNECT_ALERTS) {
+        if (attempts <= maxReconnectAlerts) {
             log.warn(msg, attempts);
         } else {
             log.error("[TickerConnectionManager] 🚨 CRITICAL: KiteTicker WebSocket has been "
