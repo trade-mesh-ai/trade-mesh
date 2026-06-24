@@ -44,7 +44,7 @@ public class PortfolioService {
         return Flux.fromIterable(positions.values())
                 .filter(pos -> pos.getQuantity() != 0)
                 .doOnNext(pos -> log.debug("Position: {} qty={} pnl={}",
-                        pos.getSymbol(), pos.getQuantity(), pos.getPnl()));
+                        pos.getTradingSymbol(), pos.getQuantity(), pos.getPnl()));
     }
 
     /**
@@ -70,7 +70,7 @@ public class PortfolioService {
         return Mono.justOrEmpty(positions.get(symbol))
                 .doOnNext(pos -> log.info("Position found: {} qty={} pnl={}",
                         symbol, pos.getQuantity(), pos.getPnl()))
-                .doOnEmpty(() -> log.info("No position found for: {}", symbol));
+                .switchIfEmpty(Mono.fromRunnable(() -> log.info("No position found for: {}", symbol)));
     }
 
     /**
@@ -88,20 +88,19 @@ public class PortfolioService {
             positions.compute(symbol, (key, existing) -> {
                 if (existing == null) {
                     return PositionSummary.builder()
-                            .symbol(symbol)
+                            .tradingSymbol(symbol)
                             .quantity(quantity)
-                            .entryPrice(entryPrice)
-                            .currentPrice(entryPrice)
+                            .averagePrice(entryPrice)
+                            .lastPrice(entryPrice)
                             .pnl(0.0)
                             .pnlPercent(0.0)
-                            .entryTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                             .build();
                 } else {
                     // Update existing position
                     int newQty = existing.getQuantity() + quantity;
-                    double newEntryPrice = (existing.getEntryPrice() * existing.getQuantity() + entryPrice * quantity) / newQty;
+                    double newAveragePrice = (existing.getAveragePrice() * existing.getQuantity() + entryPrice * quantity) / newQty;
                     existing.setQuantity(newQty);
-                    existing.setEntryPrice(newEntryPrice);
+                    existing.setAveragePrice(newAveragePrice);
                     return existing;
                 }
             });
@@ -123,9 +122,9 @@ public class PortfolioService {
 
             positions.compute(symbol, (key, existing) -> {
                 if (existing != null) {
-                    existing.setCurrentPrice(currentPrice);
-                    double pnl = (currentPrice - existing.getEntryPrice()) * existing.getQuantity();
-                    double pnlPercent = ((currentPrice - existing.getEntryPrice()) / existing.getEntryPrice()) * 100;
+                    existing.setLastPrice(currentPrice);
+                    double pnl = (currentPrice - existing.getAveragePrice()) * existing.getQuantity();
+                    double pnlPercent = ((currentPrice - existing.getAveragePrice()) / existing.getAveragePrice()) * 100;
                     existing.setPnl(pnl);
                     existing.setPnlPercent(pnlPercent);
                 }
@@ -151,7 +150,7 @@ public class PortfolioService {
                 return 0.0;
             }
 
-            double finalPnl = (exitPrice - position.getEntryPrice()) * position.getQuantity();
+            double finalPnl = (exitPrice - position.getAveragePrice()) * position.getQuantity();
             positions.remove(symbol);
 
             log.info("Position closed: {} finalPnl={}", symbol, finalPnl);

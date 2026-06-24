@@ -9,7 +9,7 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicDouble;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Risk management component for validating trades against risk limits.
@@ -33,7 +33,7 @@ public class RiskManager {
     private final RiskLimitsConfig riskLimitsConfig;
 
     // Track daily P&L per day (reset at market open)
-    private final ConcurrentHashMap<LocalDate, AtomicDouble> dailyPnlMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<LocalDate, AtomicReference<Double>> dailyPnlMap = new ConcurrentHashMap<>();
 
     // Track position sizes per symbol
     private final ConcurrentHashMap<String, Integer> positionSizeMap = new ConcurrentHashMap<>();
@@ -126,7 +126,7 @@ public class RiskManager {
      */
     private boolean checkDailyLossLimit() {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        AtomicDouble dailyPnl = dailyPnlMap.getOrDefault(today, new AtomicDouble(0.0));
+        AtomicReference<Double> dailyPnl = dailyPnlMap.getOrDefault(today, new AtomicReference<>(0.0));
 
         double maxDailyLoss = -riskLimitsConfig.getDailyLossLimitPercent();
         boolean withinLimit = dailyPnl.get() >= maxDailyLoss;
@@ -167,7 +167,7 @@ public class RiskManager {
 
             // Update daily P&L
             LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-            dailyPnlMap.computeIfAbsent(today, k -> new AtomicDouble(0.0)).addAndGet(pnl);
+            dailyPnlMap.computeIfAbsent(today, k -> new AtomicReference<>(0.0)).updateAndGet(current -> current + pnl);
 
             log.info("Trade recorded: symbol={} qty={} pnl={} dailyPnl={}",
                     tradingSymbol, quantity, pnl, dailyPnlMap.get(today).get());
@@ -193,7 +193,7 @@ public class RiskManager {
     public Mono<Double> getDailyPnl() {
         return Mono.fromCallable(() -> {
             LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-            return dailyPnlMap.getOrDefault(today, new AtomicDouble(0.0)).get();
+            return dailyPnlMap.getOrDefault(today, new AtomicReference<>(0.0)).get();
         });
     }
 
@@ -205,5 +205,14 @@ public class RiskManager {
      */
     public Mono<Integer> getPositionSize(String tradingSymbol) {
         return Mono.just(positionSizeMap.getOrDefault(tradingSymbol, 0));
+    }
+
+    /**
+     * Resets all internal state maps. Used for testing purposes.
+     */
+    public void resetForTesting() {
+        dailyPnlMap.clear();
+        positionSizeMap.clear();
+        log.debug("RiskManager state reset for testing");
     }
 }

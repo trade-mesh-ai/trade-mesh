@@ -113,6 +113,7 @@ class TokenAvailabilityTrackerTest {
         assertFalse(tracker.hasLoggedFirstWarning(schedulerName));
 
         // Token missing again - should log first warning again
+        tracker.setTokenUnavailable();
         tracker.trackTokenMissing(schedulerName);
         assertTrue(tracker.hasLoggedFirstWarning(schedulerName));
     }

@@ -9,7 +9,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.test.StepVerifier;
 
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 /**
  * Unit tests for RiskManager.
@@ -33,16 +33,19 @@ class RiskManagerTest {
 
     @BeforeEach
     void setUp() {
+        // Reset RiskManager state before each test
+        riskManager.resetForTesting();
+
         // Setup default config values
-        when(riskLimitsConfig.getMaxPositionSizePerSymbol()).thenReturn(5);
-        when(riskLimitsConfig.getDailyLossLimitPercent()).thenReturn(2.0);
-        when(riskLimitsConfig.getMaxSectorExposure()).thenReturn(50000.0);
-        when(riskLimitsConfig.getMinMarginBufferPercent()).thenReturn(10.0);
+        lenient().when(riskLimitsConfig.getMaxPositionSizePerSymbol()).thenReturn(5);
+        lenient().when(riskLimitsConfig.getDailyLossLimitPercent()).thenReturn(2.0);
+        lenient().when(riskLimitsConfig.getMaxSectorExposure()).thenReturn(50000.0);
+        lenient().when(riskLimitsConfig.getMinMarginBufferPercent()).thenReturn(10.0);
 
         RiskLimitsConfig.PositionSizingConfig positionSizing = new RiskLimitsConfig.PositionSizingConfig();
         positionSizing.setRiskPercent(1.0);
         positionSizing.setMaxQuantity(10);
-        when(riskLimitsConfig.getPositionSizing()).thenReturn(positionSizing);
+        lenient().when(riskLimitsConfig.getPositionSizing()).thenReturn(positionSizing);
     }
 
     @Test

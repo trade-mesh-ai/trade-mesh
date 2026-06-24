@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.ticker;
 
 import com.trademesh.config.ApplicationConstants;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
@@ -42,6 +43,9 @@ class ZerodhaTickerServiceTest {
     @Mock
     ReactiveStringRedisTemplate redisTemplate;
 
+    @Mock
+    TokenAvailabilityTracker tokenTracker;
+
     @Test
     void tickStream_emitsTick_andStoresPriceInRedis() throws Exception {
         // Arrange
@@ -51,7 +55,7 @@ class ZerodhaTickerServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.set(anyString(), anyString(), any(java.time.Duration.class))).thenReturn(Mono.just(Boolean.TRUE));
 
-        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
+        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate, tokenTracker);
 
         Tick tick = Mockito.mock(Tick.class);
         when(tick.getInstrumentToken()).thenReturn(ApplicationConstants.TOKEN_NIFTY_50);
@@ -92,7 +96,7 @@ class ZerodhaTickerServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.set(anyString(), anyString(), any(Duration.class))).thenReturn(Mono.just(Boolean.TRUE));
 
-        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
+        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate, tokenTracker);
 
         Tick tick = Mockito.mock(Tick.class);
         when(tick.getInstrumentToken()).thenReturn(ApplicationConstants.TOKEN_NIFTY_BANK);
@@ -137,7 +141,7 @@ class ZerodhaTickerServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         when(valueOps.set(anyString(), anyString(), any(java.time.Duration.class))).thenReturn(Mono.just(Boolean.TRUE));
 
-        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
+        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate, tokenTracker);
 
         Tick tick = Mockito.mock(Tick.class);
         when(tick.getInstrumentToken()).thenReturn(ApplicationConstants.TOKEN_NIFTY_50);
@@ -172,7 +176,7 @@ class ZerodhaTickerServiceTest {
     void connect_noAccessToken_returnsError() {
         when(authService.getAccessToken()).thenReturn(Mono.empty());
 
-        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
+        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate, tokenTracker);
 
         StepVerifier.create(svc.connect())
                 .expectErrorSatisfies(err -> {
@@ -187,7 +191,7 @@ class ZerodhaTickerServiceTest {
         when(authService.getAccessToken()).thenReturn(Mono.just("dummy-access-token"));
         when(config.getApiKey()).thenReturn("dummy-api-key");
 
-        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate);
+        ZerodhaTickerService svc = new ZerodhaTickerService(config, authService, redisTemplate, tokenTracker);
 
         try (MockedConstruction<KiteTicker> mocked = Mockito.mockConstruction(KiteTicker.class,
                 (mock, context) -> {

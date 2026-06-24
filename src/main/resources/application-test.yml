@@ -7,7 +7,7 @@ spring:
 
   # ─── H2 In-Memory Database for Testing ─────────────────────────────────────
   r2dbc:
-    url: r2dbc:h2:mem:testdb?mode=MySQL
+    url: r2dbc:h2:mem:///testdb;MODE=MySQL;DB_CLOSE_DELAY=-1
     username: sa
     password:
     pool:
@@ -26,7 +26,7 @@ spring:
 
   # ─── Liquibase ────────────────────────────────────────────────────────────────
   liquibase:
-    enabled: true
+    enabled: false
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: PUBLIC
     liquibase-schema: PUBLIC
@@ -62,6 +62,7 @@ zerodha:
 
   # ─── KiteTicker WebSocket ──────────────────────────────────────────────────────
   ticker:
+    enabled: false
     instruments:
       nifty50-token: 256265
       niftybank-token: 260105

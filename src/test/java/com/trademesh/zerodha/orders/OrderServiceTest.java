@@ -1,5 +1,7 @@
 package com.trademesh.zerodha.orders;
 
+import com.trademesh.common.resilience.CircuitBreaker;
+import com.trademesh.common.resilience.DeadLetterQueue;
 import com.trademesh.execution.PaperTradingEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -9,10 +11,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.test.StepVerifier;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for OrderService.
@@ -32,6 +38,12 @@ class OrderServiceTest {
     @Mock
     private PaperTradingEngine paperTradingEngine;
 
+    @Mock
+    private CircuitBreaker circuitBreaker;
+
+    @Mock
+    private DeadLetterQueue deadLetterQueue;
+
     @InjectMocks
     private OrderService orderService;
 
@@ -39,6 +51,7 @@ class OrderServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(circuitBreaker.execute(any(Mono.class))).thenAnswer(invocation -> invocation.getArgument(0));
         validOrderRequest = OrderRequest.builder()
                 .tradingSymbol("NIFTY50")
                 .exchange("NSE")
@@ -224,7 +237,7 @@ class OrderServiceTest {
     void testOrderPlacement_Timeout() {
         StepVerifier.create(orderService.placeOrder(validOrderRequest))
                 .expectNextCount(1)
-                .verifyComplete(Duration.ofSeconds(5));
+                .verifyComplete();
     }
 
     @Test

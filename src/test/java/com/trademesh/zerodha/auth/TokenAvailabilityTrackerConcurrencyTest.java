@@ -48,9 +48,7 @@ class TokenAvailabilityTrackerConcurrencyTest {
                     // Wait for all threads to be ready
                     startLatch.await();
                     // Call trackTokenMissing
-                    tracker.trackTokenMissing(schedulerName);
-                    // Check if this thread logged the first warning
-                    if (tracker.hasLoggedFirstWarning(schedulerName)) {
+                    if (tracker.trackTokenMissing(schedulerName)) {
                         logCount.incrementAndGet();
                     }
                 } catch (InterruptedException e) {
@@ -93,8 +91,7 @@ class TokenAvailabilityTrackerConcurrencyTest {
             new Thread(() -> {
                 try {
                     startLatch.await();
-                    tracker.trackTokenMissing(scheduler1);
-                    if (tracker.hasLoggedFirstWarning(scheduler1)) {
+                    if (tracker.trackTokenMissing(scheduler1)) {
                         scheduler1LogCount.incrementAndGet();
                     }
                 } catch (InterruptedException e) {
@@ -110,8 +107,7 @@ class TokenAvailabilityTrackerConcurrencyTest {
             new Thread(() -> {
                 try {
                     startLatch.await();
-                    tracker.trackTokenMissing(scheduler2);
-                    if (tracker.hasLoggedFirstWarning(scheduler2)) {
+                    if (tracker.trackTokenMissing(scheduler2)) {
                         scheduler2LogCount.incrementAndGet();
                     }
                 } catch (InterruptedException e) {

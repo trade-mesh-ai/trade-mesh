@@ -52,13 +52,14 @@ public class TokenAvailabilityTracker {
      * Deduplicates concurrent calls from the same scheduler to prevent log bursts.
      *
      * @param schedulerName name of the scheduler (e.g., "TickerConnectionManager", "IntelligenceScheduler")
+     * @return {@code true} when this call emits the scheduler's first missing-token warning
      */
-    public void trackTokenMissing(String schedulerName) {
+    public boolean trackTokenMissing(String schedulerName) {
         // If token is already marked as available, don't log missing warnings
         // This prevents race conditions where one service resets tracking while another
         // is still processing a token-missing error from a concurrent operation
         if (tokenAvailable.get()) {
-            return;
+            return false;
         }
 
         // Deduplicate concurrent calls from the same scheduler
@@ -71,7 +72,7 @@ public class TokenAvailabilityTracker {
         // Use compare-and-set to ensure only one thread logs
         if (!logging.compareAndSet(false, true)) {
             // Another thread is already logging for this scheduler, skip
-            return;
+            return false;
         }
 
         try {
@@ -83,9 +84,11 @@ public class TokenAvailabilityTracker {
             if (!logged.getAndSet(true)) {
                 // First occurrence: log detailed warning
                 log.warn("Zerodha not authenticated. Skipping [{}] until login.", schedulerName);
+                return true;
             } else {
                 // Subsequent occurrences: log simple one-liner (no stack trace)
                 log.warn("[{}] Zerodha token still missing.", schedulerName);
+                return false;
             }
         } finally {
             // Always clear the logging flag to allow future logging
