@@ -17,16 +17,16 @@ import static org.mockito.Mockito.when;
  * Unit tests for AlertService.
  */
 @ExtendWith(MockitoExtension.class)
-class AlertServiceTest {
+class TelegramNotificationBotTest {
 
     @Mock
     private TelegramClient telegramClient;
 
-    private AlertService alertService;
+    private TelegramNotificationBot telegramNotificationBot;
 
     @BeforeEach
     void setUp() {
-        alertService = new AlertService(telegramClient);
+        telegramNotificationBot = new TelegramNotificationBot(telegramClient);
     }
 
     @Test
@@ -40,7 +40,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -57,7 +57,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        alertService.sendAlert(alert).block();
+        telegramNotificationBot.sendAlert(alert).block();
 
         verify(telegramClient).sendMessage(anyString());
     }
@@ -73,7 +73,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.error(new RuntimeException("Telegram API error")));
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
     }
 
@@ -89,7 +89,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(messageCaptor.capture()))
                 .thenReturn(Mono.empty());
 
-        alertService.sendAlert(alert).block();
+        telegramNotificationBot.sendAlert(alert).block();
 
         String sentMessage = messageCaptor.getValue();
         assert sentMessage.contains("SIGNAL_GENERATED");
@@ -109,7 +109,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(messageCaptor.capture()))
                 .thenReturn(Mono.empty());
 
-        alertService.sendAlert(alert).block();
+        telegramNotificationBot.sendAlert(alert).block();
 
         String sentMessage = messageCaptor.getValue();
         assert sentMessage.contains(alert.getTriggeredAt().toString());
@@ -127,7 +127,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(messageCaptor.capture()))
                 .thenReturn(Mono.empty());
 
-        alertService.sendAlert(alert).block();
+        telegramNotificationBot.sendAlert(alert).block();
 
         String sentMessage = messageCaptor.getValue();
         assert sentMessage.contains("<b>");
@@ -149,7 +149,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -166,7 +166,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -183,7 +183,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -200,7 +200,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -218,7 +218,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -235,7 +235,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());
@@ -252,7 +252,7 @@ class AlertServiceTest {
         when(telegramClient.sendMessage(anyString()))
                 .thenReturn(Mono.empty());
 
-        StepVerifier.create(alertService.sendAlert(alert))
+        StepVerifier.create(telegramNotificationBot.sendAlert(alert))
                 .verifyComplete();
 
         verify(telegramClient).sendMessage(anyString());

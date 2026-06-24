@@ -1,7 +1,7 @@
 package com.trademesh.trading;
 
 import com.trademesh.alert.Alert;
-import com.trademesh.alert.AlertService;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.alert.AlertType;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
@@ -32,7 +32,7 @@ import java.time.ZoneId;
 public class DailyReportService {
 
     private final PaperTradeRepository paperTradeRepository;
-    private final AlertService alertService;
+    private final TelegramNotificationBot telegramNotificationBot;
 
     /**
      * Generates and sends the daily trading report.
@@ -152,7 +152,7 @@ public class DailyReportService {
                 .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();
 
-        return alertService.sendAlert(alert)
+        return telegramNotificationBot.sendAlert(alert)
                 .doOnSuccess(v -> log.info("Daily report sent successfully"))
                 .doOnError(e -> log.error("Error sending daily report: {}", e.getMessage(), e));
     }
@@ -177,7 +177,7 @@ public class DailyReportService {
                 .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();
 
-        return alertService.sendAlert(alert)
+        return telegramNotificationBot.sendAlert(alert)
                 .doOnSuccess(v -> log.info("No trades alert sent"))
                 .doOnError(e -> log.error("Error sending no trades alert: {}", e.getMessage(), e));
     }

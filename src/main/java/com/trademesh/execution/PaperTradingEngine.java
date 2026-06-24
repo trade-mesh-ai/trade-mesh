@@ -1,7 +1,7 @@
 package com.trademesh.execution;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.trademesh.alert.AlertService;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
@@ -41,7 +41,7 @@ public class PaperTradingEngine {
     );
     private final PaperTradeRepository paperTradeRepository;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
-    private final AlertService alertService;
+    private final TelegramNotificationBot telegramNotificationBot;
     private final ObjectMapper objectMapper;
 
     /**
@@ -93,7 +93,7 @@ public class PaperTradingEngine {
                 .flatMap(savedTrade -> {
                     // Send Telegram alert
                     String alert = formatEntryAlert(savedTrade, signal);
-                    return alertService.sendAlert(createAlert(savedTrade, alert))
+                    return telegramNotificationBot.sendAlert(createAlert(savedTrade, alert))
                             .then(Mono.just(savedTrade));
                 })
                 .doOnSuccess(savedTrade -> log.info("Paper trade executed: {} for {}", savedTrade.getId(), savedTrade.getSymbol()))
@@ -183,7 +183,7 @@ public class PaperTradingEngine {
                 .flatMap(closedTrade -> {
                     // Send Telegram alert
                     String alert = formatExitAlert(closedTrade);
-                    return alertService.sendAlert(createAlert(closedTrade, alert))
+                    return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
                             .then(Mono.just(closedTrade));
                 })
                 .doOnSuccess(closedTrade -> log.info("Paper trade closed: {} with P&L: {}",

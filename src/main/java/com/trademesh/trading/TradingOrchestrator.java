@@ -1,7 +1,7 @@
 package com.trademesh.trading;
 
 import com.trademesh.alert.Alert;
-import com.trademesh.alert.AlertService;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.alert.AlertType;
 import com.trademesh.execution.PaperTradingEngine;
 import com.trademesh.intelligence.MarketIntelligence;
@@ -41,7 +41,7 @@ public class TradingOrchestrator {
     private final MarketIntelligenceService marketIntelligenceService;
     private final StrategySelector strategySelector;
     private final PaperTradingEngine paperTradingEngine;
-    private final AlertService alertService;
+    private final TelegramNotificationBot telegramNotificationBot;
     private final StrategyExecutionLogRepository executionLogRepository;
 
     /**
@@ -227,7 +227,7 @@ public class TradingOrchestrator {
                 .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();
 
-        return alertService.sendAlert(alert);
+        return telegramNotificationBot.sendAlert(alert);
     }
 
     /**
@@ -254,6 +254,6 @@ public class TradingOrchestrator {
                 .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();
 
-        return alertService.sendAlert(alert);
+        return telegramNotificationBot.sendAlert(alert);
     }
 }

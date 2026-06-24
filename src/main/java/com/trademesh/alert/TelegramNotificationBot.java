@@ -10,11 +10,11 @@ import reactor.core.publisher.Mono;
  */
 @Slf4j
 @Service
-public class AlertService {
+public class TelegramNotificationBot {
 
     private final TelegramClient telegramClient;
 
-    public AlertService(TelegramClient telegramClient) {
+    public TelegramNotificationBot(TelegramClient telegramClient) {
         this.telegramClient = telegramClient;
     }
 
