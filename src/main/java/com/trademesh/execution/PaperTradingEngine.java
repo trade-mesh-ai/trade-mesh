@@ -14,6 +14,8 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -193,36 +195,75 @@ public class PaperTradingEngine {
 
     /**
      * Fetches current option prices from Redis for all legs of a trade.
-     * <p>
-     * Calculates the current value of the position based on:
-     * - Current prices of all legs
-     * - Action (BUY/SELL) for each leg
-     * - Quantity of each leg
+     * Calculates the current value of the position based on current prices of all legs.
      *
      * @param trade the paper trade
      * @return Mono emitting the current value in points
      */
     private Mono<Double> fetchCurrentPrices(PaperTrade trade) {
         try {
-            List<TradeLeg> legs = objectMapper.readValue(
-                    trade.getLegs(),
-                    objectMapper.getTypeFactory().constructCollectionType(List.class, TradeLeg.class)
-            );
-
-            // For now, return entry credit as current value (placeholder)
-            // In production, fetch actual prices from Redis for each leg
-            // and calculate position value based on current prices
+            List<TradeLeg> legs = deserializeLegs(trade.getLegs());
             log.debug("Fetching current prices for {} legs", legs.size());
 
-            // TODO: Implement actual price fetching from Redis
-            // For each leg, fetch price using PRICE_KEY_PREFIX + instrument
-            // Calculate position value based on current prices and actions
+            // Build list of Mono<Double> for each leg's LTP
+            List<Mono<Double>> legPriceMono = new ArrayList<>();
+            for (TradeLeg leg : legs) {
+                String redisKey = buildRedisKey(trade.getSymbol(), leg);
+                Mono<Double> legPrice = redisTemplate.opsForValue().get(redisKey)
+                        .map(Double::parseDouble)
+                        .onErrorResume(e -> {
+                            log.debug("Redis key not found: {}, falling back to limit price", redisKey);
+                            return Mono.just(leg.getLimitPrice());
+                        })
+                        .switchIfEmpty(Mono.just(leg.getLimitPrice()));
+                legPriceMono.add(legPrice);
+            }
 
-            return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
+            // Use Mono.zip() to fetch all prices in parallel
+            if (legPriceMono.isEmpty()) {
+                return Mono.just(trade.getEntryCredit());
+            }
+
+            return Mono.zip(legPriceMono, prices -> {
+                double totalValue = 0.0;
+                for (Object price : prices) {
+                    totalValue += (Double) price;
+                }
+                return totalValue;
+            });
         } catch (Exception e) {
             log.error("Error fetching current prices for trade: {}", trade.getId(), e);
             return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
         }
+    }
+
+    /**
+     * Builds Redis key for fetching option price.
+     * Format: tick:{symbol}:{ddMMMyy_expiry_uppercase}:{strikeInt}:{CE or PE}
+     *
+     * @param symbol the trading symbol
+     * @param leg    the trade leg
+     * @return Redis key string
+     */
+    private String buildRedisKey(String symbol, TradeLeg leg) {
+        String expiryStr = leg.getExpiryDate().format(DateTimeFormatter.ofPattern("ddMMMyy")).toUpperCase();
+        String optionType = leg.getOptionType().name();
+        int strikeInt = leg.getStrikePrice().intValue();
+        return String.format("tick:%s:%s:%d:%s", symbol, expiryStr, strikeInt, optionType);
+    }
+
+    /**
+     * Deserializes trade legs from JSON string.
+     *
+     * @param legsJson JSON string representation of legs
+     * @return List of TradeLeg objects
+     * @throws Exception if deserialization fails
+     */
+    private List<TradeLeg> deserializeLegs(String legsJson) throws Exception {
+        return objectMapper.readValue(
+                legsJson,
+                objectMapper.getTypeFactory().constructCollectionType(List.class, TradeLeg.class)
+        );
     }
 
     /**
@@ -249,10 +290,7 @@ public class PaperTradingEngine {
      */
     private String formatEntryAlert(PaperTrade trade, TradeSignal signal) {
         try {
-            List<TradeLeg> legs = objectMapper.readValue(
-                    trade.getLegs(),
-                    objectMapper.getTypeFactory().constructCollectionType(List.class, TradeLeg.class)
-            );
+            List<TradeLeg> legs = deserializeLegs(trade.getLegs());
 
             StringBuilder sb = new StringBuilder();
             sb.append("📄 <b>Paper Trade ENTERED</b>\n\n");

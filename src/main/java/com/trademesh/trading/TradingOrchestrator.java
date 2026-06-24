@@ -1,8 +1,8 @@
 package com.trademesh.trading;
 
 import com.trademesh.alert.Alert;
-import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.alert.AlertType;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.execution.PaperTradingEngine;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketIntelligenceService;

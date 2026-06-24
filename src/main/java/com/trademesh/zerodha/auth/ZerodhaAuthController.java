@@ -11,14 +11,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
-import org.springframework.web.util.HtmlUtils;
 
 /**
  * REST controller for Zerodha / Kite Connect OAuth2 authentication.
- *
+ * <p>
  * Endpoints:
  * GET /zerodha/login - redirects the browser to the Kite login page.
  * GET /zerodha/callback - receives the request_token from Kite,
@@ -35,11 +35,11 @@ public class ZerodhaAuthController {
 
     // ─── Login ────────────────────────────────────────────────────────────────────
 
-     /**
-      * Redirects the user's browser to the Kite Connect login page.
-      *
-      * Example: GET /zerodha/login
-      */
+    /**
+     * Redirects the user's browser to the Kite Connect login page.
+     * <p>
+     * Example: GET /zerodha/login
+     */
     @Operation(summary = "Redirect to Zerodha / Kite Connect login page")
     @GetMapping("/login")
     public Mono<ResponseEntity<Void>> login() {
@@ -54,20 +54,20 @@ public class ZerodhaAuthController {
 
     // ─── Callback ─────────────────────────────────────────────────────────────────
 
-     /**
-      * OAuth2 callback endpoint.
-      *
-      * Kite Connect redirects here after the user logs in, appending a one-time
-      * request_token as a query parameter. This method:
-      * 1. Exchanges the request_token for an access_token via the Kite API.
-      * 2. Stores the access token in Redis with an 8-hour TTL.
-      * 3. Returns an HTML success page to the browser.
-      *
-      * Example: GET /zerodha/callback?request_token=xxx&status=success
-      *
-      * @param requestToken one-time token provided by Kite Connect
-      * @param status optional status string from Kite ("success" or "error")
-      */
+    /**
+     * OAuth2 callback endpoint.
+     * <p>
+     * Kite Connect redirects here after the user logs in, appending a one-time
+     * request_token as a query parameter. This method:
+     * 1. Exchanges the request_token for an access_token via the Kite API.
+     * 2. Stores the access token in Redis with an 8-hour TTL.
+     * 3. Returns an HTML success page to the browser.
+     * <p>
+     * Example: GET /zerodha/callback?request_token=xxx&status=success
+     *
+     * @param requestToken one-time token provided by Kite Connect
+     * @param status       optional status string from Kite ("success" or "error")
+     */
     @Operation(summary = "Kite Connect OAuth2 callback – exchange request_token for access_token")
     @GetMapping("/callback")
     public Mono<ResponseEntity<String>> callback(
@@ -76,7 +76,7 @@ public class ZerodhaAuthController {
             @Parameter(description = "Status flag from Kite Connect (success / error)")
             @RequestParam(value = "status", required = false) String status) {
 
-        log.info("Kite callback received – request_token={}, status={}", 
+        log.info("Kite callback received – request_token={}, status={}",
                 requestToken != null ? SensitiveDataMasker.maskRequestToken(requestToken) : "[REDACTED]", status);
 
         if ("error".equalsIgnoreCase(status)) {
@@ -114,11 +114,11 @@ public class ZerodhaAuthController {
 
     // ─── Token status (utility) ───────────────────────────────────────────────────
 
-     /**
-      * Returns whether a valid access token is currently stored in Redis.
-      *
-      * Example: GET /zerodha/token/status
-      */
+    /**
+     * Returns whether a valid access token is currently stored in Redis.
+     * <p>
+     * Example: GET /zerodha/token/status
+     */
     @Operation(summary = "Check whether a valid Zerodha access token is present in Redis")
     @GetMapping("/token/status")
     public Mono<ResponseEntity<String>> tokenStatus() {

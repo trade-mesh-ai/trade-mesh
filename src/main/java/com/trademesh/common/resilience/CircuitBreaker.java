@@ -31,6 +31,7 @@ public class CircuitBreaker {
     private final AtomicInteger failureCount = new AtomicInteger(0);
     private final AtomicInteger successCount = new AtomicInteger(0);
     private final AtomicReference<Instant> lastFailureTime = new AtomicReference<>();
+
     /**
      * Creates a circuit breaker with default configuration.
      *

@@ -4,11 +4,7 @@ Use R2DBC for PostgreSQL.
 Use existing Redis connection.
 
 ## Java Docs
-proper multi-line Javadoc is fine, but remove ALL
-HTML tags (<p>, <ul>, <li>, <br> etc.) from every Javadoc comment. Keep @param, @return, and descriptive text —
-just no HTML formatting. Apply to class-level comment and all methods.
-Then proceed with implementation.
-
+- Javadoc: plain multi-line, no HTML tags
 
 ## Database
 

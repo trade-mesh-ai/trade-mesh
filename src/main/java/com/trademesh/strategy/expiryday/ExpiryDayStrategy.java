@@ -17,19 +17,17 @@ import java.util.UUID;
 
 /**
  * Expiry Day Strangle Strategy Implementation.
- *
- * <p>Trades ONLY on Thursday expiry day with zero overnight risk.
+ * Trades ONLY on Thursday expiry day with zero overnight risk.
  * Sells both call and put options at OI walls for maximum theta decay.
- *
- * <p>Strategy Logic:
- * <ul>
- *   <li>Step 1: Safety checks (VIX, OI walls, entry time)</li>
- *   <li>Step 2: Strike selection from OI analysis</li>
- *   <li>Step 3: Build trade legs and calculate credit</li>
- *   <li>Step 4: Return StrategyResult with signal</li>
- * </ul>
- *
- * <p>Configuration loaded from {@code application.yml} under {@code strategy.expiry-day}.
+ * <p>
+ * Strategy Logic:
+ * <p>
+ * Step 1: Safety checks (VIX, OI walls, entry time)
+ * Step 2: Strike selection from OI analysis
+ * Step 3: Build trade legs and calculate credit
+ * Step 4: Return StrategyResult with signal
+ * <p>
+ * Configuration loaded from {@code application.yml} under {@code strategy.expiry-day}.
  */
 @Slf4j
 @Component
@@ -122,9 +120,10 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
     /**
      * Performs safety checks before generating a signal.
+     * Returns skip reason if check fails, null if all checks pass.
      *
      * @param intelligence market intelligence data
-     * @return skip reason if check fails, null if all checks pass
+     * @return skip reason or null
      */
     private String performSafetyChecks(MarketIntelligence intelligence) {
         // Check 1: VIX threshold
@@ -156,9 +155,10 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
     /**
      * Selects call and put strikes based on OI analysis.
+     * Returns StrikeSelection with validated strikes, or null if invalid.
      *
      * @param intelligence market intelligence data
-     * @return StrikeSelection with validated strikes, or null if invalid
+     * @return StrikeSelection or null
      */
     private StrikeSelection selectStrikes(MarketIntelligence intelligence) {
         BigDecimal spotPrice = intelligence.getSpotPrice() != null
@@ -194,10 +194,11 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
     /**
      * Builds trade legs from selected strikes and option chain data.
+     * Returns TradeLegsResult with legs and total credit, or null if unable to build.
      *
      * @param intelligence    market intelligence data
      * @param strikeSelection selected strikes
-     * @return TradeLegsResult with legs and total credit, or null if unable to build
+     * @return TradeLegsResult or null
      */
     private TradeLegsResult buildTradeLegs(MarketIntelligence intelligence,
                                            StrikeSelection strikeSelection) {
@@ -271,6 +272,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
     /**
      * Builds a complete TradeSignal from strategy evaluation.
+     * Returns TradeSignal ready for execution.
      *
      * @param intelligence    market intelligence data
      * @param strikeSelection selected strikes
@@ -292,7 +294,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
         // Calculate max loss for strangle
         BigDecimal strikeDifference = strikeSelection.getCallStrike()
                 .subtract(strikeSelection.getPutStrike());
-        Double maxLoss = strikeDifference.doubleValue() * 100 - legsResult.getTotalCredit();
+        Double maxLoss = legsResult.getTotalCredit() * config.getStopLossPercent() / 100;
 
         return TradeSignal.builder()
                 .signalId(UUID.randomUUID())

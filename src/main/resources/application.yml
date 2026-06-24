@@ -111,6 +111,7 @@ strategy:
     max-lots: 1
     stop-loss-percent: 100
     target-profit-percent: 50
+  mark-to-market-interval-ms: 60000
 
 # ─── Trading Configuration ───────────────────────────────────────────────────────
 trading:
