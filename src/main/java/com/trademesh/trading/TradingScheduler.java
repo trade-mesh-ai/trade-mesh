@@ -24,6 +24,7 @@ public class TradingScheduler {
 
     private final TradingOrchestrator tradingOrchestrator;
     private final DailyReportService dailyReportService;
+    private final MarketCalendarService marketCalendarService;
 
     /**
      * Runs trading cycle entry on Thursday at 9:30 AM IST.
@@ -39,115 +40,153 @@ public class TradingScheduler {
      * - *: month (any)
      * - THU: day of week (Thursday)
      */
+    // Expiry day: THU — see trading.expiry-day in application.yml
     @Scheduled(cron = "0 30 9 * * THU", zone = "Asia/Kolkata")
     public void runThursdayEntry() {
-        log.info("🚀 Starting Thursday 9:30 AM trading cycle entry");
+        marketCalendarService.isMarketOpen()
+                .filter(Boolean::booleanValue)
+                .flatMap(ignored -> reactor.core.publisher.Mono.fromRunnable(() -> {
+                    log.info("🚀 Starting Thursday 9:30 AM trading cycle entry");
 
-        // Run trading cycle for NIFTY
-        tradingOrchestrator.runTradingCycle("NIFTY50")
-                .doOnSuccess(result -> {
-                    if (result.getIsExecutable()) {
-                        log.info("✅ NIFTY trading cycle executed successfully");
-                    } else {
-                        log.info("⏭️ NIFTY trading cycle skipped: {}", result.getSkipReason());
-                    }
-                })
-                .doOnError(e -> log.error("❌ Error in NIFTY trading cycle: {}", e.getMessage(), e))
-                .subscribe();
+                    // Run trading cycle for NIFTY
+                    tradingOrchestrator.runTradingCycle("NIFTY50")
+                            .doOnSuccess(result -> {
+                                if (result.getIsExecutable()) {
+                                    log.info("✅ NIFTY trading cycle executed successfully");
+                                } else {
+                                    log.info("⏭️ NIFTY trading cycle skipped: {}", result.getSkipReason());
+                                }
+                            })
+                            .doOnError(e -> log.error("❌ Error in NIFTY trading cycle: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
 
-        // Run trading cycle for BANKNIFTY
-        tradingOrchestrator.runTradingCycle("BANKNIFTY")
-                .doOnSuccess(result -> {
-                    if (result.getIsExecutable()) {
-                        log.info("✅ BANKNIFTY trading cycle executed successfully");
-                    } else {
-                        log.info("⏭️ BANKNIFTY trading cycle skipped: {}", result.getSkipReason());
-                    }
-                })
-                .doOnError(e -> log.error("❌ Error in BANKNIFTY trading cycle: {}", e.getMessage(), e))
-                .subscribe();
+                    // Run trading cycle for BANKNIFTY
+                    tradingOrchestrator.runTradingCycle("BANKNIFTY")
+                            .doOnSuccess(result -> {
+                                if (result.getIsExecutable()) {
+                                    log.info("✅ BANKNIFTY trading cycle executed successfully");
+                                } else {
+                                    log.info("⏭️ BANKNIFTY trading cycle skipped: {}", result.getSkipReason());
+                                }
+                            })
+                            .doOnError(e -> log.error("❌ Error in BANKNIFTY trading cycle: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                }))
+                .subscribe(ignored -> {
+                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
 
     /**
      * Monitors open positions every 5 minutes during market hours.
      * <p>
-     * Runs from 9:15 AM to 3:30 PM IST, Monday to Friday.
+     * Runs from 9:15 AM to 2:55 PM IST, Monday to Friday.
      * Updates position values and checks for stop loss / target triggers.
      * <p>
-     * Cron: "0 *\/5 9-15 * * MON-FRI"
+     * Cron: "0 *\/5 9-14 * * MON-FRI"
      * - 0: second (0)
      * - *\/5: every 5 minutes
-     * - 9-15: hours 9 AM to 3 PM (note: 15 = 3 PM, but cron hour 15 is 3 PM)
+     * - 9-14: hours 9 AM to 2 PM (stops at 2:55 PM, not 3:55 PM)
      * - *: day of month (any)
      * - *: month (any)
      * - MON-FRI: Monday to Friday
      * <p>
      * Note: This runs at :00, :05, :10, :15, :20, :25, :30, :35, :40, :45, :50, :55
-     * of each hour from 9 AM to 3 PM.
+     * of each hour from 9 AM to 2 PM.
      */
-    @Scheduled(cron = "0 */5 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 */5 9-14 * * MON-FRI", zone = "Asia/Kolkata")
     public void monitorPositionsDuringMarketHours() {
-        log.debug("📊 Monitoring open positions during market hours");
+        marketCalendarService.isMarketOpen()
+                .filter(Boolean::booleanValue)
+                .flatMap(ignored -> reactor.core.publisher.Mono.fromRunnable(() -> {
+                    log.debug("📊 Monitoring open positions during market hours");
 
-        // Monitor NIFTY positions
-        tradingOrchestrator.monitorOpenPositions("NIFTY50")
-                .doOnSuccess(count -> {
-                    if (count > 0) {
-                        log.debug("Updated {} NIFTY positions", count);
-                    }
-                })
-                .doOnError(e -> log.error("Error monitoring NIFTY positions: {}", e.getMessage(), e))
-                .subscribe();
+                    // Monitor NIFTY positions
+                    tradingOrchestrator.monitorOpenPositions("NIFTY50")
+                            .doOnSuccess(count -> {
+                                if (count > 0) {
+                                    log.debug("Updated {} NIFTY positions", count);
+                                }
+                            })
+                            .doOnError(e -> log.error("Error monitoring NIFTY positions: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
 
-        // Monitor BANKNIFTY positions
-        tradingOrchestrator.monitorOpenPositions("BANKNIFTY")
-                .doOnSuccess(count -> {
-                    if (count > 0) {
-                        log.debug("Updated {} BANKNIFTY positions", count);
-                    }
-                })
-                .doOnError(e -> log.error("Error monitoring BANKNIFTY positions: {}", e.getMessage(), e))
-                .subscribe();
+                    // Monitor BANKNIFTY positions
+                    tradingOrchestrator.monitorOpenPositions("BANKNIFTY")
+                            .doOnSuccess(count -> {
+                                if (count > 0) {
+                                    log.debug("Updated {} BANKNIFTY positions", count);
+                                }
+                            })
+                            .doOnError(e -> log.error("Error monitoring BANKNIFTY positions: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                }))
+                .subscribe(ignored -> {
+                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
 
     /**
-     * Forces exit of all open positions on Thursday at 2:30 PM IST.
+     * Exits all open positions on Thursday at 3:15 PM IST (expiry day).
      * <p>
-     * This is the end-of-day forced exit to ensure no positions are held overnight.
+     * This is the safer expiry day exit before NSE close.
      * Closes all open positions regardless of P&L status.
      * <p>
-     * Cron: "0 30 14 * * THU"
+     * Cron: "0 15 15 * * THU"
      * - 0: second (0)
-     * - 30: minute (30)
-     * - 14: hour (2 PM, 14:30 = 2:30 PM)
+     * - 15: minute (15)
+     * - 15: hour (3 PM, 15:15 = 3:15 PM)
      * - *: day of month (any)
      * - *: month (any)
      * - THU: day of week (Thursday)
      */
-    @Scheduled(cron = "0 30 14 * * THU", zone = "Asia/Kolkata")
-    public void forcedExitAtMarketClose() {
-        log.info("🔚 Forcing exit of all open positions at 2:30 PM");
+    // Expiry day: THU — see trading.expiry-day in application.yml
+    @Scheduled(cron = "0 15 15 * * THU", zone = "Asia/Kolkata")
+    public void scheduledExpiryDayExit() {
+        marketCalendarService.isMarketOpen()
+                .filter(Boolean::booleanValue)
+                .flatMap(ignored -> reactor.core.publisher.Mono.fromRunnable(() -> {
+                    log.info("🔚 Forcing exit of all open positions at 3:15 PM on expiry day");
 
-        // Exit all NIFTY positions
-        tradingOrchestrator.exitAllPositions("NIFTY50")
-                .doOnSuccess(count -> {
-                    log.info("Closed {} NIFTY positions at market close", count);
-                })
-                .doOnError(e -> log.error("Error closing NIFTY positions: {}", e.getMessage(), e))
-                .subscribe();
+                    // Exit all NIFTY positions
+                    tradingOrchestrator.exitAllPositions("NIFTY50")
+                            .doOnSuccess(count -> {
+                                log.info("Closed {} NIFTY positions at expiry day exit", count);
+                            })
+                            .doOnError(e -> log.error("Error closing NIFTY positions: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
 
-        // Exit all BANKNIFTY positions
-        tradingOrchestrator.exitAllPositions("BANKNIFTY")
-                .doOnSuccess(count -> {
-                    log.info("Closed {} BANKNIFTY positions at market close", count);
-                })
-                .doOnError(e -> log.error("Error closing BANKNIFTY positions: {}", e.getMessage(), e))
-                .subscribe();
+                    // Exit all BANKNIFTY positions
+                    tradingOrchestrator.exitAllPositions("BANKNIFTY")
+                            .doOnSuccess(count -> {
+                                log.info("Closed {} BANKNIFTY positions at expiry day exit", count);
+                            })
+                            .doOnError(e -> log.error("Error closing BANKNIFTY positions: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                }))
+                .subscribe(ignored -> {
+                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+    }
 
-        // Generate and send daily report
-        dailyReportService.generateDailyReport()
-                .doOnSuccess(report -> log.info("Daily report generated and sent"))
-                .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e))
-                .subscribe();
+    /**
+     * Generates and sends daily P&L report at 3:45 PM IST on expiry day.
+     */
+    @Scheduled(cron = "0 45 15 * * THU", zone = "Asia/Kolkata")
+    public void scheduleDailyReport() {
+        marketCalendarService.isMarketOpen()
+                .filter(Boolean::booleanValue)
+                .flatMap(ignored -> reactor.core.publisher.Mono.fromRunnable(() -> {
+                    dailyReportService.generateDailyReport()
+                            .doOnSuccess(report -> log.info("Daily report generated and sent"))
+                            .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                }))
+                .subscribe(ignored -> {
+                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
 }

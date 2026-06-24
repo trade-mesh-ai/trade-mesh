@@ -118,6 +118,10 @@ strategy:
 
 # ─── Trading Configuration ───────────────────────────────────────────────────────
 trading:
+  # Expiry day for NIFTY/BANKNIFTY options (NSE).
+  # Currently THU. Update cron expressions in TradingScheduler manually if NSE changes this.
+  # Future: will be used for dynamic scheduler when Spring supports runtime cron updates.
+  expiry-day: THU
   mode: paper
   symbols:
     - NIFTY
