@@ -1,5 +1,6 @@
 package com.trademesh.intelligence;
 
+import com.trademesh.intelligence.vix.VixAlertService;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

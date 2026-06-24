@@ -1,4 +1,4 @@
-package com.trademesh.intelligence;
+package com.trademesh.intelligence.vix;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;

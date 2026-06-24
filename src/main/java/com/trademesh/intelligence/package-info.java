@@ -1,35 +1,31 @@
 /**
- * VIX (Volatility Index) monitoring and intelligence module.
+ * Market intelligence and analysis module for the trade-mesh platform.
  * <p>
- * This package provides real-time VIX data fetching, caching, and alert management
- * for the trade-mesh platform. It integrates with Zerodha Kite API to fetch INDIA VIX
- * data and provides market intelligence for trading decisions.
+ * This package provides core market intelligence services, including:
+ * - Real-time market condition analysis
+ * - Trading signal generation
+ * - VIX (Volatility Index) monitoring (see vix sub-package)
+ * - Max Pain calculation (see maxpain sub-package)
+ * - Open Interest analysis (see oi sub-package)
  * <p>
  * Key Components:
- * - VixLevel: Enumeration of VIX volatility levels
- * - VixData: Domain model for current VIX data
- * - VixMonitorService: Fetches and caches VIX data from Zerodha API
- * - VixAlertService: Handles VIX threshold alerts and Telegram notifications
- * - VixScheduler: Scheduled tasks for VIX fetching and persistence
- * - VixController: REST endpoint for VIX data retrieval
+ * - MarketIntelligence: Aggregated market data and analysis
+ * - MarketIntelligenceService: Core service for market analysis
+ * - MarketIntelligenceController: REST endpoints for market intelligence
+ * - MarketCondition: Enumeration of market conditions
+ * - TradingSignal: Domain model for trading signals
+ * - SignalService: Service for signal generation and management
+ * - IntelligenceScheduler: Scheduled tasks for intelligence gathering
  * <p>
- * Database Entities:
- * - VixHistory: Historical VIX records (persisted every 15 minutes)
- * - VixAlert: VIX alert events (triggered when VIX crosses threshold)
- * <p>
- * Configuration example:
- * vix.fetch-interval-minutes: 5        # Fetch VIX every 5 minutes
- * vix.persist-interval-minutes: 15     # Persist to DB every 15 minutes
- * vix.alert-threshold: 20.0            # Alert when VIX >= 20
+ * Sub-packages:
+ * - vix: VIX monitoring, alerting, and historical tracking
+ * - maxpain: Max Pain calculation and analysis
+ * - oi: Open Interest analysis and market bias detection
  * <p>
  * REST endpoints:
- * - GET /intelligence/vix - Returns current VIX data
- * <p>
- * VIX Levels:
- * - LOW: VIX < 13 (Low volatility, calm market)
- * - NORMAL: VIX 13-17 (Normal volatility)
- * - ELEVATED: VIX 17-20 (Elevated volatility, caution advised)
- * - HIGH: VIX 20-25 (High volatility, risk alert)
- * - EXTREME: VIX > 25 (Extreme volatility, market stress)
+ * - GET /intelligence/market - Returns current market intelligence
+ * - GET /intelligence/vix - Returns current VIX data (see vix sub-package)
+ * - GET /intelligence/maxpain - Returns max pain analysis (see maxpain sub-package)
+ * - GET /intelligence/oi - Returns OI analysis (see oi sub-package)
  */
 package com.trademesh.intelligence;

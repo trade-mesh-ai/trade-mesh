@@ -1,4 +1,4 @@
-package com.trademesh.intelligence;
+package com.trademesh.intelligence.vix;
 
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;

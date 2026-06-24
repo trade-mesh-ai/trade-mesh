@@ -2,6 +2,7 @@ package com.trademesh.intelligence;
 
 import com.trademesh.intelligence.maxpain.MaxPainResult;
 import com.trademesh.intelligence.oi.OIAnalysis;
+import com.trademesh.intelligence.vix.VixData;
 import com.trademesh.zerodha.options.OptionChain;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

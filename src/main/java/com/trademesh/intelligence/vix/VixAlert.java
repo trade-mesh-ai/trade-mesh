@@ -1,4 +1,4 @@
-package com.trademesh.intelligence;
+package com.trademesh.intelligence.vix;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

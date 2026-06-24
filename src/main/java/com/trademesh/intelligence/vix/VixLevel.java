@@ -1,4 +1,4 @@
-package com.trademesh.intelligence;
+package com.trademesh.intelligence.vix;
 
 /**
  * Enumeration of VIX levels based on current VIX value.

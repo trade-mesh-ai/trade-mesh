@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.config.ApplicationConstants;
 import com.trademesh.intelligence.maxpain.MaxPainCalculatorService;
 import com.trademesh.intelligence.oi.OIAnalyserService;
+import com.trademesh.intelligence.vix.VixData;
+import com.trademesh.intelligence.vix.VixMonitorService;
 import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

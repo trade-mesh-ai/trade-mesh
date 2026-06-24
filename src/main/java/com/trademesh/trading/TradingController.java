@@ -43,7 +43,7 @@ public class TradingController {
      * Useful for testing or manual intervention outside of scheduled times.
      * Runs the complete trading cycle: intelligence → strategy → execution.
      *
-     * @param symbol trading symbol (e.g., "NIFTY", "BANKNIFTY")
+     * @param symbol trading symbol (e.g., "NIFTY50", "BANKNIFTY")
      * @return Mono emitting ResponseEntity with StrategyResult
      */
     @PostMapping(value = "/run/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)

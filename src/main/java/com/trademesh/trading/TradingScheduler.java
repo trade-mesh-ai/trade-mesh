@@ -44,7 +44,7 @@ public class TradingScheduler {
         log.info("🚀 Starting Thursday 9:30 AM trading cycle entry");
 
         // Run trading cycle for NIFTY
-        tradingOrchestrator.runTradingCycle("NIFTY")
+        tradingOrchestrator.runTradingCycle("NIFTY50")
                 .doOnSuccess(result -> {
                     if (result.getIsExecutable()) {
                         log.info("✅ NIFTY trading cycle executed successfully");
@@ -90,7 +90,7 @@ public class TradingScheduler {
         log.debug("📊 Monitoring open positions during market hours");
 
         // Monitor NIFTY positions
-        tradingOrchestrator.monitorOpenPositions("NIFTY")
+        tradingOrchestrator.monitorOpenPositions("NIFTY50")
                 .doOnSuccess(count -> {
                     if (count > 0) {
                         log.debug("Updated {} NIFTY positions", count);
@@ -129,7 +129,7 @@ public class TradingScheduler {
         log.info("🔚 Forcing exit of all open positions at 2:30 PM");
 
         // Exit all NIFTY positions
-        tradingOrchestrator.exitAllPositions("NIFTY")
+        tradingOrchestrator.exitAllPositions("NIFTY50")
                 .doOnSuccess(count -> {
                     log.info("Closed {} NIFTY positions at market close", count);
                 })
