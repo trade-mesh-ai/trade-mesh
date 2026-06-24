@@ -27,7 +27,7 @@ import java.time.Duration;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ExecutionService {
+public class OrderExecutionService {
 
     private final RiskManager riskManager;
     private final OrderService orderService;
