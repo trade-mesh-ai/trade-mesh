@@ -37,6 +37,7 @@ public class ZerodhaAuthService {
     private final ZerodhaConfig config;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
+    private final TokenAvailabilityTracker tokenAvailabilityTracker;
 
     // ─── Login URL ────────────────────────────────────────────────────────────────
 
@@ -122,7 +123,8 @@ public class ZerodhaAuthService {
             return Mono.error(new IllegalStateException("Access token is null or empty"));
         }
 
-        return storeAccessToken(accessToken);
+        return storeAccessToken(accessToken)
+                .doOnSuccess(token -> tokenAvailabilityTracker.resetAll());
     }
 
     /**

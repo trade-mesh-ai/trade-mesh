@@ -60,6 +60,9 @@ zerodha:
     login-url: https://kite.zerodha.com/connect/login
     access-token-ttl-hours: 8
 
+  # ─── Token Expiry Watcher ──────────────────────────────────────────────────────
+  token-check-interval-ms: 300000   # check every 5 minutes
+
   # ─── KiteTicker WebSocket ──────────────────────────────────────────────────────
   ticker:
     instruments:

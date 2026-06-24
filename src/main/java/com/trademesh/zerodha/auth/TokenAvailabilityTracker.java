@@ -149,4 +149,15 @@ public class TokenAvailabilityTracker {
     public boolean isTokenAvailable() {
         return tokenAvailable.get();
     }
+
+    /**
+     * Resets token availability state globally across all schedulers.
+     * Call this after successful Zerodha re-authentication.
+     */
+    public void resetAll() {
+        tokenAvailable.set(true);
+        firstWarningLogged.clear();
+        loggingInProgress.clear();
+        log.info("Token availability reset for all schedulers after re-authentication.");
+    }
 }

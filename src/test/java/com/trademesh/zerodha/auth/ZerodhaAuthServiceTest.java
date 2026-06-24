@@ -17,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -33,11 +32,14 @@ class ZerodhaAuthServiceTest {
     @Mock
     private WebClient.Builder webClientBuilder;
 
+    @Mock
+    private TokenAvailabilityTracker tokenAvailabilityTracker;
+
     private ZerodhaAuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new ZerodhaAuthService(config, redisTemplate, webClientBuilder);
+        authService = new ZerodhaAuthService(config, redisTemplate, webClientBuilder, tokenAvailabilityTracker);
     }
 
     @Test
