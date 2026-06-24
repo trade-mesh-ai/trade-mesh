@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.auth;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -107,8 +108,6 @@ public class ZerodhaAuthService {
      * Validates the Kite session response, extracts the access token and stores it.
      */
     private Mono<String> handleKiteSessionResponse(KiteSessionResponse response) {
-        log.info("Full Zerodha response: {}", response);
-
         if (response == null) {
             return Mono.error(new IllegalStateException("Response is null"));
         }
@@ -169,12 +168,14 @@ public class ZerodhaAuthService {
      * Minimal representation of the Kite Connect {@code POST /session/token} response.
      */
     @lombok.Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     static class KiteSessionResponse {
 
         private String status;
         private SessionData data;
 
         @lombok.Data
+        @JsonIgnoreProperties(ignoreUnknown = true)
         static class SessionData {
 
             @JsonProperty("access_token")

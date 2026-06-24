@@ -124,10 +124,18 @@ public class ZerodhaAuthController {
         return authService.isTokenValid()
                 .map(valid -> {
                     if (Boolean.TRUE.equals(valid)) {
-                        return ResponseEntity.ok("Access token is present and valid.");
+                        return ResponseEntity.ok().header("Content-Type", "text/html;charset=UTF-8")
+                                .body(buildHtmlPage("Access token is present and valid.",
+                                        "You are ready to trade with Zerodha."
+                                                + "The access token is stored in Redis and will expire in 8 hours.",
+                                        true));
                     }
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                            .body("No valid access token found. Please re-authenticate via /zerodha/login");
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .header("Content-Type", "text/html;charset=UTF-8")
+                            .body(buildHtmlPage("No valid access token found.",
+                                    "Please re-authenticate via /zerodha/login",
+                                    false));
+
                 });
     }
 
@@ -137,6 +145,7 @@ public class ZerodhaAuthController {
         String color = success ? "#2e7d32" : "#c62828";
         String icon = success ? "✅" : "❌";
         return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">"
+                + "<link rel=\"icon\" type=\"image/png\" href=\"/favicon.png\">"
                 + "<title>" + title + "</title>"
                 + "<style>body{font-family:sans-serif;display:flex;justify-content:center;"
                 + "align-items:center;height:100vh;margin:0;background:#f5f5f5;}"
