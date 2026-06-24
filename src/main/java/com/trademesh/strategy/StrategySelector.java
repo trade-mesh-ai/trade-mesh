@@ -163,7 +163,7 @@ public class StrategySelector {
                     .orElseGet(() -> applicableStrategies.get(0));
 
             case TRENDING_BEARISH -> applicableStrategies.stream()
-                    .filter(s -> s.getName().equals("BULL_CALL_SPREAD"))
+                    .filter(s -> s.getName().equals("BEAR_CALL_SPREAD"))
                     .findFirst()
                     .orElseGet(() -> applicableStrategies.get(0));
 
