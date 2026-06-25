@@ -1,5 +1,8 @@
 package com.trademesh.intelligence;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,6 +24,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/intelligence")
 @RequiredArgsConstructor
+@Tag(name = "Market Intelligence", description = "Comprehensive market intelligence endpoints")
 public class MarketIntelligenceController {
 
     private final MarketIntelligenceService marketIntelligenceService;
@@ -34,8 +38,11 @@ public class MarketIntelligenceController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the complete MarketIntelligence with HTTP 200 OK
      */
+    @Operation(summary = "Get complete market intelligence for a symbol")
     @GetMapping(value = "/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<MarketIntelligence>> getIntelligence(@PathVariable String symbol) {
+    public Mono<ResponseEntity<MarketIntelligence>> getIntelligence(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for market intelligence: {}", symbol);
 
         return marketIntelligenceService.generateIntelligence(symbol)
@@ -65,8 +72,11 @@ public class MarketIntelligenceController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the MarketCondition with HTTP 200 OK
      */
+    @Operation(summary = "Get market condition for a symbol")
     @GetMapping(value = "/{symbol}/condition", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<MarketCondition>> getMarketCondition(@PathVariable String symbol) {
+    public Mono<ResponseEntity<MarketCondition>> getMarketCondition(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for market condition: {}", symbol);
 
         return marketIntelligenceService.generateIntelligence(symbol)
@@ -89,8 +99,11 @@ public class MarketIntelligenceController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the summary string with HTTP 200 OK
      */
+    @Operation(summary = "Get one-line intelligence summary for a symbol")
     @GetMapping(value = "/{symbol}/summary", produces = MediaType.TEXT_PLAIN_VALUE)
-    public Mono<ResponseEntity<String>> getSummary(@PathVariable String symbol) {
+    public Mono<ResponseEntity<String>> getSummary(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for intelligence summary: {}", symbol);
 
         return marketIntelligenceService.generateIntelligence(symbol)

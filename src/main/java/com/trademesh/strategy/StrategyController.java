@@ -2,6 +2,9 @@ package com.trademesh.strategy;
 
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligenceService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -30,6 +33,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/strategy")
 @RequiredArgsConstructor
+@Tag(name = "Strategy", description = "Strategy evaluation and status endpoints")
 public class StrategyController {
 
     private final StrategyOrchestrator strategyOrchestrator;
@@ -48,8 +52,11 @@ public class StrategyController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return Mono emitting ResponseEntity with StrategyResult
      */
+    @Operation(summary = "Evaluate strategies for a symbol")
     @GetMapping(value = "/evaluate/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<StrategyResult>> evaluateStrategy(@PathVariable String symbol) {
+    public Mono<ResponseEntity<StrategyResult>> evaluateStrategy(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request to evaluate strategy for symbol: {}", symbol);
 
         return strategyOrchestrator.orchestrate(symbol)
@@ -78,8 +85,11 @@ public class StrategyController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return Mono emitting ResponseEntity with applicable strategies information
      */
+    @Operation(summary = "Get applicable strategies for a symbol")
     @GetMapping(value = "/applicable/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Map<String, Object>>> getApplicableStrategies(@PathVariable String symbol) {
+    public Mono<ResponseEntity<Map<String, Object>>> getApplicableStrategies(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for applicable strategies for symbol: {}", symbol);
 
         return marketIntelligenceService.generateIntelligence(symbol)
@@ -136,6 +146,7 @@ public class StrategyController {
      *
      * @return Mono emitting ResponseEntity with all strategies information
      */
+    @Operation(summary = "Get status of all available strategies")
     @GetMapping(value = "/status", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getStrategyStatus() {
         log.info("Received request for strategy status");

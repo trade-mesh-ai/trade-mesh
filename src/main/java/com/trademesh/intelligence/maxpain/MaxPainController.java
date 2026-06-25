@@ -1,6 +1,9 @@
 package com.trademesh.intelligence.maxpain;
 
 import com.trademesh.zerodha.options.OptionChainService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -22,6 +25,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/intelligence/maxpain")
 @RequiredArgsConstructor
+@Tag(name = "Max Pain", description = "Max pain calculation endpoints")
 public class MaxPainController {
 
     private final MaxPainCalculatorService maxPainCalculatorService;
@@ -36,8 +40,11 @@ public class MaxPainController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the MaxPainResult with HTTP 200 OK, or error response
      */
+    @Operation(summary = "Calculate max pain for a symbol")
     @GetMapping(value = "/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<MaxPainResult>> getMaxPain(@PathVariable String symbol) {
+    public Mono<ResponseEntity<MaxPainResult>> getMaxPain(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for max pain calculation: {}", symbol);
 
         return optionChainService.fetchOptionChain(symbol)

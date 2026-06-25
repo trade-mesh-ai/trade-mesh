@@ -4,6 +4,8 @@ import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/trading")
 @RequiredArgsConstructor
+@Tag(name = "Trading", description = "Manual trading operations and status endpoints")
 public class TradingController {
 
     private final TradingOrchestrator tradingOrchestrator;
@@ -55,8 +58,11 @@ public class TradingController {
      * @param symbol trading symbol (e.g., "NIFTY50", "BANKNIFTY")
      * @return Mono emitting ResponseEntity with StrategyResult
      */
+    @Operation(summary = "Manually trigger a trading cycle for a symbol")
     @PostMapping(value = "/run/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<Map<String, Object>>> runTradingCycle(@PathVariable String symbol) {
+    public Mono<ResponseEntity<Map<String, Object>>> runTradingCycle(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, BANKNIFTY)")
+            @PathVariable String symbol) {
         log.info("Manual request to run trading cycle for symbol: {}", symbol);
 
         return tradingOrchestrator.runTradingCycle(symbol)
@@ -99,6 +105,7 @@ public class TradingController {
      *
      * @return Mono emitting ResponseEntity with list of open positions
      */
+    @Operation(summary = "Get all currently open positions")
     @GetMapping(value = "/positions/open", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getOpenPositions() {
         log.info("Fetching all open positions");
@@ -140,6 +147,7 @@ public class TradingController {
      *
      * @return Mono emitting ResponseEntity with monitoring results
      */
+    @Operation(summary = "Manually trigger position monitoring for all open positions")
     @PostMapping(value = "/monitor", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> monitorPositions() {
         log.info("Manual request to monitor all open positions");
@@ -179,6 +187,7 @@ public class TradingController {
      *
      * @return Mono emitting ResponseEntity with daily summary
      */
+    @Operation(summary = "Get today's trading summary and report")
     @GetMapping(value = "/report/today", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getTodayReport() {
         log.info("Fetching today's trading report");

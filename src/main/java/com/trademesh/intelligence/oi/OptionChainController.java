@@ -2,6 +2,9 @@ package com.trademesh.intelligence.oi;
 
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionChainService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -23,6 +26,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/intelligence/optionchain")
 @RequiredArgsConstructor
+@Tag(name = "Option Chain", description = "Option chain data endpoints")
 public class OptionChainController {
 
     private final OptionChainService optionChainService;
@@ -33,8 +37,11 @@ public class OptionChainController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the OptionChain with HTTP 200, or error response
      */
+    @Operation(summary = "Get option chain for a symbol")
     @GetMapping("/{symbol}")
-    public Mono<ResponseEntity<OptionChain>> getOptionChain(@PathVariable String symbol) {
+    public Mono<ResponseEntity<OptionChain>> getOptionChain(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for option chain: {}", symbol);
 
         return optionChainService.fetchOptionChain(symbol)

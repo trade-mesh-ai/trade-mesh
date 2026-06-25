@@ -1,5 +1,7 @@
 package com.trademesh.intelligence.vix;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -18,6 +20,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/intelligence/vix")
 @RequiredArgsConstructor
+@Tag(name = "VIX", description = "VIX volatility index monitoring endpoints")
 public class VixController {
 
     private final VixMonitorService vixMonitorService;
@@ -30,6 +33,7 @@ public class VixController {
      *
      * @return {@link Mono} emitting the current VixData with HTTP 200 OK
      */
+    @Operation(summary = "Get current VIX data")
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<VixData>> getCurrentVix() {
         log.debug("Received request for current VIX data");

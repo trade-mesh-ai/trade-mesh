@@ -1,6 +1,9 @@
 package com.trademesh.intelligence.oi;
 
 import com.trademesh.zerodha.options.OptionChainService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -21,6 +24,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/intelligence/oi")
 @RequiredArgsConstructor
+@Tag(name = "Open Interest", description = "Open interest analysis endpoints")
 public class OIController {
 
     private final OIAnalyserService oiAnalyserService;
@@ -39,8 +43,11 @@ public class OIController {
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return {@link Mono} emitting the OIAnalysis with HTTP 200 OK, or error response
      */
+    @Operation(summary = "Get open interest analysis for a symbol")
     @GetMapping(value = "/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<OIAnalysis>> getOIAnalysis(@PathVariable String symbol) {
+    public Mono<ResponseEntity<OIAnalysis>> getOIAnalysis(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
         log.info("Received request for OI analysis: {}", symbol);
 
         return optionChainService.fetchOptionChain(symbol)

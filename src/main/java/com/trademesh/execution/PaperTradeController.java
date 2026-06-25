@@ -1,5 +1,8 @@
 package com.trademesh.execution;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -28,6 +31,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/paper/trades")
 @RequiredArgsConstructor
+@Tag(name = "Paper Trading", description = "Paper trading endpoints for viewing trades and P&L")
 public class PaperTradeController {
 
     private final PaperTradeRepository paperTradeRepository;
@@ -40,6 +44,7 @@ public class PaperTradeController {
      *
      * @return Flux of open PaperTrade objects
      */
+    @Operation(summary = "Get all currently open paper trades")
     @GetMapping(value = "/open", produces = MediaType.APPLICATION_JSON_VALUE)
     public Flux<PaperTrade> getOpenTrades() {
         log.info("Fetching all open paper trades");
@@ -54,6 +59,7 @@ public class PaperTradeController {
      *
      * @return Flux of closed PaperTrade objects
      */
+    @Operation(summary = "Get all closed paper trades (history)")
     @GetMapping(value = "/history", produces = MediaType.APPLICATION_JSON_VALUE)
     public Flux<PaperTrade> getTradeHistory() {
         log.info("Fetching paper trade history");
@@ -89,6 +95,7 @@ public class PaperTradeController {
      *
      * @return Mono emitting ResponseEntity with weekly P&L summary
      */
+    @Operation(summary = "Get weekly P&L summary with daily breakdown")
     @GetMapping(value = "/pnl/weekly", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getWeeklyPnL() {
         log.info("Fetching weekly P&L summary");
@@ -161,9 +168,12 @@ public class PaperTradeController {
      * @param reason optional reason for closing (defaults to "MANUAL_EXIT")
      * @return Mono emitting ResponseEntity with the closed PaperTrade
      */
+    @Operation(summary = "Manually close a paper trade")
     @PostMapping(value = "/{id}/close", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<PaperTrade>> closeTrade(
+            @Parameter(description = "UUID of the paper trade to close")
             @PathVariable UUID id,
+            @Parameter(description = "Reason for closing the trade (defaults to MANUAL_EXIT)")
             @RequestParam(required = false, defaultValue = "MANUAL_EXIT") String reason) {
         log.info("Received request to close paper trade: {} with reason: {}", id, reason);
 
@@ -192,8 +202,11 @@ public class PaperTradeController {
      * @param id the UUID of the paper trade
      * @return Mono emitting ResponseEntity with the PaperTrade
      */
+    @Operation(summary = "Get a specific paper trade by ID")
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<PaperTrade>> getTrade(@PathVariable UUID id) {
+    public Mono<ResponseEntity<PaperTrade>> getTrade(
+            @Parameter(description = "UUID of the paper trade")
+            @PathVariable UUID id) {
         log.info("Fetching paper trade: {}", id);
         return paperTradeRepository.findById(id)
                 .map(ResponseEntity::ok)
@@ -212,8 +225,11 @@ public class PaperTradeController {
      * @param symbol the trading symbol (e.g., "NIFTY50", "BANKNIFTY")
      * @return Flux of PaperTrade objects for the symbol
      */
+    @Operation(summary = "Get all paper trades for a specific symbol")
     @GetMapping(value = "/symbol/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Flux<PaperTrade> getTradesBySymbol(@PathVariable String symbol) {
+    public Flux<PaperTrade> getTradesBySymbol(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, BANKNIFTY)")
+            @PathVariable String symbol) {
         log.info("Fetching paper trades for symbol: {}", symbol);
         return paperTradeRepository.findBySymbol(symbol)
                 .doOnError(error -> log.error("Error fetching trades for symbol: {}", symbol, error));
@@ -227,8 +243,11 @@ public class PaperTradeController {
      * @param strategyName the strategy name
      * @return Flux of PaperTrade objects for the strategy
      */
+    @Operation(summary = "Get all paper trades for a specific strategy")
     @GetMapping(value = "/strategy/{strategyName}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Flux<PaperTrade> getTradesByStrategy(@PathVariable String strategyName) {
+    public Flux<PaperTrade> getTradesByStrategy(
+            @Parameter(description = "Strategy name")
+            @PathVariable String strategyName) {
         log.info("Fetching paper trades for strategy: {}", strategyName);
         return paperTradeRepository.findByStrategyName(strategyName)
                 .doOnError(error -> log.error("Error fetching trades for strategy: {}", strategyName, error));
@@ -255,6 +274,7 @@ public class PaperTradeController {
      *
      * @return Mono emitting ResponseEntity with trading statistics
      */
+    @Operation(summary = "Get overall paper trading statistics")
     @GetMapping(value = "/stats", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getStats() {
         log.info("Fetching paper trading statistics");
