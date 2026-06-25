@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.options;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,14 +27,22 @@ public class OptionChainSnapshotScheduler {
     private final OptionChainService optionChainService;
     private final OptionChainSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;
+    private final TokenAvailabilityTracker tokenTracker;
 
     /**
      * Captures option chain snapshots every 5 minutes (300,000 milliseconds).
      * Runs during market hours (Mon–Fri, 9:15 AM – 3:30 PM IST).
+     * Performs a single token availability check before fan-out to prevent redundant
+     * Redis lookups and log spam when unauthenticated.
      */
     @Scheduled(fixedRate = 300000) // 5 minutes
     public void captureOptionChainSnapshots() {
         log.info("Starting option chain snapshot capture ...");
+
+        if (!tokenTracker.isTokenAvailable()) {
+            log.warn("[OptionChainSnapshotScheduler] Zerodha token unavailable. Skipping option chain snapshot.");
+            return;
+        }
 
         for (String symbol : SYMBOLS) {
             captureSnapshot(symbol)

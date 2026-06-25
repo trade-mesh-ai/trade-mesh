@@ -85,9 +85,19 @@ public class TickerConnectionManager {
 
     /**
      * Calls {@link ZerodhaTickerService#connect()} and handles errors gracefully.
+     * <p>
+     * Properly chains error handling to prevent false "token available" signals.
+     * When a token-missing error occurs, we return Mono.error() instead of Mono.empty()
+     * to prevent doOnSuccess from firing. This avoids the race condition where
+     * "Zerodha not authenticated" is immediately followed by "token is now available".
      */
-    private void attemptConnect() {
+    void attemptConnect() {
         tickerService.connect()
+                .doOnSuccess(v -> {
+                    synchronized (TOKEN_LOCK) {
+                        tokenTracker.resetTracking(SCHEDULER_NAME);
+                    }
+                })
                 .onErrorResume(ex -> {
                     // Check if this is a token missing error
                     if (ex instanceof IllegalStateException && ex.getMessage().contains("No Zerodha access token")) {
@@ -95,18 +105,18 @@ public class TickerConnectionManager {
                             tokenTracker.setTokenUnavailable();
                             tokenTracker.trackTokenMissing(SCHEDULER_NAME);
                         }
+                        // Return error (not empty) to prevent doOnSuccess from firing
+                        return Mono.error(ex);
                     } else {
                         log.warn("[TickerConnectionManager] ⚠️  KiteTicker connect attempt failed: {}",
                                 ex.getMessage());
-                    }
-                    return Mono.empty();
-                })
-                .doOnSuccess(v -> {
-                    synchronized (TOKEN_LOCK) {
-                        tokenTracker.resetTracking(SCHEDULER_NAME);
+                        return Mono.error(ex);
                     }
                 })
-                .subscribe();
+                .subscribe(
+                    v -> {}, // onNext (won't be called for Mono)
+                    err -> {} // onError (silently handle - we've already logged)
+                );
     }
 
     // ─── Alert logging ────────────────────────────────────────────────────────────
