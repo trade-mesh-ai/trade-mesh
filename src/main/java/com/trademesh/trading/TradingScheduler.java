@@ -38,15 +38,15 @@ public class TradingScheduler {
      * - 9: hour (9 AM)
      * - *: day of month (any)
      * - *: month (any)
-     * - THU: day of week (Thursday)
+     * - THU: day of week (Tuesday)
      */
     // Expiry day: THU — see trading.expiry-day in application.yml
     @Scheduled(cron = "0 30 9 * * THU", zone = "Asia/Kolkata")
-    public void runThursdayEntry() {
+    public void scheduledExpiryDayEntry() {
         marketCalendarService.isMarketOpen()
                 .filter(Boolean::booleanValue)
                 .flatMap(ignored -> reactor.core.publisher.Mono.fromRunnable(() -> {
-                    log.info("🚀 Starting Thursday 9:30 AM trading cycle entry");
+                    log.info("🚀 Starting Tuesday 9:30 AM trading cycle entry");
 
                     // Run trading cycle for NIFTY
                     tradingOrchestrator.runTradingCycle("NIFTY50")
