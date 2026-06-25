@@ -1,5 +1,8 @@
 package com.trademesh.zerodha.ticker;
 
+import com.trademesh.alert.Alert;
+import com.trademesh.alert.AlertType;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +14,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -32,10 +36,16 @@ public class TickerConnectionManager {
     private static final Object TOKEN_LOCK = new Object();
     private final ZerodhaTickerService tickerService;
     private final TokenAvailabilityTracker tokenTracker;
+    private final TelegramNotificationBot telegramNotificationBot;
     /**
      * Counts consecutive failed reconnect attempts since last successful connection.
      */
     private final AtomicInteger reconnectAttempts = new AtomicInteger(0);
+    /**
+     * Tracks whether the CRITICAL threshold alert has been sent for the current disconnection episode.
+     * Reset to false only after a confirmed successful WebSocket connection.
+     */
+    private final AtomicBoolean thresholdCrossed = new AtomicBoolean(false);
     @Value("${zerodha.ticker.max-reconnect-alerts:10}")
     private int maxReconnectAlerts;
 
@@ -71,6 +81,7 @@ public class TickerConnectionManager {
                 log.info("[TickerConnectionManager] ✅ KiteTicker reconnected successfully after {} attempt(s).",
                         reconnectAttempts.get());
                 reconnectAttempts.set(0);
+                thresholdCrossed.set(false);
             } else {
                 log.debug("[TickerConnectionManager] ✅ KiteTicker WebSocket is healthy.");
             }
@@ -143,6 +154,48 @@ public class TickerConnectionManager {
                     + "All live market data is LOST. "
                     + "Manual intervention may be required – check Redis access token validity "
                     + "and network connectivity to wss://ws.kite.trade.", attempts);
+            if (attempts == maxReconnectAlerts + 1 && thresholdCrossed.compareAndSet(false, true)) {
+                sendCriticalDisconnectAlert(attempts);
+            }
         }
+    }
+
+    /**
+     * Sends a Telegram alert when the CRITICAL disconnection threshold is crossed.
+     * <p>
+     * Alert includes:
+     * - Notification that KiteTicker WebSocket is critically disconnected
+     * - The consecutive cycle count
+     * - Prompt to check Redis token validity and network connectivity
+     * - Login URL hint for re-authentication
+     * <p>
+     * This method is fire-and-forget: uses .subscribe() without .block().
+     *
+     * @param attempts the number of consecutive failed reconnect attempts
+     */
+    private void sendCriticalDisconnectAlert(int attempts) {
+        String htmlMessage = "🚨 TradeMesh Critical Alert\n" +
+                "KiteTicker WebSocket is CRITICALLY DISCONNECTED\n" +
+                "Consecutive cycles: " + attempts + "\n\n" +
+                "Action Required:\n" +
+                "1. Check Redis token validity\n" +
+                "2. Verify network connectivity to wss://ws.kite.trade\n" +
+                "3. Re-authenticate if needed: <code>http://your-server/zerodha/login</code>";
+
+        Alert alert = Alert.builder()
+                .type(AlertType.SYSTEM_ERROR)
+                .tradingSymbol("SYSTEM")
+                .message(htmlMessage)
+                .build();
+
+        telegramNotificationBot.sendAlert(alert)
+                .subscribe(
+                        unused -> {
+                            log.info("[TickerConnectionManager] CRITICAL alert sent via Telegram");
+                        },
+                        error -> {
+                            log.error("[TickerConnectionManager] Failed to send CRITICAL alert via Telegram: {}", error.getMessage());
+                        }
+                );
     }
 }

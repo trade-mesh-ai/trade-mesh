@@ -1,5 +1,6 @@
 package com.trademesh.intelligence.vix;
 
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,7 @@ public class VixScheduler {
     private final VixMonitorService vixMonitorService;
     private final VixAlertService vixAlertService;
     private final VixHistoryRepository vixHistoryRepository;
+    private final TokenAvailabilityTracker tokenTracker;
     // ─── Configuration ────────────────────────────────────────────────────────────
     @Value("${vix.fetch-interval-minutes:5}")
     private Integer fetchIntervalMinutes;
@@ -52,6 +54,11 @@ public class VixScheduler {
     @Scheduled(fixedRateString = "${vix.fetch-interval-minutes:5}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void fetchVixData() {
         log.debug("Starting VIX fetch task");
+
+        if (!tokenTracker.isTokenAvailable()) {
+            log.warn("[VixScheduler] Zerodha token unavailable. Skipping VIX fetch.");
+            return;
+        }
 
         vixMonitorService.fetchCurrentVix()
                 .subscribeOn(Schedulers.boundedElastic())
