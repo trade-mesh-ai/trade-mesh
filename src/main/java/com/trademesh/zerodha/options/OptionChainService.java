@@ -13,6 +13,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -55,14 +57,16 @@ public class OptionChainService {
      * @return {@link Mono} emitting the OptionChain
      */
     public Mono<OptionChain> fetchOptionChain(String symbol) {
+        symbol = symbol.replaceAll("\\s+", "");
         String redisKey = REDIS_KEY_OPTION_CHAIN_PREFIX + symbol;
 
         // Try to get from cache first
+        String finalSymbol = symbol;
         return redisTemplate.opsForValue().get(redisKey)
                 .flatMap(cached -> {
-                    log.debug("Option chain for {} found in cache", symbol);
+                    log.debug("Option chain for {} found in cache", finalSymbol);
                     OptionChain optionChain = deserializeOptionChain(cached);
-                    log.info("Successfully retrieved option chain for {} from cache", symbol);
+                    log.info("Successfully retrieved option chain for {} from cache", finalSymbol);
                     return Mono.just(optionChain);
                 })
                 .switchIfEmpty(
@@ -74,18 +78,18 @@ public class OptionChainService {
                                     return redisTemplate.opsForValue()
                                             .set(redisKey, json, CACHE_OPTION_CHAIN_TTL)
                                             .thenReturn(optionChain)
-                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", symbol));
+                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", finalSymbol));
                                 })
                 )
                 .doOnNext(optionChain -> {
                     if (optionChain != null) {
                         log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
-                                symbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
+                                finalSymbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
                     } else {
-                        log.warn("Option chain for {} is null after fetch operation", symbol);
+                        log.warn("Option chain for {} is null after fetch operation", finalSymbol);
                     }
                 })
-                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", symbol, e.getMessage(), e));
+                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", finalSymbol, e.getMessage(), e));
     }
 
     // ─── Kite API Integration ─────────────────────────────────────────────────────
@@ -114,8 +118,9 @@ public class OptionChainService {
                             .build();
 
                     // Fetch quote data for the underlying
+                    String encodedSymbol = URLEncoder.encode(symbol, StandardCharsets.UTF_8);
                     return client.get()
-                            .uri("/quote?i=NSE:" + symbol)
+                            .uri("/quote?i=NSE:" + encodedSymbol)
                             .retrieve()
                             .bodyToMono(KiteQuotesResponse.class)
                             .timeout(Duration.ofSeconds(10))
