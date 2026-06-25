@@ -10,12 +10,17 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+
+import static com.trademesh.config.ApplicationConstants.IST;
 
 /**
  * Service for fetching and caching VIX (Volatility Index) data from Zerodha Kite API.
@@ -118,14 +123,19 @@ public class VixMonitorService {
 
                     WebClient client = webClientBuilder
                             .baseUrl(config.getBaseUrl())
-                            .defaultHeader("Authorization", "Bearer " + accessToken)
+                            .defaultHeader(
+                                    HttpHeaders.AUTHORIZATION,
+                                    "token " + config.getApiKey() + ":" + accessToken
+                            )
                             .build();
 
                     // Fetch quote data for INDIA VIX
                     return client.get()
-                            .uri("/quote/?i=NSE:INDIAVIX&mode=full")
+                            .uri("/quote?i=NSE:INDIA+VIX")
                             .retrieve()
+
                             .bodyToMono(KiteQuoteResponse.class)
+                            .doOnNext(response -> log.info("Successfully fetched VIX quote from Kite API: {}", response))
                             .timeout(Duration.ofSeconds(10))
                             .flatMap(this::parseVixData)
                             .doOnError(e -> log.error("Kite API error fetching VIX: {}", e.getMessage(), e));
@@ -154,18 +164,25 @@ public class VixMonitorService {
             return Mono.error(new IllegalStateException("Invalid Kite API response for VIX"));
         }
 
-        KiteQuoteResponse.QuoteData data = response.getData();
+        KiteQuoteResponse.QuoteData quoteData = response.getData().get("NSE:INDIA VIX");
+        if (quoteData == null) {
+            log.error("No VIX data found in Kite response. data map was empty or key missing.");
+            return Mono.error(new RuntimeException("VIX data not available from Kite API"));
+        }
 
-        Double currentVix = data.getLastPrice();
+        Double currentVix = quoteData.getLastPrice();
         if (currentVix == null || currentVix <= 0) {
             return Mono.error(new IllegalStateException("Invalid VIX value: " + currentVix));
         }
 
-        Double previousClose = data.getPrevDayClose();
+        Double prevClose = (quoteData.getOhlc() != null)
+                ? quoteData.getOhlc().getClose()
+                : quoteData.getLastPrice();
+
         Double changePercent = 0.0;
 
-        if (previousClose != null && previousClose > 0) {
-            changePercent = ((currentVix - previousClose) / previousClose) * 100;
+        if (prevClose != null && prevClose > 0) {
+            changePercent = ((currentVix - prevClose) / prevClose) * 100;
         } else {
             log.debug("Previous close not available for VIX, using 0% change");
         }
@@ -175,13 +192,13 @@ public class VixMonitorService {
         VixData vixData = VixData.builder()
                 .currentVix(currentVix)
                 .vixLevel(vixLevel)
-                .previousClose(previousClose)
-                .changePercent(changePercent)
-                .fetchedAt(Instant.now())
+                .previousClose(prevClose)
+                .changePercent(Math.round(changePercent * 100.0) / 100.0 )
+                .fetchedAt(ZonedDateTime.now(IST).toInstant())
                 .build();
 
-        log.info("Parsed VIX data: value={}, level={}, change={}%",
-                currentVix, vixLevel, String.format("%.2f", changePercent));
+        log.info("VIX fetched successfully: last={}, prevClose={}, netChange={}",
+                quoteData.getLastPrice(), prevClose, quoteData.getNetChange() != null ? quoteData.getNetChange() : 0.0);
 
         return Mono.just(vixData);
     }
@@ -220,30 +237,34 @@ public class VixMonitorService {
     @Data
     static class KiteQuoteResponse {
         private String status;
-        private QuoteData data;
+        private java.util.Map<String, QuoteData> data;
 
         @Data
         static class QuoteData {
             @JsonProperty("instrument_token")
-            private long instrumentToken;
+            private Long instrumentToken;
 
-            @JsonProperty("trading_symbol")
+            @JsonProperty("tradingsymbol")
             private String tradingSymbol;
 
             @JsonProperty("last_price")
             private Double lastPrice;
 
-            @JsonProperty("prev_day_close")
-            private Double prevDayClose;
-
-            @JsonProperty("open_interest")
-            private long openInterest;
-
-            @JsonProperty("volume")
-            private long volume;
+            @JsonProperty("net_change")
+            private Double netChange;
 
             @JsonProperty("timestamp")
             private String timestamp;
+
+            private Ohlc ohlc;
+        }
+
+        @Data
+        static class Ohlc {
+            private Double open;
+            private Double high;
+            private Double low;
+            private Double close;
         }
     }
 }
