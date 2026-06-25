@@ -53,43 +53,42 @@ public class OptionChainService {
      * Fetches the option chain for a given symbol (NIFTY50 or NIFTYBANK).
      * Attempts to retrieve from Redis cache first; if not found, fetches from Kite API.
      *
-     * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK", "NIFTY 50", "BANK NIFTY")
      * @return {@link Mono} emitting the OptionChain
      */
     public Mono<OptionChain> fetchOptionChain(String symbol) {
-        symbol = symbol.replaceAll("\\s+", "");
-        String redisKey = REDIS_KEY_OPTION_CHAIN_PREFIX + symbol;
+        String normalizedSymbol = normalizeSymbol(symbol);
+        String redisKey = REDIS_KEY_OPTION_CHAIN_PREFIX + normalizedSymbol;
 
         // Try to get from cache first
-        String finalSymbol = symbol;
         return redisTemplate.opsForValue().get(redisKey)
                 .flatMap(cached -> {
-                    log.debug("Option chain for {} found in cache", finalSymbol);
+                    log.debug("Option chain for {} found in cache", normalizedSymbol);
                     OptionChain optionChain = deserializeOptionChain(cached);
-                    log.info("Successfully retrieved option chain for {} from cache", finalSymbol);
+                    log.info("Successfully retrieved option chain for {} from cache", normalizedSymbol);
                     return Mono.just(optionChain);
                 })
                 .switchIfEmpty(
                         // Cache miss: fetch from Kite API
-                        fetchFromKiteAPI(symbol)
+                        fetchFromKiteAPI(normalizedSymbol)
                                 .flatMap(optionChain -> {
                                     // Cache the result
                                     String json = serializeOptionChain(optionChain);
                                     return redisTemplate.opsForValue()
                                             .set(redisKey, json, CACHE_OPTION_CHAIN_TTL)
                                             .thenReturn(optionChain)
-                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", finalSymbol));
+                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", normalizedSymbol));
                                 })
                 )
                 .doOnNext(optionChain -> {
                     if (optionChain != null) {
                         log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
-                                finalSymbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
+                                normalizedSymbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
                     } else {
-                        log.warn("Option chain for {} is null after fetch operation", finalSymbol);
+                        log.warn("Option chain for {} is null after fetch operation", normalizedSymbol);
                     }
                 })
-                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", finalSymbol, e.getMessage(), e));
+                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", normalizedSymbol, e.getMessage(), e));
     }
 
     // ─── Kite API Integration ─────────────────────────────────────────────────────
@@ -117,15 +116,16 @@ public class OptionChainService {
                             .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
                             .build();
 
-                    // Fetch quote data for the underlying
-                    String encodedSymbol = URLEncoder.encode(symbol, StandardCharsets.UTF_8);
+                    // Fetch quote data for the underlying using API-friendly format
+                    String apiFriendlySymbol = toApiFriendlySymbol(symbol);
+                    String encodedSymbol = URLEncoder.encode(apiFriendlySymbol, StandardCharsets.UTF_8);
                     return client.get()
                             .uri("/quote?i=NSE:" + encodedSymbol)
                             .retrieve()
                             .bodyToMono(KiteQuotesResponse.class)
                             .timeout(Duration.ofSeconds(10))
                             .doOnSuccess(quoteResp -> log.info("Successfully fetched quote data for {} from Kite API", symbol))
-                            .flatMap(response -> parseOptionChain(symbol, response))
+                            .flatMap(response -> parseOptionChain(symbol, apiFriendlySymbol, response))
                             .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
                 })
                 .doOnError(e -> {
@@ -148,16 +148,16 @@ public class OptionChainService {
      * Fetches all option instruments for the symbol, filters by nearest weekly expiry,
      * and fetches quote data for each strike.
      */
-    private Mono<OptionChain> parseOptionChain(String symbol, KiteQuotesResponse response) {
+    private Mono<OptionChain> parseOptionChain(String symbol, String apiFriendlySymbol, KiteQuotesResponse response) {
         if (response == null || response.getData() == null) {
             return Mono.error(new IllegalStateException("Invalid Kite API response"));
         }
-        String tradingSymbol = "NFO:" + symbol;
+        String tradingSymbol = "NSE:" + apiFriendlySymbol;
         KiteQuotesResponse.QuoteData spotData = response.getData().get(tradingSymbol);
         if (spotData == null) {
-            log.error("No spot price data found in Kite response for symbol: {}", symbol);
+            log.error("No spot price data found in Kite response for symbol: {}", apiFriendlySymbol);
             return Mono.error(new IllegalStateException(
-                    "Spot price data not available for: " + symbol));
+                    "Spot price data not available for: " + apiFriendlySymbol));
         }
 
         BigDecimal spotPrice = BigDecimal.valueOf(spotData.getLastPrice());
@@ -373,6 +373,40 @@ public class OptionChainService {
                 .filter(date -> date.isAfter(LocalDate.now()))
                 .min(LocalDate::compareTo)
                 .orElse(null);
+    }
+
+    // ─── Symbol Normalization ─────────────────────────────────────────────────────
+
+    /**
+     * Normalizes symbol format for internal use (removes spaces).
+     * Converts "NIFTY 50" to "NIFTY50" and "BANK NIFTY" to "NIFTYBANK".
+     *
+     * @param symbol the input symbol (may contain spaces)
+     * @return normalized symbol without spaces
+     */
+    private String normalizeSymbol(String symbol) {
+        if (symbol == null) {
+            return null;
+        }
+        return symbol.replaceAll("\\s+", "");
+    }
+
+    /**
+     * Converts symbol to API-friendly format (with spaces where needed).
+     * Converts "NIFTY50" to "NIFTY 50" and "NIFTYBANK" to "BANK NIFTY".
+     *
+     * @param symbol the normalized symbol (without spaces)
+     * @return API-friendly symbol format
+     */
+    private String toApiFriendlySymbol(String symbol) {
+        if (symbol == null) {
+            return null;
+        }
+        return switch (symbol) {
+            case "NIFTY50" -> "NIFTY 50";
+            case "NIFTYBANK" -> "BANK NIFTY";
+            default -> symbol;
+        };
     }
 
     // ─── Serialization / Deserialization ──────────────────────────────────────────
