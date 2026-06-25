@@ -1,7 +1,10 @@
-package com.trademesh.zerodha.options;
+package com.trademesh.intelligence.oi;
 
+import com.trademesh.zerodha.options.OptionChain;
+import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +18,7 @@ import reactor.core.publisher.Mono;
  * <p>
  * Provides endpoints to fetch and retrieve option chain data for NIFTY and BANKNIFTY.
  */
+@Profile("!prod")
 @Slf4j
 @RestController
 @RequestMapping("/intelligence/optionchain")
