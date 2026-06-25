@@ -25,11 +25,17 @@ public class KiteQuotesResponse {
         @JsonProperty("instrument_token")
         private long instrumentToken;
 
-        @JsonProperty("timestamp")
-        private long timestamp;
+        @JsonProperty("tradingsymbol")
+        private String tradingSymbol;
 
         @JsonProperty("last_price")
         private double lastPrice;
+
+        @JsonProperty("net_change")
+        private Double netChange;
+
+        @JsonProperty("timestamp")
+        private String timestamp;
 
         @JsonProperty("last_quantity")
         private long lastQuantity;

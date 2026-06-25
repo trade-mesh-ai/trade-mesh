@@ -45,6 +45,7 @@ public class TradingController {
         tradingScheduler.scheduledExpiryDayEntry();
         return Mono.just(ResponseEntity.ok("Expiry day entry triggered manually"));
     }
+
     /**
      * Manually triggers a trading cycle for a specific symbol.
      * <p>

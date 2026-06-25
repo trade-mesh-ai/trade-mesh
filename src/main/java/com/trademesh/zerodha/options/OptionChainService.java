@@ -1,14 +1,13 @@
 package com.trademesh.zerodha.options;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -25,7 +24,6 @@ import static com.trademesh.config.ApplicationConstants.*;
 
 /**
  * Service for fetching and caching option chain data from Zerodha Kite REST API.
- * <p>
  * Responsibilities:
  * - Fetches access token from Redis.
  * - Calls Zerodha Kite REST API to fetch option chain data.
@@ -112,14 +110,14 @@ public class OptionChainService {
 
                     WebClient client = webClientBuilder
                             .baseUrl(config.getBaseUrl())
-                            .defaultHeader("Authorization", "Bearer " + accessToken)
+                            .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
                             .build();
 
                     // Fetch quote data for the underlying
                     return client.get()
-                            .uri("/quote/?i=NSE:" + symbol + "&mode=full")
+                            .uri("/quote?i=NSE:" + symbol)
                             .retrieve()
-                            .bodyToMono(KiteQuoteResponse.class)
+                            .bodyToMono(KiteQuotesResponse.class)
                             .timeout(Duration.ofSeconds(10))
                             .doOnSuccess(quoteResp -> log.info("Successfully fetched quote data for {} from Kite API", symbol))
                             .flatMap(response -> parseOptionChain(symbol, response))
@@ -145,13 +143,19 @@ public class OptionChainService {
      * Fetches all option instruments for the symbol, filters by nearest weekly expiry,
      * and fetches quote data for each strike.
      */
-    private Mono<OptionChain> parseOptionChain(String symbol, KiteQuoteResponse response) {
+    private Mono<OptionChain> parseOptionChain(String symbol, KiteQuotesResponse response) {
         if (response == null || response.getData() == null) {
             return Mono.error(new IllegalStateException("Invalid Kite API response"));
         }
+        String tradingSymbol = "NFO:" + symbol;
+        KiteQuotesResponse.QuoteData spotData = response.getData().get(tradingSymbol);
+        if (spotData == null) {
+            log.error("No spot price data found in Kite response for symbol: {}", symbol);
+            return Mono.error(new IllegalStateException(
+                    "Spot price data not available for: " + symbol));
+        }
 
-        KiteQuoteResponse.QuoteData data = response.getData();
-        BigDecimal spotPrice = BigDecimal.valueOf(data.getLastPrice());
+        BigDecimal spotPrice = BigDecimal.valueOf(spotData.getLastPrice());
 
         // Fetch all option instruments for this symbol
         return authService.getAccessToken()
@@ -162,7 +166,7 @@ public class OptionChainService {
 
                     WebClient client = webClientBuilder
                             .baseUrl(config.getBaseUrl())
-                            .defaultHeader("Authorization", "Bearer " + accessToken)
+                            .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
                             .build();
 
                     // Fetch all instruments to find option strikes
@@ -268,7 +272,6 @@ public class OptionChainService {
                 .uri(uriBuilder -> uriBuilder
                         .path("/quote")
                         .queryParam("i", tokens)
-                        .queryParam("mode", "full")
                         .build())
                 .retrieve()
                 .bodyToMono(com.trademesh.zerodha.options.KiteQuotesResponse.class)
@@ -298,20 +301,22 @@ public class OptionChainService {
             BigDecimal strikePrice = entry.getKey();
             List<KiteInstrumentsResponse.Instrument> instruments = entry.getValue();
 
-            KiteQuotesResponse.QuoteData callQuote = null;
-            KiteQuotesResponse.QuoteData putQuote = null;
+            com.trademesh.zerodha.options.KiteQuotesResponse.QuoteData callQuote = null;
+            com.trademesh.zerodha.options.KiteQuotesResponse.QuoteData putQuote = null;
 
             // Find call and put quotes for this strike
             for (KiteInstrumentsResponse.Instrument inst : instruments) {
                 String tradingSymbol = "NFO:" + inst.getTradingSymbol();
                 com.trademesh.zerodha.options.KiteQuotesResponse.QuoteData quote = quoteMap.get(tradingSymbol);
+                if (quote == null) {
+                    log.warn("No quote data found for strike: {} — skipping", tradingSymbol);
+                    continue;
+                }
 
-                if (quote != null) {
-                    if ("CE".equals(inst.getInstrumentType())) {
-                        callQuote = quote;
-                    } else if ("PE".equals(inst.getInstrumentType())) {
-                        putQuote = quote;
-                    }
+                if ("CE".equals(inst.getInstrumentType())) {
+                    callQuote = quote;
+                } else if ("PE".equals(inst.getInstrumentType())) {
+                    putQuote = quote;
                 }
             }
 
@@ -323,7 +328,8 @@ public class OptionChainService {
                 builder.callOI(callQuote.getOpenInterest())
                         .callOIChange(callQuote.getOiDayChange())
                         .callLTP(BigDecimal.valueOf(callQuote.getLastPrice()))
-                        .callIV(BigDecimal.valueOf(callQuote.getImpliedVolatility()));
+                        .callIV(BigDecimal.valueOf(
+                                Math.round(callQuote.getImpliedVolatility() * 100.0) / 100.0));
             } else {
                 builder.callOI(0).callOIChange(0).callLTP(BigDecimal.ZERO).callIV(BigDecimal.ZERO);
             }
@@ -332,7 +338,8 @@ public class OptionChainService {
                 builder.putOI(putQuote.getOpenInterest())
                         .putOIChange(putQuote.getOiDayChange())
                         .putLTP(BigDecimal.valueOf(putQuote.getLastPrice()))
-                        .putIV(BigDecimal.valueOf(putQuote.getImpliedVolatility()));
+                        .putIV(BigDecimal.valueOf(
+                                Math.round(putQuote.getImpliedVolatility() * 100.0) / 100.0));
             } else {
                 builder.putOI(0).putOIChange(0).putLTP(BigDecimal.ZERO).putIV(BigDecimal.ZERO);
             }
@@ -389,35 +396,4 @@ public class OptionChainService {
         }
     }
 
-    // ─── Inner DTOs for Kite API Response ──────────────────────────────────────────
-
-    /**
-     * Minimal representation of Kite Connect Quote API response for single instrument.
-     */
-    @Data
-    static class KiteQuoteResponse {
-        private String status;
-        private QuoteData data;
-
-        @Data
-        static class QuoteData {
-            @JsonProperty("instrument_token")
-            private long instrumentToken;
-
-            @JsonProperty("trading_symbol")
-            private String tradingSymbol;
-
-            @JsonProperty("last_price")
-            private double lastPrice;
-
-            @JsonProperty("open_interest")
-            private long openInterest;
-
-            @JsonProperty("volume")
-            private long volume;
-
-            @JsonProperty("timestamp")
-            private String timestamp;
-        }
-    }
 }

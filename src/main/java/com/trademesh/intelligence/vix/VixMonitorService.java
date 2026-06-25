@@ -1,11 +1,10 @@
 package com.trademesh.intelligence.vix;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
-import lombok.Data;
+import com.trademesh.zerodha.options.KiteQuotesResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,8 +15,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
 import static com.trademesh.config.ApplicationConstants.IST;
@@ -134,7 +131,7 @@ public class VixMonitorService {
                             .uri("/quote?i=NSE:INDIA+VIX")
                             .retrieve()
 
-                            .bodyToMono(KiteQuoteResponse.class)
+                            .bodyToMono(KiteQuotesResponse.class)
                             .doOnNext(response -> log.info("Successfully fetched VIX quote from Kite API: {}", response))
                             .timeout(Duration.ofSeconds(10))
                             .flatMap(this::parseVixData)
@@ -159,12 +156,12 @@ public class VixMonitorService {
     /**
      * Parses the Kite API response and builds a VixData object.
      */
-    private Mono<VixData> parseVixData(KiteQuoteResponse response) {
+    private Mono<VixData> parseVixData(KiteQuotesResponse response) {
         if (response == null || response.getData() == null) {
             return Mono.error(new IllegalStateException("Invalid Kite API response for VIX"));
         }
 
-        KiteQuoteResponse.QuoteData quoteData = response.getData().get("NSE:INDIA VIX");
+        KiteQuotesResponse.QuoteData quoteData = response.getData().get("NSE:INDIA VIX");
         if (quoteData == null) {
             log.error("No VIX data found in Kite response. data map was empty or key missing.");
             return Mono.error(new RuntimeException("VIX data not available from Kite API"));
@@ -193,7 +190,7 @@ public class VixMonitorService {
                 .currentVix(currentVix)
                 .vixLevel(vixLevel)
                 .previousClose(prevClose)
-                .changePercent(Math.round(changePercent * 100.0) / 100.0 )
+                .changePercent(Math.round(changePercent * 100.0) / 100.0)
                 .fetchedAt(ZonedDateTime.now(IST).toInstant())
                 .build();
 
@@ -226,45 +223,6 @@ public class VixMonitorService {
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             log.error("Failed to deserialize VixData: {}", e.getMessage());
             throw new RuntimeException("VixData deserialization failed", e);
-        }
-    }
-
-    // ─── Inner DTOs for Kite API Response ──────────────────────────────────────────
-
-    /**
-     * Minimal representation of Kite Connect Quote API response for VIX.
-     */
-    @Data
-    static class KiteQuoteResponse {
-        private String status;
-        private java.util.Map<String, QuoteData> data;
-
-        @Data
-        static class QuoteData {
-            @JsonProperty("instrument_token")
-            private Long instrumentToken;
-
-            @JsonProperty("tradingsymbol")
-            private String tradingSymbol;
-
-            @JsonProperty("last_price")
-            private Double lastPrice;
-
-            @JsonProperty("net_change")
-            private Double netChange;
-
-            @JsonProperty("timestamp")
-            private String timestamp;
-
-            private Ohlc ohlc;
-        }
-
-        @Data
-        static class Ohlc {
-            private Double open;
-            private Double high;
-            private Double low;
-            private Double close;
         }
     }
 }

@@ -125,8 +125,10 @@ public class TickerConnectionManager {
                     }
                 })
                 .subscribe(
-                    v -> {}, // onNext (won't be called for Mono)
-                    err -> {} // onError (silently handle - we've already logged)
+                        v -> {
+                        }, // onNext (won't be called for Mono)
+                        err -> {
+                        } // onError (silently handle - we've already logged)
                 );
     }
 
