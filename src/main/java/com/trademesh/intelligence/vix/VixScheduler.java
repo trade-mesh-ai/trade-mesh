@@ -53,12 +53,13 @@ public class VixScheduler {
      */
     @Scheduled(fixedRateString = "${vix.fetch-interval-minutes:5}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void fetchVixData() {
-        log.debug("Starting VIX fetch task");
 
         if (!tokenTracker.isTokenAvailable()) {
             log.warn("[VixScheduler] Zerodha token unavailable. Skipping VIX fetch.");
             return;
         }
+
+        log.debug("Starting VIX fetch task");
 
         vixMonitorService.fetchCurrentVix()
                 .subscribeOn(Schedulers.boundedElastic())
