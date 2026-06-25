@@ -41,21 +41,17 @@ public class TokenExpiryWatcher {
         }
 
         redisTemplate.opsForValue().get(TOKEN_KEY)
-                .subscribe(
-                        token -> {
-                            // Token is present, no action needed
-                        },
-                        error -> {
-                            // Log error but do not crash
-                            log.error("Error checking token expiry from Redis: {}", error.getMessage());
-                        },
-                        () -> {
-                            // Token is null (not found in Redis)
-                            log.warn("Zerodha access token not found in Redis");
-                            tokenAvailabilityTracker.setTokenUnavailable();
-                            sendReAuthAlert();
-                        }
-                );
+                .hasElement()
+                .doOnSuccess(exists -> {
+                    if (!exists) {
+                        log.warn("Zerodha access token not found in Redis");
+                        tokenAvailabilityTracker.setTokenUnavailable();
+                        sendReAuthAlert();
+                    }
+                })
+                .doOnError(error -> log.error("Error checking token expiry from Redis: {}", error.getMessage()))
+                .onErrorResume(error -> reactor.core.publisher.Mono.empty())
+                .subscribe();
     }
 
     /**

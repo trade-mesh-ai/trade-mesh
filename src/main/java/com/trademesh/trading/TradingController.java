@@ -3,6 +3,7 @@ package com.trademesh.trading;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -36,7 +37,14 @@ public class TradingController {
     private final TradingOrchestrator tradingOrchestrator;
     private final DailyReportService dailyReportService;
     private final PaperTradeRepository paperTradeRepository;
+    private final TradingScheduler tradingScheduler;
 
+    @Operation(summary = "Manually trigger expiry day entry")
+    @PostMapping("/expiry-day/trigger")
+    public Mono<ResponseEntity<String>> triggerExpiryDayEntry() {
+        tradingScheduler.scheduledExpiryDayEntry();
+        return Mono.just(ResponseEntity.ok("Expiry day entry triggered manually"));
+    }
     /**
      * Manually triggers a trading cycle for a specific symbol.
      * <p>

@@ -37,9 +37,17 @@ public class MaxPainScheduler {
     /**
      * Captures max pain calculation snapshots every 30 minutes (1,800,000 milliseconds).
      * Runs during market hours (Mon–Fri, 9:15 AM – 3:30 PM IST).
+     * Performs a single token availability check before fan-out to prevent redundant
+     * Redis lookups and log spam when unauthenticated.
      */
     @Scheduled(fixedRate = 1800000) // 30 minutes
     public void captureMaxPainSnapshots() {
+
+        if (!tokenTracker.isTokenAvailable()) {
+            log.warn("[MaxPainScheduler] Zerodha token unavailable. Skipping max pain snapshot capture.");
+            return;
+        }
+
         log.info("Starting max pain snapshot capture ...");
 
         for (String symbol : SYMBOLS) {

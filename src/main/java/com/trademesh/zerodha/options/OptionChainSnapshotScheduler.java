@@ -37,12 +37,13 @@ public class OptionChainSnapshotScheduler {
      */
     @Scheduled(fixedRate = 300000) // 5 minutes
     public void captureOptionChainSnapshots() {
-        log.info("Starting option chain snapshot capture ...");
 
         if (!tokenTracker.isTokenAvailable()) {
             log.warn("[OptionChainSnapshotScheduler] Zerodha token unavailable. Skipping option chain snapshot.");
             return;
         }
+
+        log.info("Starting option chain snapshot capture ...");
 
         for (String symbol : SYMBOLS) {
             captureSnapshot(symbol)

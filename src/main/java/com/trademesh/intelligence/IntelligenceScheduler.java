@@ -40,6 +40,8 @@ public class IntelligenceScheduler {
     /**
      * Refreshes market intelligence every 5 minutes (300,000 milliseconds).
      * Only runs during market hours (9:15 AM to 3:30 PM IST).
+     * Performs a single token availability check before fan-out to prevent redundant
+     * Redis lookups and log spam when unauthenticated.
      */
     @Scheduled(fixedRate = 300000) // 5 minutes
     public void refreshMarketIntelligence() {
@@ -47,6 +49,11 @@ public class IntelligenceScheduler {
         LocalTime now = LocalTime.now(IST);
         if (!isMarketHours(now)) {
             log.debug("Outside market hours ({}). Skipping intelligence refresh.", now);
+            return;
+        }
+
+        if (!tokenTracker.isTokenAvailable()) {
+            log.warn("[IntelligenceScheduler] Zerodha token unavailable. Skipping market intelligence refresh.");
             return;
         }
 
