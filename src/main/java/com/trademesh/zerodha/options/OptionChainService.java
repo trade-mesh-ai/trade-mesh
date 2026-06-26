@@ -1,6 +1,7 @@
 package com.trademesh.zerodha.options;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trademesh.config.WebClientConfig;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
@@ -19,6 +20,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -38,6 +40,8 @@ import static com.trademesh.config.ApplicationConstants.*;
 public class OptionChainService {
 
     private static final String SCHEDULER_NAME = "OptionChainService";
+    private static final Duration INSTRUMENTS_CACHE_TTL = Duration.ofHours(24);
+    private static final String INSTRUMENTS_CACHE_KEY = "instruments:nfo:";
 
     // ─── Dependencies ─────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
@@ -46,6 +50,7 @@ public class OptionChainService {
     private final WebClient.Builder webClientBuilder;
     private final TokenAvailabilityTracker tokenTracker;
     private final ObjectMapper objectMapper;
+    private final WebClientConfig webClientConfig;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
 
@@ -169,19 +174,47 @@ public class OptionChainService {
                 .flatMap(accessToken -> {
                     tokenTracker.resetTracking(SCHEDULER_NAME);
 
-                    WebClient client = webClientBuilder
-                            .baseUrl(config.getBaseUrl())
-                            .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
-                            .build();
+                    WebClient client = webClientConfig.instrumentsClient(accessToken);
 
-                    // Fetch all instruments to find option strikes
-                    return client.get()
-                            .uri("/instruments")
-                            .retrieve()
-                            .bodyToMono(KiteInstrumentsResponse.class)
-                            .timeout(Duration.ofSeconds(15))
-                            .doOnSuccess(instrumentsResp -> log.info("Successfully fetched instruments for {}", symbol))
-                            .flatMap(instrumentsResponse -> buildOptionChain(symbol, spotPrice, instrumentsResponse, accessToken, client))
+                    // Check Redis cache for instruments first
+                    String instrumentsCacheKey = INSTRUMENTS_CACHE_KEY + symbol;
+                    return redisTemplate.opsForValue().get(instrumentsCacheKey)
+                            .flatMap(cached -> {
+                                log.debug("Instruments for {} found in cache", symbol);
+                                try {
+                                    List<KiteInstrumentsResponse.Instrument> instruments =
+                                            objectMapper.readValue(cached,
+                                                    objectMapper.getTypeFactory().constructCollectionType(List.class, KiteInstrumentsResponse.Instrument.class));
+                                    return buildOptionChain(symbol, spotPrice, instruments, accessToken, client);
+                                } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                                    log.warn("Failed to deserialize cached instruments for {}: {}", symbol, e.getMessage());
+                                    return Mono.empty();
+                                }
+                            })
+                            .switchIfEmpty(
+                                    // Cache miss: fetch from Kite API using dedicated instruments client
+                                    webClientConfig.instrumentsClient(accessToken).get()
+                                            .uri("/instruments")
+                                            .retrieve()
+                                            .bodyToMono(String.class)
+                                            .timeout(Duration.ofSeconds(15))
+                                            .doOnSuccess(csv -> log.info("Successfully fetched instruments CSV for {}", symbol))
+                                            .flatMap(csv -> {
+                                                List<KiteInstrumentsResponse.Instrument> instruments = parseInstrumentsCsv(csv);
+
+                                                // Cache the parsed instruments
+                                                try {
+                                                    String json = objectMapper.writeValueAsString(instruments);
+                                                    return redisTemplate.opsForValue()
+                                                            .set(instrumentsCacheKey, json, INSTRUMENTS_CACHE_TTL)
+                                                            .thenReturn(instruments);
+                                                } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                                                    log.warn("Failed to cache instruments for {}: {}", symbol, e.getMessage());
+                                                    return Mono.just(instruments);
+                                                }
+                                            })
+                                            .flatMap(instruments -> buildOptionChain(symbol, spotPrice, instruments, accessToken, client))
+                            )
                             .doOnError(e -> log.error("Failed to fetch instruments for {}: {}", symbol, e.getMessage()));
                 })
                 .doOnError(e -> {
@@ -193,17 +226,69 @@ public class OptionChainService {
     }
 
     /**
+     * Parses CSV response from Kite /instruments endpoint.
+     * Kite API returns CSV format with the following columns:
+     * 0: instrument_token, 1: exchange_token, 2: tradingsymbol, 3: name, 4: last_price,
+     * 5: expiry, 6: strike, 7: tick_size, 8: lot_size, 9: instrument_type, 10: segment, 11: exchange
+     */
+    private List<KiteInstrumentsResponse.Instrument> parseInstrumentsCsv(String csv) {
+        List<KiteInstrumentsResponse.Instrument> instruments = new ArrayList<>();
+        if (csv == null || csv.isBlank()) {
+            return instruments;
+        }
+
+        String[] lines = csv.split("\n");
+        // Skip header line (line 0)
+        for (int i = 1; i < lines.length; i++) {
+            String line = lines[i].trim();
+            if (line.isBlank()) {
+                continue;
+            }
+
+            String[] fields = line.split(",", 12);
+            if (fields.length < 12) {
+                continue;  // skip malformed lines
+            }
+
+            if (!(Arrays.asList(fields).contains("NFO-OPT") && (Arrays.asList(fields).contains("\"NIFTY\"") || Arrays.asList(fields).contains("\"BANKNIFTY\"")))) {
+                continue;
+            }
+
+            try {
+                KiteInstrumentsResponse.Instrument inst = new KiteInstrumentsResponse.Instrument();
+                inst.setInstrumentToken(Long.parseLong(fields[0].trim()));
+                inst.setExchangeToken(Long.parseLong(fields[1].trim()));
+                inst.setTradingSymbol(fields[2].trim());
+                inst.setName(fields[3].trim());
+                inst.setLastPrice(fields[4].isBlank() ? 0.0 : Double.parseDouble(fields[4].trim()));
+                inst.setExpiryDate(fields[5].isBlank() ? null : LocalDate.parse(fields[5].trim()));
+                inst.setStrikePrice(fields[6].isBlank() ? 0.0 : Double.parseDouble(fields[6].trim()));
+                inst.setLotSize(fields[8].isBlank() ? 0 : Integer.parseInt(fields[8].trim()));
+                inst.setInstrumentType(fields[9].trim());
+                inst.setSegment(fields[10].trim());
+                inst.setExchange(fields[11].trim());
+                instruments.add(inst);
+            } catch (NumberFormatException e) {
+                log.warn("Skipping malformed instrument line {}: {}", i, line);
+            }
+        }
+        log.info("Parsed {} instruments from Kite CSV response", instruments.size());
+        return instruments;
+    }
+
+    /**
      * Builds the complete OptionChain by filtering instruments and fetching strike data.
      */
     private Mono<OptionChain> buildOptionChain(String symbol, BigDecimal spotPrice,
-                                               KiteInstrumentsResponse instrumentsResponse,
+                                               List<KiteInstrumentsResponse.Instrument> instruments,
                                                String accessToken, WebClient client) {
-        if (instrumentsResponse == null || instrumentsResponse.getData() == null) {
-            return Mono.error(new IllegalStateException("Invalid instruments response"));
+        if (instruments == null || instruments.isEmpty()) {
+            return Mono.error(new IllegalStateException("Invalid instruments list"));
         }
 
+        log.info("Building option chain for {} with {} instruments, spot price: {}", symbol, instruments.size(), spotPrice);
         // Find the nearest weekly expiry date
-        LocalDate nearestExpiry = findNearestWeeklyExpiry(instrumentsResponse.getData(), symbol);
+        LocalDate nearestExpiry = findNearestWeeklyExpiry(instruments, symbol);
         if (nearestExpiry == null) {
             log.warn("No option instruments found for {} with weekly expiry", symbol);
             return Mono.just(OptionChain.builder()
@@ -216,13 +301,15 @@ public class OptionChainService {
         }
 
         // Filter instruments for this symbol and expiry
-        List<KiteInstrumentsResponse.Instrument> optionInstruments = instrumentsResponse.getData()
+        // Extract base symbol name for matching (e.g., "NIFTY50" -> "NIFTY", "NIFTYBANK" -> "BANKNIFTY")
+        String baseSymbol = getBaseSymbolForMatching(symbol);
+        List<KiteInstrumentsResponse.Instrument> optionInstruments = instruments
                 .stream()
-                .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO"))
-                .filter(inst -> inst.getExpiryDate() != null && inst.getExpiryDate().equals(nearestExpiry))
+                .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO-OPT"))
                 .filter(inst -> inst.getInstrumentType() != null &&
                         (inst.getInstrumentType().equals("CE") || inst.getInstrumentType().equals("PE")))
-                .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().contains(symbol))
+                .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().startsWith(baseSymbol))
+                .filter(inst -> inst.getExpiryDate() != null && inst.getExpiryDate().equals(nearestExpiry))
                 .toList();
 
         if (optionInstruments.isEmpty()) {
@@ -235,6 +322,9 @@ public class OptionChainService {
                     .fetchedAt(Instant.now())
                     .build());
         }
+
+        // Log the nearest expiry and strike count
+        log.info("Nearest expiry for {}: {}, {} strikes found", symbol, nearestExpiry, optionInstruments.size());
 
         // Group by strike price
         Map<BigDecimal, List<KiteInstrumentsResponse.Instrument>> strikeGroups = optionInstruments
@@ -258,8 +348,11 @@ public class OptionChainService {
                         .strikes(strikes)
                         .fetchedAt(Instant.now())
                         .build())
-                .doOnSuccess(optionChain -> log.info("Successfully built option chain for {} with {} strikes, expiry: {}, spot price: {}",
-                        symbol, optionChain.getStrikes().size(), nearestExpiry, spotPrice));
+                .doOnSuccess(optionChain -> {
+                    log.info("Fetched and parsed {} NFO instruments for {}", optionInstruments.size(), symbol);
+                    log.info("Successfully built option chain for {} with {} strikes, expiry: {}, spot price: {}",
+                            symbol, optionChain.getStrikes().size(), nearestExpiry, spotPrice);
+                });
     }
 
     /**
@@ -271,16 +364,18 @@ public class OptionChainService {
         }
 
         // Build comma-separated list of instrument tokens
-        String tokens = String.join(",", instrumentTokens);
+        //String tokens = String.join(",", instrumentTokens);
+        log.info("Fetching quotes for {} strikes: {}", instrumentTokens.size(), instrumentTokens);
 
         return client.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/quote")
-                        .queryParam("i", tokens)
+                        .queryParam("i", instrumentTokens)
                         .build())
                 .retrieve()
                 .bodyToMono(com.trademesh.zerodha.options.KiteQuotesResponse.class)
                 .timeout(Duration.ofSeconds(10))
+                .doOnSuccess(response -> log.info("Successfully fetched quotes for {} strikes", instrumentTokens.size()))
                 .onErrorResume(e -> {
                     log.error("Failed to fetch quotes for strikes: {}", e.getMessage());
                     return Mono.just(new com.trademesh.zerodha.options.KiteQuotesResponse());
@@ -364,15 +459,35 @@ public class OptionChainService {
      * Finds the nearest weekly expiry date (typically Thursday).
      */
     private LocalDate findNearestWeeklyExpiry(List<KiteInstrumentsResponse.Instrument> instruments, String symbol) {
+        String baseSymbol = getBaseSymbolForMatching(symbol);
         return instruments.stream()
                 .filter(inst -> inst.getExpiryDate() != null)
-                .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO"))
-                .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().contains(symbol))
+                .filter(inst -> inst.getSegment() != null && inst.getSegment().equals("NFO-OPT"))
+                .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().startsWith(baseSymbol))
                 .map(KiteInstrumentsResponse.Instrument::getExpiryDate)
                 .distinct()
                 .filter(date -> date.isAfter(LocalDate.now()))
                 .min(LocalDate::compareTo)
                 .orElse(null);
+    }
+
+    /**
+     * Extracts the base symbol name for matching against Kite CSV tradingSymbols.
+     * Kite CSV uses date-based naming: NIFTY27DEC26000PE, BANKNIFTY26DEC67500PE
+     * This method converts the input symbol to the base prefix used in tradingSymbols.
+     *
+     * @param symbol the normalized symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @return the base symbol prefix for matching (e.g., "NIFTY", "BANKNIFTY")
+     */
+    private String getBaseSymbolForMatching(String symbol) {
+        if (symbol == null) {
+            return null;
+        }
+        return switch (symbol) {
+            case "NIFTY50" -> "NIFTY";
+            case "NIFTYBANK" -> "BANKNIFTY";
+            default -> symbol;
+        };
     }
 
     // ─── Symbol Normalization ─────────────────────────────────────────────────────
@@ -404,7 +519,7 @@ public class OptionChainService {
         }
         return switch (symbol) {
             case "NIFTY50" -> "NIFTY 50";
-            case "NIFTYBANK" -> "BANK NIFTY";
+            case "NIFTYBANK" -> "NIFTY BANK";
             default -> symbol;
         };
     }
