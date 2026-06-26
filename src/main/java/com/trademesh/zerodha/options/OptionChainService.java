@@ -41,7 +41,7 @@ public class OptionChainService {
 
     private static final String SCHEDULER_NAME = "OptionChainService";
     private static final Duration INSTRUMENTS_CACHE_TTL = Duration.ofHours(24);
-    private static final String INSTRUMENTS_CACHE_KEY = "instruments:nfo:";
+    private static final String INSTRUMENTS_CACHE_KEY = "instruments:nfo:ALL";
 
     // ─── Dependencies ─────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
@@ -75,7 +75,11 @@ public class OptionChainService {
                 })
                 .switchIfEmpty(
                         // Cache miss: fetch from Kite API
-                        fetchFromKiteAPI(normalizedSymbol)
+                        authService.getAccessToken()  // ← fetch ONCE here
+                                .switchIfEmpty(Mono.error(new IllegalStateException(
+                                        "No Zerodha access token found in Redis. Please authenticate first.")))
+                                .flatMap(accessToken ->
+                        fetchFromKiteAPI(normalizedSymbol, accessToken)
                                 .flatMap(optionChain -> {
                                     // Cache the result
                                     String json = serializeOptionChain(optionChain);
@@ -93,7 +97,7 @@ public class OptionChainService {
                         log.warn("Option chain for {} is null after fetch operation", normalizedSymbol);
                     }
                 })
-                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", normalizedSymbol, e.getMessage(), e));
+                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", normalizedSymbol, e.getMessage(), e)));
     }
 
     // ─── Kite API Integration ─────────────────────────────────────────────────────
@@ -101,51 +105,37 @@ public class OptionChainService {
     /**
      * Fetches option chain data from Zerodha Kite REST API.
      * Uses the Quote API to fetch data for all strikes of the nearest weekly expiry.
+     *
+     * @param symbol the trading symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @param accessToken the Zerodha access token to use for API calls
+     * @return Mono emitting the OptionChain
      */
-    private Mono<OptionChain> fetchFromKiteAPI(String symbol) {
-        return authService.getAccessToken()
-                .switchIfEmpty(Mono.error(new IllegalStateException(
-                        "No Zerodha access token found in Redis. Please authenticate first.")))
-                .flatMap(accessToken -> {
-                    log.info("Fetching option chain for {} from Kite API", symbol);
-                    tokenTracker.resetTracking(SCHEDULER_NAME);
+    private Mono<OptionChain> fetchFromKiteAPI(String symbol, String accessToken) {
+        log.info("Fetching option chain for {} from Kite API", symbol);
+        tokenTracker.resetTracking(SCHEDULER_NAME);
 
-                    Long instrumentToken = SYMBOL_TOKEN_MAP.get(symbol);
-                    if (instrumentToken == null) {
-                        return Mono.error(new IllegalArgumentException(
-                                "Unknown symbol: " + symbol + ". Supported: NIFTY50, NIFTYBANK"));
-                    }
+        Long instrumentToken = SYMBOL_TOKEN_MAP.get(symbol);
+        if (instrumentToken == null) {
+            return Mono.error(new IllegalArgumentException(
+                    "Unknown symbol: " + symbol + ". Supported: NIFTY50, NIFTYBANK"));
+        }
 
-                    WebClient client = webClientBuilder
-                            .baseUrl(config.getBaseUrl())
-                            .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
-                            .build();
+        WebClient client = webClientBuilder
+                .baseUrl(config.getBaseUrl())
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
+                .build();
 
-                    // Fetch quote data for the underlying using API-friendly format
-                    String apiFriendlySymbol = toApiFriendlySymbol(symbol);
-                    String encodedSymbol = URLEncoder.encode(apiFriendlySymbol, StandardCharsets.UTF_8);
-                    return client.get()
-                            .uri("/quote?i=NSE:" + encodedSymbol)
-                            .retrieve()
-                            .bodyToMono(KiteQuotesResponse.class)
-                            .timeout(Duration.ofSeconds(10))
-                            .doOnSuccess(quoteResp -> log.info("Successfully fetched quote data for {} from Kite API", symbol))
-                            .flatMap(response -> parseOptionChain(symbol, apiFriendlySymbol, response))
-                            .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
-                })
-                .doOnError(e -> {
-                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
-                        tokenTracker.setTokenUnavailable();
-                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
-                    }
-                })
-                .onErrorResume(e -> {
-                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
-                        log.debug("Option chain fetch failed due to missing token, returning empty to allow scheduler to continue");
-                        return Mono.empty();
-                    }
-                    return Mono.error(e);
-                });
+        // Fetch quote data for the underlying using API-friendly format
+        String apiFriendlySymbol = toApiFriendlySymbol(symbol);
+        String encodedSymbol = URLEncoder.encode(apiFriendlySymbol, StandardCharsets.UTF_8);
+        return client.get()
+                .uri("/quote?i=NSE:" + encodedSymbol)
+                .retrieve()
+                .bodyToMono(KiteQuotesResponse.class)
+                .timeout(Duration.ofSeconds(10))
+                .doOnSuccess(quoteResp -> log.info("Successfully fetched quote data for {} from Kite API", symbol))
+                .flatMap(response -> parseOptionChain(symbol, apiFriendlySymbol, response))
+                .doOnError(e -> log.error("Kite API error for {}: {}", symbol, e.getMessage()));
     }
 
     /**
@@ -177,7 +167,7 @@ public class OptionChainService {
                     WebClient client = webClientConfig.instrumentsClient(accessToken);
 
                     // Check Redis cache for instruments first
-                    String instrumentsCacheKey = INSTRUMENTS_CACHE_KEY + symbol;
+                    String instrumentsCacheKey = INSTRUMENTS_CACHE_KEY;
                     return redisTemplate.opsForValue().get(instrumentsCacheKey)
                             .flatMap(cached -> {
                                 log.debug("Instruments for {} found in cache", symbol);
@@ -185,7 +175,7 @@ public class OptionChainService {
                                     List<KiteInstrumentsResponse.Instrument> instruments =
                                             objectMapper.readValue(cached,
                                                     objectMapper.getTypeFactory().constructCollectionType(List.class, KiteInstrumentsResponse.Instrument.class));
-                                    return buildOptionChain(symbol, spotPrice, instruments, accessToken, client);
+                                    return buildOptionChain(symbol, spotPrice, instruments, accessToken);
                                 } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
                                     log.warn("Failed to deserialize cached instruments for {}: {}", symbol, e.getMessage());
                                     return Mono.empty();
@@ -213,7 +203,7 @@ public class OptionChainService {
                                                     return Mono.just(instruments);
                                                 }
                                             })
-                                            .flatMap(instruments -> buildOptionChain(symbol, spotPrice, instruments, accessToken, client))
+                                            .flatMap(instruments -> buildOptionChain(symbol, spotPrice, instruments, accessToken))
                             )
                             .doOnError(e -> log.error("Failed to fetch instruments for {}: {}", symbol, e.getMessage()));
                 })
@@ -281,7 +271,7 @@ public class OptionChainService {
      */
     private Mono<OptionChain> buildOptionChain(String symbol, BigDecimal spotPrice,
                                                List<KiteInstrumentsResponse.Instrument> instruments,
-                                               String accessToken, WebClient client) {
+                                               String accessToken) {
         if (instruments == null || instruments.isEmpty()) {
             return Mono.error(new IllegalStateException("Invalid instruments list"));
         }
@@ -302,6 +292,9 @@ public class OptionChainService {
 
         // Filter instruments for this symbol and expiry
         // Extract base symbol name for matching (e.g., "NIFTY50" -> "NIFTY", "NIFTYBANK" -> "BANKNIFTY")
+        BigDecimal atmStrike = spotPrice.divide(BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100));
+
         String baseSymbol = getBaseSymbolForMatching(symbol);
         List<KiteInstrumentsResponse.Instrument> optionInstruments = instruments
                 .stream()
@@ -310,6 +303,11 @@ public class OptionChainService {
                         (inst.getInstrumentType().equals("CE") || inst.getInstrumentType().equals("PE")))
                 .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().startsWith(baseSymbol))
                 .filter(inst -> inst.getExpiryDate() != null && inst.getExpiryDate().equals(nearestExpiry))
+                .filter(inst -> {
+                    BigDecimal strike = BigDecimal.valueOf(inst.getStrikePrice());
+                    return strike.compareTo(atmStrike.subtract(BigDecimal.valueOf(1000))) >= 0
+                            && strike.compareTo(atmStrike.add(BigDecimal.valueOf(1000))) <= 0;
+                })
                 .toList();
 
         if (optionInstruments.isEmpty()) {
@@ -332,13 +330,19 @@ public class OptionChainService {
                 .collect(java.util.stream.Collectors.groupingBy(inst ->
                         new BigDecimal(inst.getStrikePrice())));
 
+        // Build a fresh quotes client, not the instruments client
+        WebClient quotesClient = webClientBuilder
+                .baseUrl(config.getBaseUrl())
+                .defaultHeader(HttpHeaders.AUTHORIZATION, "token " + config.getApiKey() + ":" + accessToken)
+                .build();
+
         // Fetch quote data for all strikes
         List<String> instrumentTokens = optionInstruments.stream()
                 .map(inst -> "NFO:" + inst.getTradingSymbol())
                 .distinct()
                 .toList();
 
-        return fetchQuotesForStrikes(client, instrumentTokens)
+        return fetchQuotesForStrikes(quotesClient, instrumentTokens)
                 .map(quotesResponse -> buildStrikesFromQuotes(symbol, spotPrice, nearestExpiry,
                         strikeGroups, quotesResponse))
                 .map(strikes -> OptionChain.builder()
