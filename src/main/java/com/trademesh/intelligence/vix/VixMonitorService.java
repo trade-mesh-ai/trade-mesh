@@ -45,6 +45,7 @@ public class VixMonitorService {
     private final WebClient.Builder webClientBuilder;
     private final TokenAvailabilityTracker tokenTracker;
     private final ObjectMapper objectMapper;
+    private final VixHistoryRepository vixHistoryRepository;
     // ─── Configuration ────────────────────────────────────────────────────────
     @Value("${vix.alert-threshold:20.0}")
     private Double alertThreshold;
@@ -54,6 +55,7 @@ public class VixMonitorService {
     /**
      * Fetches the current VIX data from Zerodha Kite API.
      * Attempts to retrieve from Redis cache first; if not found, fetches from API.
+     * Does NOT persist to database.
      *
      * @return {@link Mono} emitting the current VixData
      */
@@ -102,6 +104,26 @@ public class VixMonitorService {
      */
     public boolean hasVixCrossedThreshold(VixData vixData) {
         return vixData.getCurrentVix() >= alertThreshold;
+    }
+
+    /**
+     * Fetches the current VIX and persists it to the vix_history table.
+     * This method is called by the scheduler to capture historical snapshots.
+     *
+     * @return {@link Mono} emitting the saved VixHistory
+     */
+    public Mono<VixHistory> fetchAndSave() {
+        return fetchCurrentVix()
+                .flatMap(vixData -> {
+                    VixHistory vixHistory = VixHistory.fromVixData(vixData);
+                    return vixHistoryRepository.save(vixHistory)
+                            .doOnSuccess(saved -> log.info("VIX data persisted to database: id={}, value={}, level={}",
+                                    saved.getId(),
+                                    saved.getVixValue(),
+                                    saved.getVixLevel()))
+                            .then(Mono.just(vixHistory));
+                })
+                .doOnError(e -> log.error("Failed to fetch and save VIX data: {}", e.getMessage(), e));
     }
 
     // ─── Kite API Integration ─────────────────────────────────────────────────────

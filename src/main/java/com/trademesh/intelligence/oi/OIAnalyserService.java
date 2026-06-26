@@ -43,11 +43,13 @@ public class OIAnalyserService {
     // ─── Dependencies ─────────────────────────────────────────────────────────────
     private final ReactiveStringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final OIAnalysisRepository analysisRepository;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
 
     /**
      * Analyzes the option chain and returns OI analysis.
+     * Does NOT persist to database.
      * <p>
      * This method:
      * - Finds maximum call OI (resistance wall)
@@ -285,5 +287,31 @@ public class OIAnalyserService {
             return 0.0;
         }
         return (oiChange / (double) currentOI) * 100.0;
+    }
+
+    /**
+     * Analyzes the option chain and persists the OI analysis to the oi_snapshots table.
+     * This method is called by the scheduler to capture historical snapshots.
+     *
+     * @param chain the option chain to analyze
+     * @return {@link Mono} emitting the saved OIAnalysis
+     */
+    public Mono<OIAnalysis> captureAndSave(OptionChain chain) {
+        return analyseOI(chain)
+                .flatMap(analysis -> {
+                    // Set ID to null to ensure a new record is created
+                    analysis.setId(null);
+
+                    // Ensure analyzedAt is set
+                    if (analysis.getAnalyzedAt() == null) {
+                        analysis.setAnalyzedAt(Instant.now());
+                    }
+
+                    // Save to PostgreSQL and return the saved entity with DB-generated ID
+                    return analysisRepository.save(analysis)
+                            .doOnSuccess(saved -> log.info("Saved OI analysis snapshot: symbol={}, id={}, bias={}",
+                                    saved.getSymbol(), saved.getId(), saved.getMarketBias()));
+                })
+                .doOnError(e -> log.error("Failed to capture and save OI analysis: {}", e.getMessage(), e));
     }
 }

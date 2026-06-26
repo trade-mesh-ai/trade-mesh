@@ -30,9 +30,9 @@ public class VixScheduler {
     private final VixHistoryRepository vixHistoryRepository;
     private final TokenAvailabilityTracker tokenTracker;
     // ─── Configuration ────────────────────────────────────────────────────────────
-    @Value("${vix.fetch-interval-minutes:5}")
+    @Value("${intelligence.vix.fetch-interval-minutes:5}")
     private Integer fetchIntervalMinutes;
-    @Value("${vix.persist-interval-minutes:15}")
+    @Value("${intelligence.vix.persist-interval-minutes:15}")
     private Integer persistIntervalMinutes;
     // ─── State ────────────────────────────────────────────────────────────────────
     private VixData lastFetchedVixData;
@@ -51,7 +51,7 @@ public class VixScheduler {
      *   <li>Stores the latest data in memory for persistence checks</li>
      * </ol>
      */
-    @Scheduled(fixedRateString = "${vix.fetch-interval-minutes:5}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(fixedRateString = "${intelligence.vix.fetch-interval-minutes:5}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void fetchVixData() {
 
         if (!tokenTracker.isTokenAvailable()) {
@@ -100,23 +100,15 @@ public class VixScheduler {
      *
      * <p>This task:
      * <ol>
-     *   <li>Checks if VIX data has been fetched since last persistence</li>
-     *   <li>Creates a VixHistory record from the latest VIX data</li>
+     *   <li>Calls vixMonitorService.fetchAndSave() to fetch and persist VIX data</li>
      *   <li>Persists to the vix_history table</li>
      * </ol>
      */
-    @Scheduled(fixedRateString = "${vix.persist-interval-minutes:15}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(fixedRateString = "${intelligence.vix.persist-interval-minutes:15}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void persistVixData() {
         log.debug("Starting VIX persistence task");
 
-        if (lastFetchedVixData == null) {
-            log.warn("No VIX data available for persistence. Skipping.");
-            return;
-        }
-
-        VixHistory vixHistory = VixHistory.fromVixData(lastFetchedVixData);
-
-        vixHistoryRepository.save(vixHistory)
+        vixMonitorService.fetchAndSave()
                 .subscribeOn(Schedulers.boundedElastic())
                 .subscribe(
                         savedHistory -> {
@@ -134,6 +126,7 @@ public class VixScheduler {
     /**
      * Logs VIX statistics periodically (for monitoring purposes).
      * Runs every 30 minutes.
+     * Includes persistence frequency tracking using lastPersistTime.
      */
     @Scheduled(fixedRate = 30, timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void logVixStatistics() {
@@ -147,6 +140,22 @@ public class VixScheduler {
                 lastFetchedVixData.getVixLevel(),
                 lastFetchedVixData.isSafeToTrade(),
                 lastFetchedVixData.getFetchedAt());
+
+        // Log persistence frequency tracking
+        if (lastPersistTime != null) {
+            long secondsSinceLastPersist = java.time.Duration.between(lastPersistTime, Instant.now()).getSeconds();
+            long expectedPersistIntervalSeconds = persistIntervalMinutes * 60L;
+            log.info("VIX Persistence Tracking - LastPersistTime: {}, SecondsSinceLastPersist: {}, ConfiguredIntervalMinutes: {}, ConfiguredIntervalSeconds: {}",
+                    lastPersistTime,
+                    secondsSinceLastPersist,
+                    persistIntervalMinutes,
+                    expectedPersistIntervalSeconds);
+        } else {
+            log.info("VIX Persistence Tracking - No persistence has occurred yet");
+        }
+
+        // Log fetch interval configuration
+        log.debug("VIX Fetch Configuration - FetchIntervalMinutes: {}", fetchIntervalMinutes);
 
         // Count records in database
         vixHistoryRepository.countRecords()

@@ -40,7 +40,7 @@ public class MaxPainScheduler {
      * Performs a single token availability check before fan-out to prevent redundant
      * Redis lookups and log spam when unauthenticated.
      */
-    @Scheduled(fixedRate = 1800000) // 30 minutes
+    @Scheduled(fixedRateString = "${intelligence.maxpain.persist-interval-minutes:30}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void captureMaxPainSnapshots() {
 
         if (!tokenTracker.isTokenAvailable()) {

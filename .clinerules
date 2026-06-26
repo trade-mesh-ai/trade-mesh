@@ -23,6 +23,15 @@ Use existing Redis connection.
 - Integration tests for controllers and repositories.
 - Maintain high coverage for trading logic.
 
+## Architecture Conventions
+
+- REST endpoints are read/display only and never persist to DB.
+- All DB writes happen exclusively through schedulers.
+- Service classes must expose two method variants for data that needs persistence:
+  - A read method (REST-facing): fetches/calculates, no save
+  - A save method (scheduler-facing): calls read method then saves
+- Never inject repositories directly into schedulers for writes — all persistence goes through the service layer.
+
 ## When Generating Code
 
 - Generate production-ready code.

@@ -31,6 +31,7 @@ public class OIAnalysis {
     /**
      * Trading symbol (e.g., "NIFTY50", "NIFTYBANK").
      */
+    @Column("symbol")
     private String symbol;
 
     /**
@@ -66,6 +67,7 @@ public class OIAnalysis {
     /**
      * Full analysis data serialized as JSON.
      */
+    @Column("data")
     private String data;
 
     /**

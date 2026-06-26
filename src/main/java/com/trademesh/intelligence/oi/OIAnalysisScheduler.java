@@ -30,8 +30,6 @@ public class OIAnalysisScheduler {
 
     private final OptionChainService optionChainService;
     private final OIAnalyserService oiAnalyserService;
-    private final OIAnalysisRepository analysisRepository;
-    private final ObjectMapper objectMapper;
     private final TokenAvailabilityTracker tokenTracker;
 
     /**
@@ -40,7 +38,7 @@ public class OIAnalysisScheduler {
      * Performs a single token availability check before fan-out to prevent redundant
      * Redis lookups and log spam when unauthenticated.
      */
-    @Scheduled(fixedRate = 900000) // 15 minutes
+    @Scheduled(fixedRateString = "${intelligence.oi.persist-interval-minutes:15}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
     public void captureOIAnalysisSnapshots() {
 
         if (!tokenTracker.isTokenAvailable()) {
@@ -62,30 +60,7 @@ public class OIAnalysisScheduler {
      */
     private Mono<Void> captureAnalysis(String symbol) {
         return optionChainService.fetchOptionChain(symbol)
-                .flatMap(oiAnalyserService::analyseOI)
-                .flatMap(analysis -> {
-                    try {
-                        // Set the ID to null to ensure a new record is created
-                        analysis.setId(null);
-
-                        // Ensure analyzedAt is set
-                        if (analysis.getAnalyzedAt() == null) {
-                            analysis.setAnalyzedAt(Instant.now());
-                        }
-
-                        // Serialize the full analysis to JSON
-                        String jsonData = objectMapper.writeValueAsString(analysis);
-                        analysis.setData(jsonData);
-
-                        // Save to PostgreSQL
-                        return analysisRepository.save(analysis)
-                                .doOnSuccess(saved -> log.info("Saved OI analysis snapshot for {} (id={}, bias={})",
-                                        symbol, saved.getId(), saved.getMarketBias()))
-                                .then();
-                    } catch (Exception e) {
-                        log.error("Failed to serialize OI analysis for {}: {}", symbol, e.getMessage());
-                        return Mono.error(e);
-                    }
-                });
+                .flatMap(oiAnalyserService::captureAndSave)
+                .then();
     }
 }
