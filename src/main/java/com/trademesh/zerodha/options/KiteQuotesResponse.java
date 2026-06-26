@@ -66,7 +66,7 @@ public class KiteQuotesResponse {
         @JsonProperty("ohlc")
         private OHLC ohlc;
 
-        @JsonProperty("open_interest")
+        @JsonProperty("oi")
         private long openInterest;
 
         @JsonProperty("oi_day_high")

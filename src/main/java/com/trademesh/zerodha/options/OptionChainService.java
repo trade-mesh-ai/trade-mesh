@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.options;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.config.WebClientConfig;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
@@ -359,6 +360,12 @@ public class OptionChainService {
                     log.info("Fetched and parsed {} NFO instruments for {}", optionInstruments.size(), symbol);
                     log.info("Successfully built option chain for {} with {} strikes, expiry: {}, spot price: {}",
                             symbol, optionChain.getStrikes().size(), nearestExpiry, spotPrice);
+                    try {
+                        log.info("Raw quotes response: {}",
+                                objectMapper.writeValueAsString(optionChain));
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
                 });
     }
 
