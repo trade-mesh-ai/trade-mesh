@@ -4,6 +4,7 @@ package com.trademesh.zerodha.options;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
@@ -12,6 +13,7 @@ import java.math.BigDecimal;
  * This class is used to encapsulate the details of a specific strike price, including open interest, last traded price, and implied volatility for both call and put options.
  */
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class OptionStrike {

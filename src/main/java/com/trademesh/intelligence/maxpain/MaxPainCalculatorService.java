@@ -43,12 +43,40 @@ public class MaxPainCalculatorService {
 
     private final ReactiveStringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final MaxPainHistoryRepository maxPainHistoryRepository;
     @Value("#{${maxpain.lot-sizes:{NIFTY50: 75, NIFTYBANK: 30}}}")
     private Map<String, Integer> lotSizes;
 
     /**
+     * Calculates and persists the Max Pain for a given option chain.
+     * Calls calculate(), sets id to null, ensures calculatedAt is set,
+     * then saves to the database via maxPainHistoryRepository.
+     *
+     * @param chain the option chain to analyze
+     * @return {@link Mono} emitting the saved MaxPainResult with database-generated id
+     */
+    public Mono<MaxPainResult> calculateAndSave(OptionChain chain) {
+        return calculate(chain)
+                .flatMap(result -> {
+                    // Set ID to null to ensure a new record is created
+                    result.setId(null);
+
+                    // Ensure calculatedAt is set
+                    if (result.getCalculatedAt() == null) {
+                        result.setCalculatedAt(Instant.now());
+                    }
+
+                    // Save to PostgreSQL and return the saved entity with DB-generated ID
+                    return maxPainHistoryRepository.save(result)
+                            .doOnSuccess(saved -> log.info("Saved max pain snapshot: symbol={}, id={}, strike={}",
+                                    saved.getSymbol(), saved.getId(), saved.getMaxPainStrike()));
+                });
+    }
+
+    /**
      * Calculates the Max Pain for a given option chain.
      * Attempts to retrieve from Redis cache first; if not found, calculates from scratch.
+     * Does NOT persist to database.
      *
      * @param chain the option chain to analyze
      * @return {@link Mono} emitting the MaxPainResult
@@ -151,7 +179,7 @@ public class MaxPainCalculatorService {
             // Calculate distance metrics
             double distanceFromSpot = Math.abs(maxPainStrike - spotPrice.doubleValue());
             double distancePercent = spotPrice.doubleValue() > 0
-                    ? (distanceFromSpot / spotPrice.doubleValue()) * 100
+                    ? Math.round((distanceFromSpot / spotPrice.doubleValue()) * 10000.0) / 100.0
                     : 0.0;
 
             // Build result

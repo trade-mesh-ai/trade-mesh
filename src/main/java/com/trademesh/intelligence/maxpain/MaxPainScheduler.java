@@ -62,27 +62,13 @@ public class MaxPainScheduler {
      */
     private Mono<Void> captureMaxPain(String symbol) {
         return optionChainService.fetchOptionChain(symbol)
-                .flatMap(maxPainCalculatorService::calculate)
-                .flatMap(result -> {
-                    // Set the ID to null to ensure a new record is created
-                    result.setId(null);
-
-                    // Ensure calculatedAt is set
-                    if (result.getCalculatedAt() == null) {
-                        result.setCalculatedAt(Instant.now());
-                    }
-
-                    // Save to PostgreSQL
-                    return maxPainHistoryRepository.save(result)
-                            .doOnSuccess(saved -> log.info("Saved max pain snapshot for {} (id={}, strike={})",
-                                    symbol, saved.getId(), saved.getMaxPainStrike()))
-                            .then();
-                })
+                .flatMap(maxPainCalculatorService::calculateAndSave)
+                .then()
                 .doOnError(e -> {
                     if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
                         tokenTracker.trackTokenMissing(SCHEDULER_NAME);
                     } else {
-                        log.error("Failed to capture max pain for {}: {}", symbol, e.getMessage());
+                        log.error("Failed to capture max pain for {}: {}", symbol, e.getMessage(), e);
                     }
                 })
                 .onErrorResume(e -> {
