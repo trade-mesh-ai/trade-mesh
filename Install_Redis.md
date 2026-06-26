@@ -113,6 +113,7 @@ redis-cli DEL "price:*"
 redis-cli DEL "market:intelligence:*"
 redis-cli DEL "market:maxpain:*"
 redis-cli DEL "optionchain:*"
+redis-cli GET "instruments:nfo:ALL" | python3 -m json.tool | head -100
 ```
 
 ```bash

@@ -32,8 +32,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
     implementation("org.postgresql:r2dbc-postgresql:1.0.5.RELEASE")
     implementation("org.postgresql:postgresql:42.7.3")
-    implementation ("org.flywaydb:flyway-core")
-    implementation ("org.flywaydb:flyway-database-postgresql")
     // Liquibase (schema migrations)
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.liquibase:liquibase-core")

@@ -2,6 +2,7 @@ package com.trademesh.zerodha.options;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.config.WebClientConfig;
+import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
@@ -19,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -428,22 +431,47 @@ public class OptionChainService {
             OptionStrike.OptionStrikeBuilder builder = OptionStrike.builder()
                     .strikePrice(strikePrice);
 
+            // Calculate time to expiry in years (using IST timezone)
+            LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+            long daysToExpiry = Math.max(today.until(expiryDate, ChronoUnit.DAYS), 1);
+            double timeToExpiryYears = daysToExpiry / 365.0;
+
             if (callQuote != null) {
+                // OI day change not provided by Kite REST API. Using oiDayHigh - oiDayLow as intraday OI range proxy.
+                long callOIChange = callQuote.getOiDayHigh() - callQuote.getOiDayLow();
+
+                // Calculate IV locally using Black-Scholes since Kite REST API does not provide it
+                double callIV = ImpliedVolatilityCalculator.calculate(
+                        spotPrice.doubleValue(),
+                        strikePrice.doubleValue(),
+                        timeToExpiryYears,
+                        callQuote.getLastPrice(),
+                        "CE");
+
                 builder.callOI(callQuote.getOpenInterest())
-                        .callOIChange(callQuote.getOiDayChange())
+                        .callOIChange(callOIChange)
                         .callLTP(BigDecimal.valueOf(callQuote.getLastPrice()))
-                        .callIV(BigDecimal.valueOf(
-                                Math.round(callQuote.getImpliedVolatility() * 100.0) / 100.0));
+                        .callIV(BigDecimal.valueOf(callIV));
             } else {
                 builder.callOI(0).callOIChange(0).callLTP(BigDecimal.ZERO).callIV(BigDecimal.ZERO);
             }
 
             if (putQuote != null) {
+                // OI day change not provided by Kite REST API. Using oiDayHigh - oiDayLow as intraday OI range proxy.
+                long putOIChange = putQuote.getOiDayHigh() - putQuote.getOiDayLow();
+
+                // Calculate IV locally using Black-Scholes since Kite REST API does not provide it
+                double putIV = ImpliedVolatilityCalculator.calculate(
+                        spotPrice.doubleValue(),
+                        strikePrice.doubleValue(),
+                        timeToExpiryYears,
+                        putQuote.getLastPrice(),
+                        "PE");
+
                 builder.putOI(putQuote.getOpenInterest())
-                        .putOIChange(putQuote.getOiDayChange())
+                        .putOIChange(putOIChange)
                         .putLTP(BigDecimal.valueOf(putQuote.getLastPrice()))
-                        .putIV(BigDecimal.valueOf(
-                                Math.round(putQuote.getImpliedVolatility() * 100.0) / 100.0));
+                        .putIV(BigDecimal.valueOf(putIV));
             } else {
                 builder.putOI(0).putOIChange(0).putLTP(BigDecimal.ZERO).putIV(BigDecimal.ZERO);
             }
