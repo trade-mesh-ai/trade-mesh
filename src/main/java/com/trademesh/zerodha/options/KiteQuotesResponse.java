@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.options;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
@@ -20,6 +21,7 @@ public class KiteQuotesResponse {
      * Quote data for a single instrument.
      */
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class QuoteData {
 
         @JsonProperty("instrument_token")
@@ -41,7 +43,7 @@ public class KiteQuotesResponse {
         private long lastQuantity;
 
         @JsonProperty("last_trade_time")
-        private long lastTradeTime;
+        private String lastTradeTime;
 
         @JsonProperty("average_price")
         private double averagePrice;
@@ -54,6 +56,12 @@ public class KiteQuotesResponse {
 
         @JsonProperty("total_sell_quantity")
         private long totalSellQuantity;
+
+        @JsonProperty("buy_quantity")
+        private long buyQuantity;
+
+        @JsonProperty("sell_quantity")
+        private long sellQuantity;
 
         @JsonProperty("ohlc")
         private OHLC ohlc;
