@@ -1,14 +1,19 @@
 package com.trademesh.zerodha.options;
 
+
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
 /**
- * Represents a single option strike with call and put data.
+ * Represents a single strike in an option chain, containing both call and put option data.
+ * This class is used to encapsulate the details of a specific strike price, including open interest, last traded price, and implied volatility for both call and put options.
  */
 @Data
+@AllArgsConstructor
 @Builder
 public class OptionStrike {
 

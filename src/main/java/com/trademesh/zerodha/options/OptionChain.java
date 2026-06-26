@@ -1,7 +1,9 @@
 package com.trademesh.zerodha.options;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,6 +15,8 @@ import java.util.List;
  * Contains all strikes for the nearest weekly expiry.
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class OptionChain {
 

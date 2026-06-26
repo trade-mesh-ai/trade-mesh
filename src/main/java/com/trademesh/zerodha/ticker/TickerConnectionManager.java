@@ -143,7 +143,7 @@ public class TickerConnectionManager {
      * The threshold is configurable via zerodha.ticker.max-reconnect-alerts (default: 10 cycles = 5 minutes).
      */
     private void logDisconnectAlert(int attempts) {
-        String msg = "[TickerConnectionManager] ⚠️  KiteTicker WebSocket is DISCONNECTED "
+        String msg = "[TickerConnectionManager] 🟡 KiteTicker WebSocket is DISCONNECTED "
                 + "(attempt #{} to reconnect). "
                 + "Live market data is UNAVAILABLE. "
                 + "Strategies relying on real-time prices may produce stale signals.";
