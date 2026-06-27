@@ -45,7 +45,7 @@ public class TradingController {
     @Operation(summary = "Manually trigger expiry day entry")
     @PostMapping("/expiry-day/trigger")
     public Mono<ResponseEntity<String>> triggerExpiryDayEntry() {
-        tradingScheduler.scheduledExpiryDayEntry();
+        tradingScheduler.triggerExpiryDayEntryManually();
         return Mono.just(ResponseEntity.ok("Expiry day entry triggered manually"));
     }
 

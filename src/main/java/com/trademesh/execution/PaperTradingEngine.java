@@ -7,6 +7,7 @@ import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.zerodha.options.OptionChain;
+import io.r2dbc.postgresql.codec.Json;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -81,7 +82,7 @@ public class PaperTradingEngine {
                 .symbol(signal.getSymbol())
                 .strategyName(signal.getStrategyName())
                 .status(TradeStatus.OPEN)
-                .legs(serializeLegs(signal.getLegs()))
+                .legs(Json.of(serializeLegs(signal.getLegs())))
                 .entryCredit(signal.getExpectedCredit())
                 .currentValue(signal.getExpectedCredit())
                 .unrealizedPnl(0.0)
@@ -296,9 +297,9 @@ public class PaperTradingEngine {
      * @return List of TradeLeg objects
      * @throws Exception if deserialization fails
      */
-    private List<TradeLeg> deserializeLegs(String legsJson) throws Exception {
+    private List<TradeLeg> deserializeLegs(Json legsJson) throws Exception {
         return objectMapper.readValue(
-                legsJson,
+                legsJson.toString(),
                 objectMapper.getTypeFactory().constructCollectionType(List.class, TradeLeg.class)
         );
     }

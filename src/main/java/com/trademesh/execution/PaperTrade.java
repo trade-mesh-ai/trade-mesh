@@ -1,6 +1,7 @@
 package com.trademesh.execution;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import io.r2dbc.postgresql.codec.Json;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -67,7 +68,7 @@ public class PaperTrade {
      */
     @Column("legs")
     @JsonProperty("legs")
-    private String legs;
+    private Json legs;
 
     /**
      * Premium/credit collected at entry (in points).
