@@ -1,8 +1,7 @@
 package com.trademesh.execution;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import io.r2dbc.postgresql.codec.Json;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.PostLoad;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,9 +12,11 @@ import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
+import com.trademesh.strategy.TradeLeg;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -77,20 +78,12 @@ public class PaperTrade implements Persistable<UUID> {
 
     /**
      * Trade legs stored as JSONB.
-     * Contains serialized list of TradeLeg objects with strike prices, actions, etc.
-     * Used by R2DBC for persistence only.
+     * Contains list of TradeLeg objects with strike prices, actions, etc.
+     * Automatically converted from/to JSONB by R2DBC converters.
      */
     @Column("legs")
-    @JsonIgnore
-    private Json legs;
-
-    /**
-     * Trade legs as JSON string for REST serialization.
-     * Converted from the Json field for Jackson serialization.
-     */
-    @Transient
-    @JsonProperty("legs")
-    private String legsJson;
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private List<TradeLeg> legs;
 
     /**
      * Premium/credit collected at entry (in points).
@@ -173,12 +166,4 @@ public class PaperTrade implements Persistable<UUID> {
         this.isNew = false;
     }
 
-    /**
-     * Converts the R2DBC Json field to a String for REST serialization.
-     * Called after R2DBC loads the entity from the database.
-     * Returns null if the legs field is null.
-     */
-    public String getLegsJson() {
-        return legs != null ? legs.asString() : null;
-    }
 }

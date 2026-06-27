@@ -7,7 +7,6 @@ import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.zerodha.options.OptionChain;
-import io.r2dbc.postgresql.codec.Json;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -75,21 +74,21 @@ public class PaperTradingEngine {
         }
 
         // Create PaperTrade entity
-        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
-        PaperTrade trade = PaperTrade.builder()
-                .id(UUID.randomUUID())
-                .tradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")))
-                .symbol(signal.getSymbol())
-                .strategyName(signal.getStrategyName())
-                .status(TradeStatus.OPEN)
-                .legs(Json.of(serializeLegs(signal.getLegs())))
-                .entryCredit(signal.getExpectedCredit())
-                .currentValue(signal.getExpectedCredit())
-                .unrealizedPnl(0.0)
-                .entryTime(now)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
+         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+         PaperTrade trade = PaperTrade.builder()
+                 .id(UUID.randomUUID())
+                 .tradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")))
+                 .symbol(signal.getSymbol())
+                 .strategyName(signal.getStrategyName())
+                 .status(TradeStatus.OPEN)
+                 .legs(signal.getLegs())
+                 .entryCredit(signal.getExpectedCredit())
+                 .currentValue(signal.getExpectedCredit())
+                 .unrealizedPnl(0.0)
+                 .entryTime(now)
+                 .createdAt(now)
+                 .updatedAt(now)
+                 .build();
 
         // Save to PostgreSQL
         return paperTradeRepository.save(trade)
@@ -197,22 +196,28 @@ public class PaperTradingEngine {
     /**
      * Fetches current option prices from Redis for all legs of a trade.
      * Reads the option chain data from Redis using key optionchain:{symbol},
-     * deserializes it once, then loops through all legs to extract LTPs and sum them.
+     * then loops through all legs to extract LTPs and sum them.
      *
      * @param trade the paper trade
      * @return Mono emitting the current value in points
      */
     private Mono<Double> fetchCurrentPrices(PaperTrade trade) {
         try {
-            List<TradeLeg> legs = deserializeLegs(trade.getLegs());
-            log.debug("Fetching current prices for {} legs", legs.size());
+            List<TradeLeg> legs = trade.getLegs();
+            if (legs == null) {
+                legs = List.of();
+            }
+            final List<TradeLeg> finalLegs = legs;
+            log.debug("Fetching current prices for {} legs", finalLegs.size());
 
-            if (legs.isEmpty()) {
+            if (finalLegs.isEmpty()) {
                 return Mono.just(trade.getEntryCredit());
             }
 
             // Single Redis call to fetch option chain data
             String redisKey = "optionchain:" + trade.getSymbol();
+            final Double entryCredit = trade.getEntryCredit();
+            final Double currentValue = trade.getCurrentValue();
             return redisTemplate.opsForValue().get(redisKey)
                     .flatMap(chainJson -> {
                         try {
@@ -222,7 +227,7 @@ public class PaperTradingEngine {
 
                             // Loop through legs and sum all LTPs
                             double totalCurrentValue = 0.0;
-                            for (TradeLeg leg : legs) {
+                            for (TradeLeg leg : finalLegs) {
                                 double ltp = extractLTP(chainData, leg);
                                 totalCurrentValue += ltp;
                             }
@@ -231,7 +236,7 @@ public class PaperTradingEngine {
                             return Mono.just(totalCurrentValue);
                         } catch (Exception e) {
                             log.error("Error deserializing option chain for {}: {}", trade.getSymbol(), e.getMessage());
-                            return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
+                            return Mono.just(currentValue != null ? currentValue : entryCredit);
                         }
                     })
                     .switchIfEmpty(Mono.defer(() -> {
@@ -290,35 +295,6 @@ public class PaperTradingEngine {
         return leg.getLimitPrice();
     }
 
-    /**
-     * Deserializes trade legs from JSON string.
-     *
-     * @param legsJson JSON string representation of legs
-     * @return List of TradeLeg objects
-     * @throws Exception if deserialization fails
-     */
-    private List<TradeLeg> deserializeLegs(Json legsJson) throws Exception {
-        String jsonString = legsJson.asString();
-        return objectMapper.readValue(
-                jsonString,
-                objectMapper.getTypeFactory().constructCollectionType(List.class, TradeLeg.class)
-        );
-    }
-
-    /**
-     * Serializes trade legs to JSON string.
-     *
-     * @param legs the list of trade legs
-     * @return JSON string representation of legs
-     */
-    private String serializeLegs(List<TradeLeg> legs) {
-        try {
-            return objectMapper.writeValueAsString(legs);
-        } catch (Exception e) {
-            log.error("Error serializing trade legs", e);
-            return "[]";
-        }
-    }
 
     /**
      * Formats entry alert message for Telegram.
@@ -329,7 +305,10 @@ public class PaperTradingEngine {
      */
     private String formatEntryAlert(PaperTrade trade, TradeSignal signal) {
         try {
-            List<TradeLeg> legs = deserializeLegs(trade.getLegs());
+            List<TradeLeg> legs = trade.getLegs();
+            if (legs == null) {
+                legs = List.of();
+            }
 
             StringBuilder sb = new StringBuilder();
             sb.append("📄 <b>Paper Trade ENTERED</b>\n\n");
