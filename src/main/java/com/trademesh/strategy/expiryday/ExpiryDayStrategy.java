@@ -107,20 +107,20 @@ public class ExpiryDayStrategy implements TradingStrategy {
         }
     }
 
-     @Override
-     public StrategyConfig getConfig() {
-         return StrategyConfig.builder()
-                 .strategyName(getName())
-                 .maxLotsPerTrade(config.getMaxLots())
-                 .stopLossPercent(config.getStopLossPercent())
-                 .targetProfitPercent(config.getTargetProfitPercent())
-                 .maxVix(config.getMaxVix())
-                 .minVix(config.getMinVix())
-                 .allowedDays(java.util.List.of(DayOfWeek.TUESDAY))
-                 .applicableConditions(java.util.List.of(MarketCondition.EXPIRY_DAY))
-                 .isEnabled(true)
-                 .build();
-     }
+    @Override
+    public StrategyConfig getConfig() {
+        return StrategyConfig.builder()
+                .strategyName(getName())
+                .maxLotsPerTrade(config.getMaxLots())
+                .stopLossPercent(config.getStopLossPercent())
+                .targetProfitPercent(config.getTargetProfitPercent())
+                .maxVix(config.getMaxVix())
+                .minVix(config.getMinVix())
+                .allowedDays(java.util.List.of(DayOfWeek.TUESDAY))
+                .applicableConditions(java.util.List.of(MarketCondition.EXPIRY_DAY))
+                .isEnabled(true)
+                .build();
+    }
 
     /**
      * Performs safety checks before generating a signal.

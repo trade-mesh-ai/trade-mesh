@@ -5,6 +5,8 @@ import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
+import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.zerodha.options.OptionChain;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -14,8 +16,6 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -195,7 +195,8 @@ public class PaperTradingEngine {
 
     /**
      * Fetches current option prices from Redis for all legs of a trade.
-     * Calculates the current value of the position based on current prices of all legs.
+     * Reads the option chain data from Redis using key optionchain:{symbol},
+     * deserializes it once, then loops through all legs to extract LTPs and sum them.
      *
      * @param trade the paper trade
      * @return Mono emitting the current value in points
@@ -205,32 +206,37 @@ public class PaperTradingEngine {
             List<TradeLeg> legs = deserializeLegs(trade.getLegs());
             log.debug("Fetching current prices for {} legs", legs.size());
 
-            // Build list of Mono<Double> for each leg's LTP
-            List<Mono<Double>> legPriceMono = new ArrayList<>();
-            for (TradeLeg leg : legs) {
-                String redisKey = buildRedisKey(trade.getSymbol(), leg);
-                Mono<Double> legPrice = redisTemplate.opsForValue().get(redisKey)
-                        .map(Double::parseDouble)
-                        .onErrorResume(e -> {
-                            log.debug("Redis key not found: {}, falling back to limit price", redisKey);
-                            return Mono.just(leg.getLimitPrice());
-                        })
-                        .switchIfEmpty(Mono.just(leg.getLimitPrice()));
-                legPriceMono.add(legPrice);
-            }
-
-            // Use Mono.zip() to fetch all prices in parallel
-            if (legPriceMono.isEmpty()) {
+            if (legs.isEmpty()) {
                 return Mono.just(trade.getEntryCredit());
             }
 
-            return Mono.zip(legPriceMono, prices -> {
-                double totalValue = 0.0;
-                for (Object price : prices) {
-                    totalValue += (Double) price;
-                }
-                return totalValue;
-            });
+            // Single Redis call to fetch option chain data
+            String redisKey = "optionchain:" + trade.getSymbol();
+            return redisTemplate.opsForValue().get(redisKey)
+                    .flatMap(chainJson -> {
+                        try {
+                            // Deserialize option chain once
+                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
+                            log.debug("Retrieved option chain for {} with {} strikes", trade.getSymbol(), chainData.getStrikes().size());
+
+                            // Loop through legs and sum all LTPs
+                            double totalCurrentValue = 0.0;
+                            for (TradeLeg leg : legs) {
+                                double ltp = extractLTP(chainData, leg);
+                                totalCurrentValue += ltp;
+                            }
+
+                            log.debug("Calculated total current value for trade {}: {}", trade.getId(), totalCurrentValue);
+                            return Mono.just(totalCurrentValue);
+                        } catch (Exception e) {
+                            log.error("Error deserializing option chain for {}: {}", trade.getSymbol(), e.getMessage());
+                            return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
+                        }
+                    })
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.warn("Redis key missing: {}, falling back to current value", redisKey);
+                        return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
+                    }));
         } catch (Exception e) {
             log.error("Error fetching current prices for trade: {}", trade.getId(), e);
             return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
@@ -238,18 +244,49 @@ public class PaperTradingEngine {
     }
 
     /**
-     * Builds Redis key for fetching option price.
-     * Format: tick:{symbol}:{ddMMMyy_expiry_uppercase}:{strikeInt}:{CE or PE}
+     * Extracts the LTP (Last Traded Price) for a trade leg from the option chain data.
+     * Finds the matching strike by comparing strike prices (int comparison),
+     * then returns the appropriate LTP based on option type (CE or PE).
      *
-     * @param symbol the trading symbol
-     * @param leg    the trade leg
-     * @return Redis key string
+     * @param chainData the option chain data containing all strikes
+     * @param leg       the trade leg to extract LTP for
+     * @return the LTP value, or the leg's limit price if strike not found
      */
-    private String buildRedisKey(String symbol, TradeLeg leg) {
-        String expiryStr = leg.getExpiryDate().format(DateTimeFormatter.ofPattern("ddMMMyy")).toUpperCase();
-        String optionType = leg.getOptionType().name();
-        int strikeInt = leg.getStrikePrice().intValue();
-        return String.format("tick:%s:%s:%d:%s", symbol, expiryStr, strikeInt, optionType);
+    private double extractLTP(OptionChain chainData, TradeLeg leg) {
+        if (chainData == null || chainData.getStrikes() == null || chainData.getStrikes().isEmpty()) {
+            log.warn("Option chain data is empty, using limit price for leg with strike {}", leg.getStrikePrice());
+            return leg.getLimitPrice();
+        }
+
+        int legStrikeInt = leg.getStrikePrice().intValue();
+
+        // Find matching strike in chain data
+        for (var strike : chainData.getStrikes()) {
+            if (strike.getStrikePrice().intValue() == legStrikeInt) {
+                // Extract appropriate LTP based on option type
+                if (leg.getOptionType() == OptionType.CE) {
+                    if (strike.getCallLTP() == null) {
+                        log.warn("Call LTP is null for strike {}, using limit price", legStrikeInt);
+                        return leg.getLimitPrice();
+                    }
+                    double callLTP = strike.getCallLTP().doubleValue();
+                    log.debug("Found call LTP {} for strike {}", callLTP, legStrikeInt);
+                    return callLTP;
+                } else if (leg.getOptionType() == OptionType.PE) {
+                    if (strike.getPutLTP() == null) {
+                        log.warn("Put LTP is null for strike {}, using limit price", legStrikeInt);
+                        return leg.getLimitPrice();
+                    }
+                    double putLTP = strike.getPutLTP().doubleValue();
+                    log.debug("Found put LTP {} for strike {}", putLTP, legStrikeInt);
+                    return putLTP;
+                }
+            }
+        }
+
+        // Strike not found in chain data
+        log.warn("Strike {} not found in option chain for {}, using limit price", legStrikeInt, chainData.getSymbol());
+        return leg.getLimitPrice();
     }
 
     /**
