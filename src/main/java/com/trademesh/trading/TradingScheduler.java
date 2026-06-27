@@ -29,7 +29,7 @@ public class TradingScheduler {
     /**
      * Runs trading cycle entry on Thursday at 9:30 AM IST.
      * <p>
-     * Triggers strategy evaluation and potential trade entry for both NIFTY and BANKNIFTY.
+     * Triggers strategy evaluation and potential trade entry for both NIFTY and NIFTYBANK.
      * This is the main entry point for the weekly trading cycle.
      * <p>
      * Cron: "0 30 9 * * THU"
@@ -43,7 +43,33 @@ public class TradingScheduler {
     // Expiry day: THU — see trading.expiry-day in application.yml
     @Scheduled(cron = "0 30 9 * * THU", zone = "Asia/Kolkata")
     public void scheduledExpiryDayEntry() {
-        marketCalendarService.isMarketOpen()
+        executeExpiryDayEntry(false);
+    }
+
+    /**
+     * Manually triggers expiry day entry, bypassing market open checks.
+     * <p>
+     * Useful for testing or manual intervention outside of market hours.
+     * Logs a warning to indicate this is for testing purposes only.
+     */
+    public void triggerExpiryDayEntryManually() {
+        log.warn("Manual expiry day trigger invoked — bypassing market hours check. FOR TESTING ONLY.");
+        executeExpiryDayEntry(true);
+    }
+
+    /**
+     * Executes the expiry day entry trading cycle.
+     * <p>
+     * Runs trading cycles for both NIFTY and NIFTYBANK.
+     *
+     * @param forceExecution if true, bypasses market open check; if false, checks market hours
+     */
+    private void executeExpiryDayEntry(boolean forceExecution) {
+        reactor.core.publisher.Mono<Boolean> marketCheck = forceExecution
+                ? reactor.core.publisher.Mono.just(true)
+                : marketCalendarService.isMarketOpen();
+
+        marketCheck
                 .filter(Boolean::booleanValue)
                 .flatMap(ignored -> reactor.core.publisher.Mono.fromRunnable(() -> {
                     log.info("🚀 Starting Tuesday 9:30 AM trading cycle entry");
@@ -61,16 +87,16 @@ public class TradingScheduler {
                             .subscribe(ignored2 -> {
                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
 
-                    // Run trading cycle for BANKNIFTY
-                    tradingOrchestrator.runTradingCycle("BANKNIFTY")
+                    // Run trading cycle for NIFTYBANK
+                    tradingOrchestrator.runTradingCycle("NIFTYBANK")
                             .doOnSuccess(result -> {
                                 if (result.getIsExecutable()) {
-                                    log.info("✅ BANKNIFTY trading cycle executed successfully");
+                                    log.info("✅ NIFTYBANK trading cycle executed successfully");
                                 } else {
-                                    log.info("⏭️ BANKNIFTY trading cycle skipped: {}", result.getSkipReason());
+                                    log.info("⏭️ NIFTYBANK trading cycle skipped: {}", result.getSkipReason());
                                 }
                             })
-                            .doOnError(e -> log.error("❌ Error in BANKNIFTY trading cycle: {}", e.getMessage(), e))
+                            .doOnError(e -> log.error("❌ Error in NIFTYBANK trading cycle: {}", e.getMessage(), e))
                             .subscribe(ignored2 -> {
                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
                 }))
@@ -113,14 +139,14 @@ public class TradingScheduler {
                             .subscribe(ignored2 -> {
                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
 
-                    // Monitor BANKNIFTY positions
-                    tradingOrchestrator.monitorOpenPositions("BANKNIFTY")
+                    // Monitor NIFTYBANK positions
+                    tradingOrchestrator.monitorOpenPositions("NIFTYBANK")
                             .doOnSuccess(count -> {
                                 if (count > 0) {
-                                    log.debug("Updated {} BANKNIFTY positions", count);
+                                    log.debug("Updated {} NIFTYBANK positions", count);
                                 }
                             })
-                            .doOnError(e -> log.error("Error monitoring BANKNIFTY positions: {}", e.getMessage(), e))
+                            .doOnError(e -> log.error("Error monitoring NIFTYBANK positions: {}", e.getMessage(), e))
                             .subscribe(ignored2 -> {
                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
                 }))
@@ -159,12 +185,12 @@ public class TradingScheduler {
                             .subscribe(ignored2 -> {
                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
 
-                    // Exit all BANKNIFTY positions
-                    tradingOrchestrator.exitAllPositions("BANKNIFTY")
+                    // Exit all NIFTYBANK positions
+                    tradingOrchestrator.exitAllPositions("NIFTYBANK")
                             .doOnSuccess(count -> {
-                                log.info("Closed {} BANKNIFTY positions at expiry day exit", count);
+                                log.info("Closed {} NIFTYBANK positions at expiry day exit", count);
                             })
-                            .doOnError(e -> log.error("Error closing BANKNIFTY positions: {}", e.getMessage(), e))
+                            .doOnError(e -> log.error("Error closing NIFTYBANK positions: {}", e.getMessage(), e))
                             .subscribe(ignored2 -> {
                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
                 }))

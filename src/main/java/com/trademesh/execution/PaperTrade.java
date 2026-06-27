@@ -1,12 +1,16 @@
 package com.trademesh.execution;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.r2dbc.postgresql.codec.Json;
+import jakarta.persistence.PostLoad;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -31,13 +35,22 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table("paper_trades")
-public class PaperTrade {
+public class PaperTrade implements Persistable<UUID> {
 
     /**
      * Unique identifier for this paper trade (UUID primary key).
      */
     @Id
     private UUID id;
+
+    /**
+     * Flag to indicate if this entity is new (not yet persisted).
+     * Used by Spring Data R2DBC to determine INSERT vs UPDATE.
+     */
+    @Builder.Default
+    @Transient
+    @JsonIgnore
+    private boolean isNew = true;
 
     /**
      * Date when the trade was entered.
@@ -65,10 +78,19 @@ public class PaperTrade {
     /**
      * Trade legs stored as JSONB.
      * Contains serialized list of TradeLeg objects with strike prices, actions, etc.
+     * Used by R2DBC for persistence only.
      */
     @Column("legs")
-    @JsonProperty("legs")
+    @JsonIgnore
     private Json legs;
+
+    /**
+     * Trade legs as JSON string for REST serialization.
+     * Converted from the Json field for Jackson serialization.
+     */
+    @Transient
+    @JsonProperty("legs")
+    private String legsJson;
 
     /**
      * Premium/credit collected at entry (in points).
@@ -131,4 +153,32 @@ public class PaperTrade {
      */
     @Column("updated_at")
     private LocalDateTime updatedAt;
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    /**
+     * Called by Spring after loading entity from database.
+     * Marks the entity as no longer new to ensure subsequent saves use UPDATE.
+     */
+    @PostLoad
+    void markNotNew() {
+        this.isNew = false;
+    }
+
+    /**
+     * Converts the R2DBC Json field to a String for REST serialization.
+     * Called after R2DBC loads the entity from the database.
+     * Returns null if the legs field is null.
+     */
+    public String getLegsJson() {
+        return legs != null ? legs.asString() : null;
+    }
 }

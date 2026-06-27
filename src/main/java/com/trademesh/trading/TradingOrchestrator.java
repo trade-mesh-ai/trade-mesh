@@ -176,6 +176,7 @@ public class TradingOrchestrator {
      */
     private Mono<StrategyExecutionLog> logExecution(String symbol, TradeSignal signal, MarketIntelligence intelligence) {
         StrategyExecutionLog logger = StrategyExecutionLog.builder()
+                .id(java.util.UUID.randomUUID())
                 .symbol(symbol)
                 .strategyName(signal.getStrategyName())
                 .marketCondition(intelligence.getMarketCondition().name())

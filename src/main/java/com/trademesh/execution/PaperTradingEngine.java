@@ -298,8 +298,9 @@ public class PaperTradingEngine {
      * @throws Exception if deserialization fails
      */
     private List<TradeLeg> deserializeLegs(Json legsJson) throws Exception {
+        String jsonString = legsJson.asString();
         return objectMapper.readValue(
-                legsJson.toString(),
+                jsonString,
                 objectMapper.getTypeFactory().constructCollectionType(List.class, TradeLeg.class)
         );
     }

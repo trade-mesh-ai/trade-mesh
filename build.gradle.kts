@@ -59,7 +59,7 @@ dependencies {
     // Jackson (JSON deserialization for Kite Connect API responses)
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-
+    implementation ("org.springframework.boot:spring-boot-starter-data-jpa")
     // Spring Boot Configuration Processor (for @ConfigurationProperties metadata)
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 

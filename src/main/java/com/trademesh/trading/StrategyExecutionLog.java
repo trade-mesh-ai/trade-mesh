@@ -1,10 +1,13 @@
 package com.trademesh.trading;
 
+import jakarta.persistence.PostLoad;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -22,13 +25,21 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table("strategy_execution_logs")
-public class StrategyExecutionLog {
+public class StrategyExecutionLog implements Persistable<UUID> {
 
     /**
      * Unique identifier for this log entry (UUID primary key).
      */
     @Id
     private UUID id;
+
+    /**
+     * Flag to indicate if this entity is new (not yet persisted).
+     * Used by Spring Data R2DBC to determine INSERT vs UPDATE.
+     */
+    @Builder.Default
+    @Transient
+    private boolean isNew = true;
 
     /**
      * Trading symbol (e.g., "NIFTY", "BANKNIFTY").
@@ -78,4 +89,23 @@ public class StrategyExecutionLog {
     @Column("created_at")
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    /**
+     * Called by Spring after loading entity from database.
+     * Marks the entity as no longer new to ensure subsequent saves use UPDATE.
+     */
+    @PostLoad
+    void markNotNew() {
+        this.isNew = false;
+    }
 }
