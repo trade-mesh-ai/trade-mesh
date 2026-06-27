@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import com.trademesh.intelligence.MarketCondition;
+
 import java.time.DayOfWeek;
 import java.util.List;
 
@@ -72,9 +74,15 @@ public class StrategyConfig {
      */
     private Double maxVix;
 
-    /**
-     * Whether this strategy is currently enabled.
-     * If false, the strategy will not be evaluated or executed.
-     */
-    private Boolean isEnabled;
+     /**
+      * Whether this strategy is currently enabled.
+      * If false, the strategy will not be evaluated or executed.
+      */
+     private Boolean isEnabled;
+
+     /**
+      * List of market conditions when this strategy is applicable.
+      * Example: [EXPIRY_DAY] means strategy only applies on expiry days.
+      */
+     private List<MarketCondition> applicableConditions;
 }

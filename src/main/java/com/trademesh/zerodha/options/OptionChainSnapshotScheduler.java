@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -34,7 +35,7 @@ public class OptionChainSnapshotScheduler {
      * Performs a single token availability check before fan-out to prevent redundant
      * Redis lookups and log spam when unauthenticated.
      */
-    //@Scheduled(fixedRate = 300000) // 5 minutes
+    @Scheduled(fixedRate = 300000) // 5 minutes
     public void captureOptionChainSnapshots() {
 
         if (!tokenTracker.isTokenAvailable()) {

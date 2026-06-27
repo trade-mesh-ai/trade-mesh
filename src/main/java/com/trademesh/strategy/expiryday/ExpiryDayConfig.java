@@ -27,6 +27,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class ExpiryDayConfig {
 
     /**
+     * Minimum VIX level allowed to trade this strategy.
+     * If VIX falls below this threshold, the strategy will skip signal generation.
+     * Default: 8.0
+     */
+    private Double minVix = 8.0;
+
+    /**
      * Maximum VIX level allowed to trade this strategy.
      * If VIX exceeds this threshold, the strategy will skip signal generation.
      * Default: 18.0
@@ -61,7 +68,7 @@ public class ExpiryDayConfig {
      * Controls position size to limit exposure.
      * Default: 1 lot
      */
-    private Integer maxLots = 1;
+    private Integer maxLots = 10;
 
     /**
      * Stop loss percentage for the strategy.
@@ -69,7 +76,7 @@ public class ExpiryDayConfig {
      * Example: 100.0 means exit if premium doubles (100% loss).
      * Default: 100.0
      */
-    private Double stopLossPercent = 100.0;
+    private Double stopLossPercent = 50.0;
 
     /**
      * Target profit percentage for the strategy.

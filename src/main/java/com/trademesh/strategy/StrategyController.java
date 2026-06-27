@@ -157,29 +157,37 @@ public class StrategyController {
                                 Map<String, Object> strategyInfo = new HashMap<>();
                                 strategyInfo.put("name", strategy.getName());
 
-                                StrategyConfig config = strategy.getConfig();
-                                strategyInfo.put("enabled", config.getIsEnabled());
-                                strategyInfo.put("maxLotsPerTrade", config.getMaxLotsPerTrade());
-                                strategyInfo.put("stopLossPercent", config.getStopLossPercent());
-                                strategyInfo.put("targetProfitPercent", config.getTargetProfitPercent());
-                                strategyInfo.put("minVix", config.getMinVix());
-                                strategyInfo.put("maxVix", config.getMaxVix());
-                                strategyInfo.put("allowedDays", config.getAllowedDays());
+                                 StrategyConfig config = strategy.getConfig();
+                                 strategyInfo.put("enabled", config.getIsEnabled());
+                                 strategyInfo.put("maxLotsPerTrade", config.getMaxLotsPerTrade());
+                                 strategyInfo.put("stopLossPercent", config.getStopLossPercent());
+                                 strategyInfo.put("targetProfitPercent", config.getTargetProfitPercent());
+                                 strategyInfo.put("minVix", config.getMinVix());
+                                 strategyInfo.put("maxVix", config.getMaxVix());
+                                 strategyInfo.put("allowedDays", config.getAllowedDays());
 
-                                // Determine applicable conditions
-                                List<String> applicableConditions = List.of(
-                                                MarketCondition.SIDEWAYS,
-                                                MarketCondition.TRENDING_BULLISH,
-                                                MarketCondition.TRENDING_BEARISH,
-                                                MarketCondition.EXPIRY_DAY,
-                                                MarketCondition.HIGH_VOLATILITY,
-                                                MarketCondition.NO_TRADE
-                                        ).stream()
-                                        .filter(condition -> strategy.isApplicable(condition))
-                                        .map(MarketCondition::name)
-                                        .collect(Collectors.toList());
+                                 // Use applicableConditions from config if available
+                                 List<String> applicableConditions;
+                                 if (config.getApplicableConditions() != null && !config.getApplicableConditions().isEmpty()) {
+                                     applicableConditions = config.getApplicableConditions().stream()
+                                             .map(MarketCondition::name)
+                                             .collect(Collectors.toList());
+                                 } else {
+                                     // Fallback: determine applicable conditions from strategy
+                                     applicableConditions = List.of(
+                                                     MarketCondition.SIDEWAYS,
+                                                     MarketCondition.TRENDING_BULLISH,
+                                                     MarketCondition.TRENDING_BEARISH,
+                                                     MarketCondition.EXPIRY_DAY,
+                                                     MarketCondition.HIGH_VOLATILITY,
+                                                     MarketCondition.NO_TRADE
+                                             ).stream()
+                                             .filter(condition -> strategy.isApplicable(condition))
+                                             .map(MarketCondition::name)
+                                             .collect(Collectors.toList());
+                                 }
 
-                                strategyInfo.put("applicableConditions", applicableConditions);
+                                 strategyInfo.put("applicableConditions", applicableConditions);
 
                                 return strategyInfo;
                             })

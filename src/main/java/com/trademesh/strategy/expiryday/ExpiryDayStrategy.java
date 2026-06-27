@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -106,17 +107,20 @@ public class ExpiryDayStrategy implements TradingStrategy {
         }
     }
 
-    @Override
-    public StrategyConfig getConfig() {
-        return StrategyConfig.builder()
-                .strategyName(getName())
-                .maxLotsPerTrade(config.getMaxLots())
-                .stopLossPercent(config.getStopLossPercent())
-                .targetProfitPercent(config.getTargetProfitPercent())
-                .maxVix(config.getMaxVix())
-                .isEnabled(true)
-                .build();
-    }
+     @Override
+     public StrategyConfig getConfig() {
+         return StrategyConfig.builder()
+                 .strategyName(getName())
+                 .maxLotsPerTrade(config.getMaxLots())
+                 .stopLossPercent(config.getStopLossPercent())
+                 .targetProfitPercent(config.getTargetProfitPercent())
+                 .maxVix(config.getMaxVix())
+                 .minVix(config.getMinVix())
+                 .allowedDays(java.util.List.of(DayOfWeek.TUESDAY))
+                 .applicableConditions(java.util.List.of(MarketCondition.EXPIRY_DAY))
+                 .isEnabled(true)
+                 .build();
+     }
 
     /**
      * Performs safety checks before generating a signal.
@@ -175,7 +179,9 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
         // Verify minimum distance from spot
         BigDecimal minDistance = new BigDecimal(config.getMinDistanceFromSpot());
-        BigDecimal wideningAmount = new BigDecimal(50);
+        BigDecimal wideningAmount = "NIFTYBANK".equals(intelligence.getSymbol())
+                ? new BigDecimal(100)
+                : new BigDecimal(50);
 
         // Call strike must be > spot + minDistance
         if (callStrike.compareTo(spotPrice.add(minDistance)) <= 0) {
@@ -291,10 +297,13 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 strikeSelection.getCallStrike().intValue()
         );
 
-        // Calculate max loss for strangle
-        BigDecimal strikeDifference = strikeSelection.getCallStrike()
-                .subtract(strikeSelection.getPutStrike());
-        Double maxLoss = legsResult.getTotalCredit() * config.getStopLossPercent() / 100;
+        // Calculate stop loss amount for strangle
+        Double stopLossAmount = legsResult.getTotalCredit() * config.getStopLossPercent() / 100;
+
+        // Determine confidence based on credit received
+        Confidence confidence = legsResult.getTotalCredit() >= config.getMinCredit() * 2
+                ? Confidence.HIGH
+                : Confidence.MEDIUM;
 
         return TradeSignal.builder()
                 .signalId(UUID.randomUUID())
@@ -303,8 +312,8 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .signalType(SignalType.ENTER)
                 .legs(java.util.List.of(legsResult.getCallLeg(), legsResult.getPutLeg()))
                 .expectedCredit(legsResult.getTotalCredit())
-                .maxLoss(maxLoss)
-                .confidence(Confidence.HIGH)
+                .maxLoss(stopLossAmount)
+                .confidence(confidence)
                 .reason(reason)
                 .build();
     }
@@ -316,8 +325,26 @@ public class ExpiryDayStrategy implements TradingStrategy {
      */
     private String buildInstrumentName(String symbol, LocalDate expiryDate,
                                        BigDecimal strike, OptionType optionType) {
+        String kiteSymbol = toKiteSymbol(symbol);
         String expiryStr = expiryDate.format(DateTimeFormatter.ofPattern("ddMMMyy")).toUpperCase();
-        return String.format("%s%s%d%s", symbol, expiryStr, strike.intValue(), optionType.name());
+        return String.format("%s%s%d%s", kiteSymbol, expiryStr, strike.intValue(), optionType.name());
+    }
+
+    /**
+     * Converts symbol to Kite format.
+     * NIFTYBANK → BANKNIFTY
+     * NIFTY50 → NIFTY
+     * Others → unchanged
+     *
+     * @param symbol the symbol to convert
+     * @return the Kite-formatted symbol
+     */
+    private String toKiteSymbol(String symbol) {
+        return switch (symbol) {
+            case "NIFTYBANK" -> "BANKNIFTY";
+            case "NIFTY50" -> "NIFTY";
+            default -> symbol;
+        };
     }
 
     /**

@@ -34,8 +34,11 @@ public class OIAnalyserService {
     private static final Duration CACHE_TTL = Duration.ofMinutes(5);
 
     // OI Wall strength thresholds (in number of contracts)
-    private static final long STRONG_THRESHOLD = 5_000_000L;      // 50 lakh
-    private static final long MODERATE_THRESHOLD = 2_000_000L;    // 20 lakh
+    // Symbol-specific thresholds are determined in detectOIWallStrength()
+    private static final long NIFTY50_STRONG_THRESHOLD = 5_000_000L;      // 50 lakh
+    private static final long NIFTY50_MODERATE_THRESHOLD = 2_000_000L;    // 20 lakh
+    private static final long NIFTYBANK_STRONG_THRESHOLD = 500_000L;      // 5 lakh
+    private static final long NIFTYBANK_MODERATE_THRESHOLD = 200_000L;    // 2 lakh
 
     // Market bias threshold (10% difference)
     private static final double BIAS_THRESHOLD = 0.10;
@@ -105,6 +108,7 @@ public class OIAnalyserService {
      */
     private Mono<OIAnalysis> performAnalysis(OptionChain chain) {
         return Mono.fromCallable(() -> {
+            String symbol = chain.getSymbol();
             List<OptionStrike> strikes = chain.getStrikes();
 
             // Find max call OI (resistance wall)
@@ -118,8 +122,8 @@ public class OIAnalyserService {
             long maxPutOI = maxPutStrike != null ? maxPutStrike.getPutOI() : 0;
 
             // Get top 3 call and put walls
-            List<OIWall> topCallWalls = getTopCallWalls(strikes, 3);
-            List<OIWall> topPutWalls = getTopPutWalls(strikes, 3);
+            List<OIWall> topCallWalls = getTopCallWalls(strikes, symbol, 3);
+            List<OIWall> topPutWalls = getTopPutWalls(strikes, symbol, 3);
 
             // Calculate market bias
             MarketBias bias = calculateMarketBias(maxCallOI, maxPutOI);
@@ -179,10 +183,11 @@ public class OIAnalyserService {
      * Gets the top N call OI walls (highest call OI concentrations).
      *
      * @param strikes list of option strikes
+     * @param symbol  trading symbol for symbol-aware strength classification
      * @param limit   number of top walls to return
      * @return list of top call OI walls
      */
-    public List<OIWall> getTopCallWalls(List<OptionStrike> strikes, int limit) {
+    public List<OIWall> getTopCallWalls(List<OptionStrike> strikes, String symbol, int limit) {
         return strikes.stream()
                 .filter(strike -> strike.getCallOI() > 0)
                 .map(strike -> OIWall.builder()
@@ -190,7 +195,7 @@ public class OIAnalyserService {
                         .wallType(OIWallType.CALL_WALL)
                         .totalOI(strike.getCallOI())
                         .oiChangePercent(calculateOIChangePercent(strike.getCallOI(), strike.getCallOIChange()))
-                        .strength(detectOIWallStrength(strike.getCallOI()))
+                        .strength(detectOIWallStrength(strike.getCallOI(), symbol))
                         .build())
                 .sorted(Comparator.comparingLong(OIWall::getTotalOI).reversed())
                 .limit(limit)
@@ -201,10 +206,11 @@ public class OIAnalyserService {
      * Gets the top N put OI walls (highest put OI concentrations).
      *
      * @param strikes list of option strikes
+     * @param symbol  trading symbol for symbol-aware strength classification
      * @param limit   number of top walls to return
      * @return list of top put OI walls
      */
-    public List<OIWall> getTopPutWalls(List<OptionStrike> strikes, int limit) {
+    public List<OIWall> getTopPutWalls(List<OptionStrike> strikes, String symbol, int limit) {
         return strikes.stream()
                 .filter(strike -> strike.getPutOI() > 0)
                 .map(strike -> OIWall.builder()
@@ -212,7 +218,7 @@ public class OIAnalyserService {
                         .wallType(OIWallType.PUT_WALL)
                         .totalOI(strike.getPutOI())
                         .oiChangePercent(calculateOIChangePercent(strike.getPutOI(), strike.getPutOIChange()))
-                        .strength(detectOIWallStrength(strike.getPutOI()))
+                        .strength(detectOIWallStrength(strike.getPutOI(), symbol))
                         .build())
                 .sorted(Comparator.comparingLong(OIWall::getTotalOI).reversed())
                 .limit(limit)
@@ -255,20 +261,38 @@ public class OIAnalyserService {
     }
 
     /**
-     * Detects OI wall strength based on total open interest.
+     * Detects OI wall strength based on total open interest and trading symbol.
      * <p>
-     * Strength classification:
+     * Symbol-aware strength classification:
+     * NIFTY50:
      * - OI > 50 lakh (5,000,000) → STRONG
      * - OI 20-50 lakh (2,000,000-5,000,000) → MODERATE
      * - OI < 20 lakh (2,000,000) → WEAK
+     * NIFTYBANK:
+     * - OI > 5 lakh (500,000) → STRONG
+     * - OI 2-5 lakh (200,000-500,000) → MODERATE
+     * - OI < 2 lakh (200,000) → WEAK
      *
-     * @param oi the open interest value
+     * @param oi     the open interest value
+     * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return the strength classification
      */
-    public OIWallStrength detectOIWallStrength(long oi) {
-        if (oi >= STRONG_THRESHOLD) {
+    public OIWallStrength detectOIWallStrength(long oi, String symbol) {
+        // Determine thresholds based on symbol using switch expression
+        long strongThreshold = switch (symbol) {
+            case "NIFTYBANK" -> NIFTYBANK_STRONG_THRESHOLD;
+            default -> NIFTY50_STRONG_THRESHOLD;  // Default for NIFTY50 and future symbols
+        };
+
+        long moderateThreshold = switch (symbol) {
+            case "NIFTYBANK" -> NIFTYBANK_MODERATE_THRESHOLD;
+            default -> NIFTY50_MODERATE_THRESHOLD;  // Default for NIFTY50 and future symbols
+        };
+
+        // Classify based on thresholds
+        if (oi >= strongThreshold) {
             return OIWallStrength.STRONG;
-        } else if (oi >= MODERATE_THRESHOLD) {
+        } else if (oi >= moderateThreshold) {
             return OIWallStrength.MODERATE;
         } else {
             return OIWallStrength.WEAK;

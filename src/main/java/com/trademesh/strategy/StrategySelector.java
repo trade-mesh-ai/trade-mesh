@@ -28,7 +28,7 @@ import java.util.Optional;
  *   <li>EXPIRY_DAY → prioritize ExpiryDayStrategy</li>
  *   <li>SIDEWAYS → prioritize ThetaSpreadStrategy</li>
  *   <li>TRENDING_BULLISH → prioritize BullPutSpreadStrategy</li>
- *   <li>TRENDING_BEARISH → prioritize BullCallSpreadStrategy</li>
+ *   <li>TRENDING_BEARISH → prioritize BEAR_CALL_SPREAD</li>
  * </ul>
  */
 @Slf4j
@@ -137,7 +137,7 @@ public class StrategySelector {
      *   <li>EXPIRY_DAY → ExpiryDayStrategy first</li>
      *   <li>SIDEWAYS → ThetaSpreadStrategy first</li>
      *   <li>TRENDING_BULLISH → BullPutSpreadStrategy first</li>
-     *   <li>TRENDING_BEARISH → BullCallSpreadStrategy first</li>
+     *   <li>TRENDING_BEARISH → BearCallSpreadStrategy first</li>
      * </ul>
      *
      * @param applicableStrategies list of strategies applicable to the condition
@@ -150,24 +150,24 @@ public class StrategySelector {
             case EXPIRY_DAY -> applicableStrategies.stream()
                     .filter(s -> s.getName().equals("EXPIRY_DAY_STRANGLE"))
                     .findFirst()
-                    .orElseGet(() -> applicableStrategies.get(0));
+                    .orElse(null);
 
             case SIDEWAYS -> applicableStrategies.stream()
                     .filter(s -> s.getName().equals("THETA_SPREAD"))
                     .findFirst()
-                    .orElseGet(() -> applicableStrategies.get(0));
+                    .orElse(null);
 
             case TRENDING_BULLISH -> applicableStrategies.stream()
                     .filter(s -> s.getName().equals("BULL_PUT_SPREAD"))
                     .findFirst()
-                    .orElseGet(() -> applicableStrategies.get(0));
+                    .orElse(null);
 
             case TRENDING_BEARISH -> applicableStrategies.stream()
                     .filter(s -> s.getName().equals("BEAR_CALL_SPREAD"))
                     .findFirst()
-                    .orElseGet(() -> applicableStrategies.get(0));
+                    .orElse(null);
 
-            default -> applicableStrategies.get(0);
+            default -> null;
         };
     }
 }
