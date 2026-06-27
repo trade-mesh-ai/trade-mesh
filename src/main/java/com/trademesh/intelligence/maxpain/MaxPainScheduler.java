@@ -8,8 +8,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-import java.time.Instant;
-
 import static com.trademesh.config.ApplicationConstants.SYMBOLS;
 
 /**
@@ -40,7 +38,7 @@ public class MaxPainScheduler {
      * Performs a single token availability check before fan-out to prevent redundant
      * Redis lookups and log spam when unauthenticated.
      */
-    @Scheduled(fixedRateString = "${intelligence.maxpain.persist-interval-minutes:30}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(cron = "${intelligence.maxpain.persist-interval-minutes:0 */30 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
     public void captureMaxPainSnapshots() {
 
         if (!tokenTracker.isTokenAvailable()) {

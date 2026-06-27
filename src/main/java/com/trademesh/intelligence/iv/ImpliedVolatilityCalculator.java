@@ -15,11 +15,11 @@ public class ImpliedVolatilityCalculator {
     /**
      * Calculates implied volatility for an option using Newton-Raphson iteration.
      *
-     * @param spotPrice the current spot price of the underlying
-     * @param strikePrice the strike price of the option
+     * @param spotPrice         the current spot price of the underlying
+     * @param strikePrice       the strike price of the option
      * @param timeToExpiryYears time to expiry in years (must be positive)
-     * @param optionPrice the current market price of the option
-     * @param optionType "CE" for call option, "PE" for put option
+     * @param optionPrice       the current market price of the option
+     * @param optionType        "CE" for call option, "PE" for put option
      * @return implied volatility as a percentage (e.g., 18.45 for 18.45%), or 0.0 if calculation fails
      */
     public static double calculate(double spotPrice, double strikePrice,
@@ -73,12 +73,12 @@ public class ImpliedVolatilityCalculator {
     /**
      * Black-Scholes option pricing formula.
      *
-     * @param S spot price
-     * @param K strike price
-     * @param T time to expiry in years
-     * @param r risk-free rate
+     * @param S     spot price
+     * @param K     strike price
+     * @param T     time to expiry in years
+     * @param r     risk-free rate
      * @param sigma volatility
-     * @param type "CE" for call, "PE" for put
+     * @param type  "CE" for call, "PE" for put
      * @return option price
      */
     private static double blackScholes(double S, double K, double T,
@@ -100,10 +100,10 @@ public class ImpliedVolatilityCalculator {
      * Vega: sensitivity of option price to changes in volatility.
      * Used in Newton-Raphson iteration to find sigma.
      *
-     * @param S spot price
-     * @param K strike price
-     * @param T time to expiry in years
-     * @param r risk-free rate
+     * @param S     spot price
+     * @param K     strike price
+     * @param T     time to expiry in years
+     * @param r     risk-free rate
      * @param sigma volatility
      * @return vega value
      */

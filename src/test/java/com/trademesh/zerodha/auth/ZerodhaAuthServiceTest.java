@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.auth;
 
+import com.trademesh.zerodha.options.OptionChainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,11 +36,14 @@ class ZerodhaAuthServiceTest {
     @Mock
     private TokenAvailabilityTracker tokenAvailabilityTracker;
 
+    @Mock
+    private OptionChainService optionChainService;
+
     private ZerodhaAuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new ZerodhaAuthService(config, redisTemplate, webClientBuilder, tokenAvailabilityTracker);
+        authService = new ZerodhaAuthService(config, redisTemplate, webClientBuilder, tokenAvailabilityTracker, optionChainService);
     }
 
     @Test

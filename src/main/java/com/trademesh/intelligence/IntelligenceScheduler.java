@@ -43,7 +43,7 @@ public class IntelligenceScheduler {
      * Performs a single token availability check before fan-out to prevent redundant
      * Redis lookups and log spam when unauthenticated.
      */
-    @Scheduled(fixedRateString = "${intelligence.market-data.fetch-interval-minutes:5}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(cron = "${intelligence.market-data.fetch-interval-minutes}", zone = "Asia/Kolkata")
     public void refreshMarketIntelligence() {
         // Check if within market hours
         LocalTime now = LocalTime.now(IST);

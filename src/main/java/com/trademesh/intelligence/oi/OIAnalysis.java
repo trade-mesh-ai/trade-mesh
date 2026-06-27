@@ -1,5 +1,6 @@
 package com.trademesh.intelligence.oi;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -49,12 +50,14 @@ public class OIAnalysis {
     /**
      * Top 3 call OI walls (resistance levels).
      */
+    @JsonIgnore
     @Column("top_call_walls")
     private String topCallWallsJson;
 
     /**
      * Top 3 put OI walls (support levels).
      */
+    @JsonIgnore
     @Column("top_put_walls")
     private String topPutWallsJson;
 
@@ -67,6 +70,7 @@ public class OIAnalysis {
     /**
      * Full analysis data serialized as JSON.
      */
+    @JsonIgnore
     @Column("data")
     private String data;
 

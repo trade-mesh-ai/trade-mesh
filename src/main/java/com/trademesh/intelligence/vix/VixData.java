@@ -1,7 +1,11 @@
 package com.trademesh.intelligence.vix;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
@@ -12,7 +16,10 @@ import java.time.Instant;
  * percentage change, and timestamp of when the data was fetched.
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class VixData {
 
     /**
@@ -48,6 +55,7 @@ public class VixData {
      *
      * @return true if VIX level is LOW or NORMAL, false otherwise
      */
+    @JsonIgnore
     public boolean isSafeToTrade() {
         return vixLevel == VixLevel.LOW || vixLevel == VixLevel.NORMAL;
     }

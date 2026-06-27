@@ -2,6 +2,7 @@ package com.trademesh.zerodha.auth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -38,6 +39,7 @@ public class ZerodhaAuthService {
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
     private final TokenAvailabilityTracker tokenAvailabilityTracker;
+    private final OptionChainService optionChainService;
 
     // ─── Login URL ────────────────────────────────────────────────────────────────
 
@@ -124,7 +126,14 @@ public class ZerodhaAuthService {
         }
 
         return storeAccessToken(accessToken)
-                .doOnSuccess(token -> tokenAvailabilityTracker.resetAll());
+                .doOnSuccess(token -> tokenAvailabilityTracker.resetAll())
+                .flatMap(token -> optionChainService.refreshInstrumentsCache()
+                        .onErrorResume(e -> {
+                            log.warn("Failed to refresh instruments cache after login: {}", e.getMessage());
+                            return Mono.empty();
+                        })
+                        .doOnSuccess(v -> log.info("Instruments cache refreshed after successful login"))
+                        .thenReturn(token));
     }
 
     /**

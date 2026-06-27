@@ -177,7 +177,7 @@ public class MaxPainCalculatorService {
             }
 
             // Calculate distance metrics
-            double distanceFromSpot = Math.abs(maxPainStrike - spotPrice.doubleValue());
+            double distanceFromSpot = Math.round(Math.abs(maxPainStrike - spotPrice.doubleValue()) * 100.0) / 100.0;
             double distancePercent = spotPrice.doubleValue() > 0
                     ? Math.round((distanceFromSpot / spotPrice.doubleValue()) * 10000.0) / 100.0
                     : 0.0;

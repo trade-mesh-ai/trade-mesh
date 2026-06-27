@@ -1,6 +1,5 @@
 package com.trademesh.intelligence.oi;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
@@ -8,8 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
-
-import java.time.Instant;
 
 import static com.trademesh.config.ApplicationConstants.SYMBOLS;
 
@@ -33,12 +30,12 @@ public class OIAnalysisScheduler {
     private final TokenAvailabilityTracker tokenTracker;
 
     /**
-     * Captures OI analysis snapshots every 15 minutes (900,000 milliseconds).
+     * Captures OI analysis snapshots every 15 minutes during market hours.
      * Runs during market hours (Mon–Fri, 9:15 AM – 3:30 PM IST).
      * Performs a single token availability check before fan-out to prevent redundant
      * Redis lookups and log spam when unauthenticated.
      */
-    @Scheduled(fixedRateString = "${intelligence.oi.persist-interval-minutes:15}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(cron = "${intelligence.oi.persist-interval-minutes:0 */15 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
     public void captureOIAnalysisSnapshots() {
 
         if (!tokenTracker.isTokenAvailable()) {

@@ -18,10 +18,7 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,12 +41,10 @@ import static com.trademesh.config.ApplicationConstants.*;
 public class OptionChainService {
 
     private static final String SCHEDULER_NAME = "OptionChainService";
-    private static final Duration INSTRUMENTS_CACHE_TTL = Duration.ofHours(24);
     private static final String INSTRUMENTS_CACHE_KEY = "instruments:nfo:ALL";
 
     // ─── Dependencies ─────────────────────────────────────────────────────────
     private final ZerodhaConfig config;
-    private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
     private final TokenAvailabilityTracker tokenTracker;
@@ -57,6 +52,58 @@ public class OptionChainService {
     private final WebClientConfig webClientConfig;
 
     // ─── Public API ────────────────────────────────────────────────────────────────
+
+    /**
+     * Refreshes the instruments cache by fetching fresh data from Kite API,
+     * bypassing Redis cache check. Parses CSV and caches under "instruments:nfo:ALL"
+     * with TTL calculated as duration until next 6:00 AM IST (matching Zerodha token expiry).
+     *
+     * @return {@link Mono} emitting Void
+     */
+    public Mono<Void> refreshInstrumentsCache() {
+        log.info("Refreshing instruments cache from Kite API");
+
+        return getAccessTokenFromRedis()
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "No Zerodha access token found in Redis. Please authenticate first.")))
+                .flatMap(accessToken -> {
+                    tokenTracker.resetTracking(SCHEDULER_NAME);
+
+                    WebClient client = webClientConfig.instrumentsClient(accessToken);
+
+                    // Fetch fresh instruments from Kite API (bypass cache)
+                    return client.get()
+                            .uri("/instruments")
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .timeout(Duration.ofSeconds(15))
+                            .doOnSuccess(csv -> log.info("Successfully fetched fresh instruments CSV"))
+                            .flatMap(csv -> {
+                                List<KiteInstrumentsResponse.Instrument> instruments = parseInstrumentsCsv(csv);
+
+                                // Cache the parsed instruments with TTL until next 6 AM IST
+                                Duration instrumentsTTL = calculateInstrumentsTTL();
+                                try {
+                                    String json = objectMapper.writeValueAsString(instruments);
+                                    return redisTemplate.opsForValue()
+                                            .set(INSTRUMENTS_CACHE_KEY, json, instrumentsTTL)
+                                            .doOnSuccess(ok -> log.info("Instruments cache refreshed with TTL={}", instrumentsTTL))
+                                            .then();
+                                } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                                    log.warn("Failed to cache instruments: {}", e.getMessage());
+                                    return Mono.empty();
+                                }
+                            })
+                            .doOnError(e -> log.error("Failed to refresh instruments cache: {}", e.getMessage()));
+                })
+                .onErrorResume(e -> {
+                    if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                        tokenTracker.setTokenUnavailable();
+                        tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                    }
+                    return Mono.empty();
+                });
+    }
 
     /**
      * Fetches the option chain for a given symbol (NIFTY50 or NIFTYBANK).
@@ -79,29 +126,29 @@ public class OptionChainService {
                 })
                 .switchIfEmpty(
                         // Cache miss: fetch from Kite API
-                        authService.getAccessToken()  // ← fetch ONCE here
+                        getAccessTokenFromRedis() // ← fetch ONCE here
                                 .switchIfEmpty(Mono.error(new IllegalStateException(
                                         "No Zerodha access token found in Redis. Please authenticate first.")))
                                 .flatMap(accessToken ->
-                        fetchFromKiteAPI(normalizedSymbol, accessToken)
-                                .flatMap(optionChain -> {
-                                    // Cache the result
-                                    String json = serializeOptionChain(optionChain);
-                                    return redisTemplate.opsForValue()
-                                            .set(redisKey, json, CACHE_OPTION_CHAIN_TTL)
-                                            .thenReturn(optionChain)
-                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", normalizedSymbol));
+                                        fetchFromKiteAPI(normalizedSymbol, accessToken)
+                                                .flatMap(optionChain -> {
+                                                    // Cache the result
+                                                    String json = serializeOptionChain(optionChain);
+                                                    return redisTemplate.opsForValue()
+                                                            .set(redisKey, json, CACHE_OPTION_CHAIN_TTL)
+                                                            .thenReturn(optionChain)
+                                                            .doOnSuccess(oc -> log.info("Cached option chain for {} in Redis (TTL=3m)", normalizedSymbol));
+                                                })
+                                )
+                                .doOnNext(optionChain -> {
+                                    if (optionChain != null) {
+                                        log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
+                                                normalizedSymbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
+                                    } else {
+                                        log.warn("Option chain for {} is null after fetch operation", normalizedSymbol);
+                                    }
                                 })
-                )
-                .doOnNext(optionChain -> {
-                    if (optionChain != null) {
-                        log.info("Successfully fetched option chain for {}: {} strikes, expiry: {}",
-                                normalizedSymbol, optionChain.getStrikes().size(), optionChain.getExpiryDate());
-                    } else {
-                        log.warn("Option chain for {} is null after fetch operation", normalizedSymbol);
-                    }
-                })
-                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", normalizedSymbol, e.getMessage(), e)));
+                                .doOnError(e -> log.error("Failed to fetch option chain for {}: {}", normalizedSymbol, e.getMessage(), e)));
     }
 
     // ─── Kite API Integration ─────────────────────────────────────────────────────
@@ -110,7 +157,7 @@ public class OptionChainService {
      * Fetches option chain data from Zerodha Kite REST API.
      * Uses the Quote API to fetch data for all strikes of the nearest weekly expiry.
      *
-     * @param symbol the trading symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @param symbol      the trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @param accessToken the Zerodha access token to use for API calls
      * @return Mono emitting the OptionChain
      */
@@ -162,7 +209,7 @@ public class OptionChainService {
         BigDecimal spotPrice = BigDecimal.valueOf(spotData.getLastPrice());
 
         // Fetch all option instruments for this symbol
-        return authService.getAccessToken()
+        return getAccessTokenFromRedis()
                 .switchIfEmpty(Mono.error(new IllegalStateException(
                         "No Zerodha access token found in Redis. Please authenticate first.")))
                 .flatMap(accessToken -> {
@@ -196,11 +243,12 @@ public class OptionChainService {
                                             .flatMap(csv -> {
                                                 List<KiteInstrumentsResponse.Instrument> instruments = parseInstrumentsCsv(csv);
 
-                                                // Cache the parsed instruments
+                                                // Cache the parsed instruments with TTL until next 6 AM IST
+                                                Duration instrumentsTTL = calculateInstrumentsTTL();
                                                 try {
                                                     String json = objectMapper.writeValueAsString(instruments);
                                                     return redisTemplate.opsForValue()
-                                                            .set(instrumentsCacheKey, json, INSTRUMENTS_CACHE_TTL)
+                                                            .set(instrumentsCacheKey, json, instrumentsTTL)
                                                             .thenReturn(instruments);
                                                 } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
                                                     log.warn("Failed to cache instruments for {}: {}", symbol, e.getMessage());
@@ -563,6 +611,33 @@ public class OptionChainService {
         };
     }
 
+    // ─── TTL Calculation ──────────────────────────────────────────────────────────
+
+    /**
+     * Calculates the TTL (Time To Live) for instruments cache.
+     * Returns the duration from current time to the next 6:00 AM IST,
+     * matching Zerodha token expiry time.
+     *
+     * @return Duration until next 6:00 AM IST
+     */
+    private Duration calculateInstrumentsTTL() {
+        ZoneId istZone = ZoneId.of("Asia/Kolkata");
+        ZonedDateTime nowIST = ZonedDateTime.now(istZone);
+        LocalTime sixAM = LocalTime.of(6, 0);
+
+        // Create a ZonedDateTime for 6:00 AM today in IST
+        ZonedDateTime sixAMToday = nowIST.toLocalDate().atTime(sixAM).atZone(istZone);
+
+        // If current time is already past 6:00 AM, use 6:00 AM tomorrow
+        ZonedDateTime targetTime = nowIST.isAfter(sixAMToday) ? sixAMToday.plusDays(1) : sixAMToday;
+
+        // Calculate duration from now to target time
+        Duration ttl = Duration.between(nowIST, targetTime);
+
+        log.debug("Instruments cache TTL calculated: {} (until {})", ttl, targetTime);
+        return ttl;
+    }
+
     // ─── Serialization / Deserialization ──────────────────────────────────────────
 
     /**
@@ -587,6 +662,18 @@ public class OptionChainService {
             log.error("Failed to deserialize OptionChain: {}", e.getMessage());
             throw new RuntimeException("OptionChain deserialization failed", e);
         }
+    }
+
+    /**
+     * Fetches the Zerodha access token from Redis.
+     * If not found, returns an error Mono indicating that authentication is required.
+     *
+     * @return {@link Mono} emitting the access token string
+     */
+    private Mono<String> getAccessTokenFromRedis() {
+        return redisTemplate.opsForValue().get(ZerodhaAuthService.ACCESS_TOKEN_KEY)
+                .switchIfEmpty(Mono.error(new IllegalStateException(
+                        "No Zerodha access token found in Redis. Please authenticate first.")));
     }
 
 }

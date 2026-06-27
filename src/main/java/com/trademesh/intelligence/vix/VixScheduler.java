@@ -51,7 +51,7 @@ public class VixScheduler {
      *   <li>Stores the latest data in memory for persistence checks</li>
      * </ol>
      */
-    @Scheduled(fixedRateString = "${intelligence.vix.fetch-interval-minutes:5}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(cron = "${intelligence.vix.fetch-interval-cron:0 */5 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
     public void fetchVixData() {
 
         if (!tokenTracker.isTokenAvailable()) {
@@ -104,7 +104,7 @@ public class VixScheduler {
      *   <li>Persists to the vix_history table</li>
      * </ol>
      */
-    @Scheduled(fixedRateString = "${intelligence.vix.persist-interval-minutes:15}", timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    @Scheduled(cron = "${intelligence.vix.persist-interval-cron:0 */15 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
     public void persistVixData() {
         log.debug("Starting VIX persistence task");
 
