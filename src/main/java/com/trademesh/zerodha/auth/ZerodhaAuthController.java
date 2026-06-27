@@ -7,20 +7,22 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.HtmlUtils;
 import reactor.core.publisher.Mono;
 
 import java.net.URI;
 
 /**
  * REST controller for Zerodha / Kite Connect OAuth2 authentication.
- *
- * <ul>
- *   <li>{@code GET /zerodha/login}          – redirects the browser to the Kite login page.</li>
- *   <li>{@code GET /zerodha/callback}        – receives the {@code request_token} from Kite,
- *       exchanges it for an access token, stores it in Redis, and returns a success page.</li>
- * </ul>
+ * <p>
+ * Endpoints:
+ * GET /zerodha/login - redirects the browser to the Kite login page.
+ * GET /zerodha/callback - receives the request_token from Kite,
+ * exchanges it for an access token, stores it in Redis, and returns a success page.
  */
 @Slf4j
 @RestController
@@ -35,8 +37,8 @@ public class ZerodhaAuthController {
 
     /**
      * Redirects the user's browser to the Kite Connect login page.
-     *
-     * <p>Example: {@code GET /zerodha/login}
+     * <p>
+     * Example: GET /zerodha/login
      */
     @Operation(summary = "Redirect to Zerodha / Kite Connect login page")
     @GetMapping("/login")
@@ -54,19 +56,17 @@ public class ZerodhaAuthController {
 
     /**
      * OAuth2 callback endpoint.
-     *
-     * <p>Kite Connect redirects here after the user logs in, appending a one-time
-     * {@code request_token} as a query parameter.  This method:
-     * <ol>
-     *   <li>Exchanges the {@code request_token} for an {@code access_token} via the Kite API.</li>
-     *   <li>Stores the access token in Redis with an 8-hour TTL.</li>
-     *   <li>Returns an HTML success page to the browser.</li>
-     * </ol>
-     *
-     * <p>Example: {@code GET /zerodha/callback?request_token=xxx&status=success}
+     * <p>
+     * Kite Connect redirects here after the user logs in, appending a one-time
+     * request_token as a query parameter. This method:
+     * 1. Exchanges the request_token for an access_token via the Kite API.
+     * 2. Stores the access token in Redis with an 8-hour TTL.
+     * 3. Returns an HTML success page to the browser.
+     * <p>
+     * Example: GET /zerodha/callback?request_token=xxx&status=success
      *
      * @param requestToken one-time token provided by Kite Connect
-     * @param status       optional status string from Kite ({@code "success"} or {@code "error"})
+     * @param status       optional status string from Kite ("success" or "error")
      */
     @Operation(summary = "Kite Connect OAuth2 callback – exchange request_token for access_token")
     @GetMapping("/callback")
@@ -76,12 +76,14 @@ public class ZerodhaAuthController {
             @Parameter(description = "Status flag from Kite Connect (success / error)")
             @RequestParam(value = "status", required = false) String status) {
 
-        log.info("Kite callback received – request_token={}, status={}", requestToken, status);
+        log.info("Kite callback received – request_token={}, status={}",
+                requestToken != null ? SensitiveDataMasker.maskRequestToken(requestToken) : "[REDACTED]", status);
 
         if ("error".equalsIgnoreCase(status)) {
             log.warn("Kite Connect returned error status during callback");
             return Mono.just(ResponseEntity
                     .status(HttpStatus.BAD_REQUEST)
+                    .header("Content-Type", "text/html;charset=UTF-8")
                     .body(buildHtmlPage("Authentication Failed",
                             "Kite Connect returned an error. Please try again.",
                             false)));
@@ -99,12 +101,13 @@ public class ZerodhaAuthController {
                 })
                 .onErrorResume(ex -> {
                     log.error("Failed to complete Kite authentication: {}", ex.getMessage(), ex);
+                    String escapedMessage = HtmlUtils.htmlEscape(ex.getMessage());
                     return Mono.just(ResponseEntity
                             .status(HttpStatus.INTERNAL_SERVER_ERROR)
                             .header("Content-Type", "text/html;charset=UTF-8")
                             .body(buildHtmlPage("Authentication Error",
                                     "An error occurred while exchanging the request token: "
-                                            + ex.getMessage(),
+                                            + escapedMessage,
                                     false)));
                 });
     }
@@ -113,8 +116,8 @@ public class ZerodhaAuthController {
 
     /**
      * Returns whether a valid access token is currently stored in Redis.
-     *
-     * <p>Example: {@code GET /zerodha/token/status}
+     * <p>
+     * Example: GET /zerodha/token/status
      */
     @Operation(summary = "Check whether a valid Zerodha access token is present in Redis")
     @GetMapping("/token/status")
@@ -122,10 +125,18 @@ public class ZerodhaAuthController {
         return authService.isTokenValid()
                 .map(valid -> {
                     if (Boolean.TRUE.equals(valid)) {
-                        return ResponseEntity.ok("Access token is present and valid.");
+                        return ResponseEntity.ok().header("Content-Type", "text/html;charset=UTF-8")
+                                .body(buildHtmlPage("Access token is present and valid.",
+                                        "You are ready to trade with Zerodha. "
+                                                + "The access token is stored in Redis and will expire in 8 hours.",
+                                        true));
                     }
-                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                            .body("No valid access token found. Please re-authenticate via /zerodha/login");
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                            .header("Content-Type", "text/html;charset=UTF-8")
+                            .body(buildHtmlPage("No valid access token found.",
+                                    "Please re-authenticate via /zerodha/login",
+                                    false));
+
                 });
     }
 
@@ -133,8 +144,9 @@ public class ZerodhaAuthController {
 
     private String buildHtmlPage(String title, String message, boolean success) {
         String color = success ? "#2e7d32" : "#c62828";
-        String icon  = success ? "✅" : "❌";
+        String icon = success ? "✅" : "❌";
         return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\">"
+                + "<link rel=\"icon\" type=\"image/png\" href=\"/favicon.png\">"
                 + "<title>" + title + "</title>"
                 + "<style>body{font-family:sans-serif;display:flex;justify-content:center;"
                 + "align-items:center;height:100vh;margin:0;background:#f5f5f5;}"

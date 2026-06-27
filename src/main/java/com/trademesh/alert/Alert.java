@@ -3,7 +3,8 @@ package com.trademesh.alert;
 import lombok.Builder;
 import lombok.Data;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
  * Represents an alert event to be dispatched.
@@ -16,5 +17,5 @@ public class Alert {
     private String tradingSymbol;
     private String message;
     @Builder.Default
-    private Instant triggeredAt = Instant.now();
+    private LocalDateTime triggeredAt = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
 }

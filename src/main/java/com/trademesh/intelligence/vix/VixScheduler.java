@@ -1,0 +1,168 @@
+package com.trademesh.intelligence.vix;
+
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+
+import java.time.Instant;
+
+/**
+ * Scheduler for VIX monitoring tasks.
+ * Fetches VIX data every 5 minutes (configurable).
+ * Persists VIX data to database every 15 minutes (configurable).
+ * Checks for VIX threshold crossings and triggers alerts.
+ */
+@Slf4j
+@Component
+@EnableScheduling
+@RequiredArgsConstructor
+public class VixScheduler {
+
+    // ─── Dependencies ─────────────────────────────────────────────────────────────
+    private final VixMonitorService vixMonitorService;
+    private final VixAlertService vixAlertService;
+    private final VixHistoryRepository vixHistoryRepository;
+    private final TokenAvailabilityTracker tokenTracker;
+    // ─── Configuration ────────────────────────────────────────────────────────────
+    @Value("${intelligence.vix.fetch-interval-minutes:5}")
+    private Integer fetchIntervalMinutes;
+    @Value("${intelligence.vix.persist-interval-minutes:15}")
+    private Integer persistIntervalMinutes;
+    // ─── State ────────────────────────────────────────────────────────────────────
+    private VixData lastFetchedVixData;
+    private Instant lastPersistTime;
+
+    // ─── Scheduled Tasks ──────────────────────────────────────────────────────────
+
+    /**
+     * Fetches VIX data at the configured interval (default: every 5 minutes).
+     *
+     * <p>This task:
+     * <ol>
+     *   <li>Fetches current VIX from Zerodha API (or Redis cache)</li>
+     *   <li>Checks if VIX has crossed the alert threshold</li>
+     *   <li>Triggers alerts if threshold is crossed</li>
+     *   <li>Stores the latest data in memory for persistence checks</li>
+     * </ol>
+     */
+    @Scheduled(cron = "${intelligence.vix.fetch-interval-cron:0 */5 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
+    public void fetchVixData() {
+
+        if (!tokenTracker.isTokenAvailable()) {
+            log.warn("[VixScheduler] Zerodha token unavailable. Skipping VIX fetch.");
+            return;
+        }
+
+        log.debug("Starting VIX fetch task");
+
+        vixMonitorService.fetchCurrentVix()
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        vixData -> {
+                            if (vixData != null) {
+                                log.info("VIX fetched: value={}, level={}, safeToTrade={}",
+                                        vixData.getCurrentVix(),
+                                        vixData.getVixLevel(),
+                                        vixData.isSafeToTrade());
+
+                                // Store in memory for persistence checks
+                                lastFetchedVixData = vixData;
+
+                                // Check for threshold crossing and trigger alerts
+                                vixAlertService.processVixAlert(vixData)
+                                        .subscribeOn(Schedulers.boundedElastic())
+                                        .onErrorResume(error -> {
+                                            log.error("Error processing VIX alert: {}", error.getMessage());
+                                            return Mono.empty();
+                                        })
+                                        .subscribe(
+                                                alert -> log.warn("VIX alert processed: {}", alert.getAlertMessage()),
+                                                error -> log.error("Unhandled error in VIX alert processing: {}", error.getMessage()),
+                                                () -> log.debug("VIX alert processing completed")
+                                        );
+                            } else {
+                                log.debug("No VIX data available (token may be missing)");
+                            }
+                        },
+                        error -> log.error("Error fetching VIX data: {}", error.getMessage()),
+                        () -> log.debug("VIX fetch completed")
+                );
+    }
+
+    /**
+     * Persists VIX data to the database at the configured interval (default: every 15 minutes).
+     *
+     * <p>This task:
+     * <ol>
+     *   <li>Calls vixMonitorService.fetchAndSave() to fetch and persist VIX data</li>
+     *   <li>Persists to the vix_history table</li>
+     * </ol>
+     */
+    @Scheduled(cron = "${intelligence.vix.persist-interval-cron:0 */15 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
+    public void persistVixData() {
+        log.debug("Starting VIX persistence task");
+
+        vixMonitorService.fetchAndSave()
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        savedHistory -> {
+                            log.info("VIX data persisted to database: id={}, value={}, level={}",
+                                    savedHistory.getId(),
+                                    savedHistory.getVixValue(),
+                                    savedHistory.getVixLevel());
+                            lastPersistTime = Instant.now();
+                        },
+                        error -> log.error("Error persisting VIX data: {}", error.getMessage(), error),
+                        () -> log.debug("VIX persistence completed")
+                );
+    }
+
+    /**
+     * Logs VIX statistics periodically (for monitoring purposes).
+     * Runs every 30 minutes.
+     * Includes persistence frequency tracking using lastPersistTime.
+     */
+    @Scheduled(fixedRate = 30, timeUnit = java.util.concurrent.TimeUnit.MINUTES)
+    public void logVixStatistics() {
+        if (lastFetchedVixData == null) {
+            log.info("VIX Statistics: No data available yet");
+            return;
+        }
+
+        log.info("VIX Statistics - Current: {}, Level: {}, SafeToTrade: {}, LastFetch: {}",
+                lastFetchedVixData.getCurrentVix(),
+                lastFetchedVixData.getVixLevel(),
+                lastFetchedVixData.isSafeToTrade(),
+                lastFetchedVixData.getFetchedAt());
+
+        // Log persistence frequency tracking
+        if (lastPersistTime != null) {
+            long secondsSinceLastPersist = java.time.Duration.between(lastPersistTime, Instant.now()).getSeconds();
+            long expectedPersistIntervalSeconds = persistIntervalMinutes * 60L;
+            log.info("VIX Persistence Tracking - LastPersistTime: {}, SecondsSinceLastPersist: {}, ConfiguredIntervalMinutes: {}, ConfiguredIntervalSeconds: {}",
+                    lastPersistTime,
+                    secondsSinceLastPersist,
+                    persistIntervalMinutes,
+                    expectedPersistIntervalSeconds);
+        } else {
+            log.info("VIX Persistence Tracking - No persistence has occurred yet");
+        }
+
+        // Log fetch interval configuration
+        log.debug("VIX Fetch Configuration - FetchIntervalMinutes: {}", fetchIntervalMinutes);
+
+        // Count records in database
+        vixHistoryRepository.countRecords()
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        count -> log.info("Total VIX history records in database: {}", count),
+                        error -> log.error("Error counting VIX history records: {}", error.getMessage())
+                );
+    }
+}

@@ -1,0 +1,410 @@
+package com.trademesh.strategy.expiryday;
+
+import com.trademesh.intelligence.MarketCondition;
+import com.trademesh.intelligence.MarketIntelligence;
+import com.trademesh.strategy.*;
+import com.trademesh.strategy.config.StrategiesConfig;
+import com.trademesh.strategy.enums.*;
+import com.trademesh.zerodha.options.OptionStrike;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
+
+import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Expiry Day Strangle Strategy Implementation.
+ * Trades ONLY on Thursday expiry day with zero overnight risk.
+ * Sells both call and put options at OI walls for maximum theta decay.
+ * <p>
+ * Strategy Logic:
+ * <p>
+ * Step 1: Safety checks (VIX, OI walls, entry time)
+ * Step 2: Strike selection from OI analysis
+ * Step 3: Build trade legs and calculate credit
+ * Step 4: Return StrategyResult with signal
+ * <p>
+ * Configuration loaded from {@code application.yml} under {@code strategy.expiry-day}.
+ */
+@Slf4j
+@Component
+public class ExpiryDayStrategy implements TradingStrategy {
+
+    private final StrategiesConfig strategiesConfig;
+
+    public ExpiryDayStrategy(StrategiesConfig strategiesConfig) {
+        this.strategiesConfig = strategiesConfig;
+    }
+
+    /**
+     * Retrieves this strategy's configuration from the unified strategies config.
+     *
+     * @return the StrategyProperties for EXPIRY_DAY_STRANGLE
+     */
+    private com.trademesh.strategy.config.StrategyProperties strategyConfig() {
+        return strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE");
+    }
+
+    @Override
+    public String getName() {
+        return "EXPIRY_DAY_STRANGLE";
+    }
+
+    @Override
+    public boolean isApplicable(MarketCondition condition) {
+        return condition == MarketCondition.EXPIRY_DAY;
+    }
+
+    @Override
+    public Mono<StrategyResult> evaluate(MarketIntelligence intelligence) {
+        log.debug("Evaluating Expiry Day Strangle strategy for {}", intelligence.getSymbol());
+
+        try {
+            // ─── Step 1: Safety Checks ────────────────────────────────────────────────
+            String safetyCheckReason = performSafetyChecks(intelligence);
+            if (safetyCheckReason != null) {
+                log.info("Expiry Day strategy skipped: {}", safetyCheckReason);
+                return Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason(safetyCheckReason)
+                        .build());
+            }
+
+            // ─── Step 2: Strike Selection ──────────────────────────────────────────────
+            StrikeSelection strikeSelection = selectStrikes(intelligence);
+            if (strikeSelection == null) {
+                String reason = "Unable to select valid strikes from OI analysis";
+                log.info("Expiry Day strategy skipped: {}", reason);
+                return Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason(reason)
+                        .build());
+            }
+
+            // ─── Step 3: Build Trade Legs ─────────────────────────────────────────────
+            TradeLegsResult legsResult = buildTradeLegs(intelligence, strikeSelection);
+            if (legsResult == null || legsResult.getTotalCredit() < strategyConfig().getMinCredit()) {
+                String reason = "Premium too low — not worth risk";
+                log.info("Expiry Day strategy skipped: {}", reason);
+                return Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason(reason)
+                        .build());
+            }
+
+            // ─── Step 4: Build and Return StrategyResult ───────────────────────────────
+            TradeSignal signal = buildTradeSignal(intelligence, strikeSelection, legsResult);
+
+            log.info("Expiry Day Strangle signal generated: {} | Credit: {} points",
+                    signal.getReason(), legsResult.getTotalCredit());
+
+            return Mono.just(StrategyResult.builder()
+                    .signal(signal)
+                    .isExecutable(true)
+                    .build());
+
+        } catch (Exception e) {
+            log.error("Error evaluating Expiry Day strategy", e);
+            return Mono.just(StrategyResult.builder()
+                    .isExecutable(false)
+                    .skipReason("Strategy evaluation error: " + e.getMessage())
+                    .build());
+        }
+    }
+
+    @Override
+    public StrategyConfig getConfig() {
+        return StrategyConfig.builder()
+                .strategyName(getName())
+                .maxLotsPerTrade(strategyConfig().getMaxLots())
+                .stopLossPercent(strategyConfig().getStopLossPercent())
+                .targetProfitPercent(strategyConfig().getTargetProfitPercent())
+                .maxVix(strategyConfig().getMaxVix())
+                .minVix(strategyConfig().getMinVix())
+                .allowedDays(strategyConfig().getAllowedDays().stream()
+                        .map(DayOfWeek::valueOf)
+                        .collect(Collectors.toList()))
+                .applicableConditions(java.util.List.of(MarketCondition.EXPIRY_DAY))
+                .isEnabled(strategyConfig().isEnabled())
+                .build();
+    }
+
+    /**
+     * Performs safety checks before generating a signal.
+     * Returns skip reason if check fails, null if all checks pass.
+     *
+     * @param intelligence market intelligence data
+     * @return skip reason or null
+     */
+    private String performSafetyChecks(MarketIntelligence intelligence) {
+        // Check 1: VIX threshold
+        if (intelligence.getVixData() != null && intelligence.getVixData().getCurrentVix() != null) {
+            if (intelligence.getVixData().getCurrentVix() > strategyConfig().getMaxVix()) {
+                return String.format("VIX too high for expiry day (%.1f > %.1f)",
+                        intelligence.getVixData().getCurrentVix(), strategyConfig().getMaxVix());
+            }
+        }
+
+        // Check 2: OI walls must be clear
+        if (intelligence.getOiAnalysis() == null ||
+                intelligence.getOiAnalysis().getMaxCallOIStrike() == null ||
+                intelligence.getOiAnalysis().getMaxPutOIStrike() == null) {
+            return "OI walls not clear";
+        }
+
+        // Check 3: Entry time limit
+        LocalTime currentTime = LocalTime.now();
+        LocalTime latestTime = LocalTime.parse(strategyConfig().getLatestEntryTime(),
+                DateTimeFormatter.ofPattern("HH:mm"));
+        if (currentTime.isAfter(latestTime)) {
+            return String.format("Too late to enter expiry day trade (current: %s, limit: %s)",
+                    currentTime.format(DateTimeFormatter.ofPattern("HH:mm")), strategyConfig().getLatestEntryTime());
+        }
+
+        return null; // All checks passed
+    }
+
+    /**
+     * Selects call and put strikes based on OI analysis.
+     * Returns StrikeSelection with validated strikes, or null if invalid.
+     *
+     * @param intelligence market intelligence data
+     * @return StrikeSelection or null
+     */
+    private StrikeSelection selectStrikes(MarketIntelligence intelligence) {
+        BigDecimal spotPrice = intelligence.getSpotPrice() != null
+                ? new BigDecimal(intelligence.getSpotPrice())
+                : null;
+
+        if (spotPrice == null) {
+            log.warn("Spot price not available in market intelligence");
+            return null;
+        }
+
+        BigDecimal callStrike = intelligence.getOiAnalysis().getMaxCallOIStrike();
+        BigDecimal putStrike = intelligence.getOiAnalysis().getMaxPutOIStrike();
+
+        // Verify minimum distance from spot
+        BigDecimal minDistance = new BigDecimal(strategyConfig().getMinDistanceFromSpot());
+        BigDecimal wideningAmount = "NIFTYBANK".equals(intelligence.getSymbol())
+                ? new BigDecimal(100)
+                : new BigDecimal(50);
+
+        // Call strike must be > spot + minDistance
+        if (callStrike.compareTo(spotPrice.add(minDistance)) <= 0) {
+            callStrike = callStrike.add(wideningAmount);
+            log.debug("Call strike widened to {} due to proximity to spot", callStrike);
+        }
+
+        // Put strike must be < spot - minDistance
+        if (putStrike.compareTo(spotPrice.subtract(minDistance)) >= 0) {
+            putStrike = putStrike.subtract(wideningAmount);
+            log.debug("Put strike widened to {} due to proximity to spot", putStrike);
+        }
+
+        return new StrikeSelection(callStrike, putStrike);
+    }
+
+    /**
+     * Builds trade legs from selected strikes and option chain data.
+     * Returns TradeLegsResult with legs and total credit, or null if unable to build.
+     *
+     * @param intelligence    market intelligence data
+     * @param strikeSelection selected strikes
+     * @return TradeLegsResult or null
+     */
+    private TradeLegsResult buildTradeLegs(MarketIntelligence intelligence,
+                                           StrikeSelection strikeSelection) {
+        if (intelligence.getOptionChain() == null || intelligence.getOptionChain().getStrikes() == null) {
+            log.warn("Option chain data not available");
+            return null;
+        }
+
+        LocalDate expiryDate = intelligence.getOptionChain().getExpiryDate();
+        if (expiryDate == null) {
+            log.warn("Expiry date not available in option chain");
+            return null;
+        }
+
+        // Find option strikes for call and put
+        OptionStrike callOptionStrike = intelligence.getOptionChain().getStrikes().stream()
+                .filter(s -> s.getStrikePrice().compareTo(strikeSelection.getCallStrike()) == 0)
+                .findFirst()
+                .orElse(null);
+
+        OptionStrike putOptionStrike = intelligence.getOptionChain().getStrikes().stream()
+                .filter(s -> s.getStrikePrice().compareTo(strikeSelection.getPutStrike()) == 0)
+                .findFirst()
+                .orElse(null);
+
+        if (callOptionStrike == null || putOptionStrike == null) {
+            log.warn("Unable to find option strikes in chain for call: {} or put: {}",
+                    strikeSelection.getCallStrike(), strikeSelection.getPutStrike());
+            return null;
+        }
+
+        // Extract LTP values
+        BigDecimal callLTP = callOptionStrike.getCallLTP();
+        BigDecimal putLTP = putOptionStrike.getPutLTP();
+
+        if (callLTP == null || putLTP == null) {
+            log.warn("LTP not available for call or put option");
+            return null;
+        }
+
+        // Build legs
+        TradeLeg callLeg = TradeLeg.builder()
+                .instrument(buildInstrumentName(intelligence.getSymbol(), expiryDate,
+                        strikeSelection.getCallStrike(), OptionType.CE))
+                .action(Action.SELL)
+                .optionType(OptionType.CE)
+                .strikePrice(strikeSelection.getCallStrike().doubleValue())
+                .expiryDate(expiryDate)
+                .quantity(strategyConfig().getMaxLots())
+                .limitPrice(callLTP.doubleValue())
+                .legType(LegType.ENTRY)
+                .build();
+
+        TradeLeg putLeg = TradeLeg.builder()
+                .instrument(buildInstrumentName(intelligence.getSymbol(), expiryDate,
+                        strikeSelection.getPutStrike(), OptionType.PE))
+                .action(Action.SELL)
+                .optionType(OptionType.PE)
+                .strikePrice(strikeSelection.getPutStrike().doubleValue())
+                .expiryDate(expiryDate)
+                .quantity(strategyConfig().getMaxLots())
+                .limitPrice(putLTP.doubleValue())
+                .legType(LegType.ENTRY)
+                .build();
+
+        // Calculate total credit
+        Double totalCredit = callLTP.add(putLTP).doubleValue();
+
+        return new TradeLegsResult(callLeg, putLeg, totalCredit);
+    }
+
+    /**
+     * Builds a complete TradeSignal from strategy evaluation.
+     * Returns TradeSignal ready for execution.
+     *
+     * @param intelligence    market intelligence data
+     * @param strikeSelection selected strikes
+     * @param legsResult      trade legs and credit
+     * @return TradeSignal ready for execution
+     */
+    private TradeSignal buildTradeSignal(MarketIntelligence intelligence,
+                                         StrikeSelection strikeSelection,
+                                         TradeLegsResult legsResult) {
+        String reason = String.format(
+                "Expiry day strangle: Sell %dCE + %dPE. Expected credit: %.1f points. OI support: %d. OI resistance: %d",
+                strikeSelection.getCallStrike().intValue(),
+                strikeSelection.getPutStrike().intValue(),
+                legsResult.getTotalCredit(),
+                strikeSelection.getPutStrike().intValue(),
+                strikeSelection.getCallStrike().intValue()
+        );
+
+        // Calculate stop loss amount for strangle
+        Double stopLossAmount = legsResult.getTotalCredit() * strategyConfig().getStopLossPercent() / 100;
+
+        // Determine confidence based on credit received
+        Confidence confidence = legsResult.getTotalCredit() >= strategyConfig().getMinCredit() * 2
+                ? Confidence.HIGH
+                : Confidence.MEDIUM;
+
+        return TradeSignal.builder()
+                .signalId(UUID.randomUUID())
+                .symbol(intelligence.getSymbol())
+                .strategyName(getName())
+                .signalType(SignalType.ENTER)
+                .legs(java.util.List.of(legsResult.getCallLeg(), legsResult.getPutLeg()))
+                .expectedCredit(legsResult.getTotalCredit())
+                .maxLoss(stopLossAmount)
+                .confidence(confidence)
+                .reason(reason)
+                .build();
+    }
+
+    /**
+     * Builds instrument name in Zerodha format.
+     * Format: SYMBOL + EXPIRY(DDMMMYY) + STRIKE + OPTION_TYPE
+     * Example: NIFTY26JUN22300CE
+     */
+    private String buildInstrumentName(String symbol, LocalDate expiryDate,
+                                       BigDecimal strike, OptionType optionType) {
+        String kiteSymbol = toKiteSymbol(symbol);
+        String expiryStr = expiryDate.format(DateTimeFormatter.ofPattern("ddMMMyy")).toUpperCase();
+        return String.format("%s%s%d%s", kiteSymbol, expiryStr, strike.intValue(), optionType.name());
+    }
+
+    /**
+     * Converts symbol to Kite format.
+     * NIFTYBANK → BANKNIFTY
+     * NIFTY50 → NIFTY
+     * Others → unchanged
+     *
+     * @param symbol the symbol to convert
+     * @return the Kite-formatted symbol
+     */
+    private String toKiteSymbol(String symbol) {
+        return switch (symbol) {
+            case "NIFTYBANK" -> "BANKNIFTY";
+            case "NIFTY50" -> "NIFTY";
+            default -> symbol;
+        };
+    }
+
+    /**
+     * Helper class to hold selected strikes.
+     */
+    private static class StrikeSelection {
+        private final BigDecimal callStrike;
+        private final BigDecimal putStrike;
+
+        StrikeSelection(BigDecimal callStrike, BigDecimal putStrike) {
+            this.callStrike = callStrike;
+            this.putStrike = putStrike;
+        }
+
+        BigDecimal getCallStrike() {
+            return callStrike;
+        }
+
+        BigDecimal getPutStrike() {
+            return putStrike;
+        }
+    }
+
+    /**
+     * Helper class to hold trade legs and credit information.
+     */
+    private static class TradeLegsResult {
+        private final TradeLeg callLeg;
+        private final TradeLeg putLeg;
+        private final Double totalCredit;
+
+        TradeLegsResult(TradeLeg callLeg, TradeLeg putLeg, Double totalCredit) {
+            this.callLeg = callLeg;
+            this.putLeg = putLeg;
+            this.totalCredit = totalCredit;
+        }
+
+        TradeLeg getCallLeg() {
+            return callLeg;
+        }
+
+        TradeLeg getPutLeg() {
+            return putLeg;
+        }
+
+        Double getTotalCredit() {
+            return totalCredit;
+        }
+    }
+}

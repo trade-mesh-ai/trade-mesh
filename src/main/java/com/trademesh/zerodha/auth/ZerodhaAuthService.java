@@ -1,13 +1,13 @@
 package com.trademesh.zerodha.auth;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
@@ -18,26 +18,28 @@ import java.util.HexFormat;
 
 /**
  * Service responsible for Zerodha / Kite Connect authentication.
- *
- * <p>Flow:
- * <ol>
- *   <li>User is redirected to {@link #generateLoginUrl()} → Kite login page.</li>
- *   <li>Kite redirects back with {@code request_token}.</li>
- *   <li>{@link #generateSession(String)} exchanges the request token for an access token
- *       and stores it in Redis with an 8-hour TTL.</li>
- * </ol>
+ * <p>
+ * Flow:
+ * 1. User is redirected to generateLoginUrl() → Kite login page.
+ * 2. Kite redirects back with request_token.
+ * 3. generateSession(String) exchanges the request token for an access token
+ * and stores it in Redis with an 8-hour TTL.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ZerodhaAuthService {
 
-    /** Redis key under which the Zerodha access token is stored. */
+    /**
+     * Redis key under which the Zerodha access token is stored.
+     */
     public static final String ACCESS_TOKEN_KEY = "zerodha:access_token";
 
     private final ZerodhaConfig config;
     private final ReactiveStringRedisTemplate redisTemplate;
     private final WebClient.Builder webClientBuilder;
+    private final TokenAvailabilityTracker tokenAvailabilityTracker;
+    private final OptionChainService optionChainService;
 
     // ─── Login URL ────────────────────────────────────────────────────────────────
 
@@ -45,7 +47,7 @@ public class ZerodhaAuthService {
      * Builds the Kite Connect OAuth2 login URL.
      *
      * @return fully-qualified login URL, e.g.
-     *         {@code https://kite.zerodha.com/connect/login?api_key=xxx&v=3}
+     * https://kite.zerodha.com/connect/login?api_key=xxx&v=3
      */
     public String generateLoginUrl() {
         String url = config.getLoginUrl() + "?api_key=" + config.getApiKey() + "&v=3";
@@ -56,14 +58,14 @@ public class ZerodhaAuthService {
     // ─── Session / Access Token ───────────────────────────────────────────────────
 
     /**
-     * Exchanges a {@code request_token} (received from Kite callback) for an
-     * {@code access_token} by calling the Kite Connect session API.
-     *
-     * <p>The access token is stored in Redis under {@value #ACCESS_TOKEN_KEY}
-     * with a TTL of {@code zerodha.kite.access-token-ttl-hours} (default 8 h).
+     * Exchanges a request_token (received from Kite callback) for an
+     * access_token by calling the Kite Connect session API.
+     * <p>
+     * The access token is stored in Redis under ACCESS_TOKEN_KEY
+     * with a TTL of zerodha.kite.access-token-ttl-hours (default 8 h).
      *
      * @param requestToken one-time token received from Kite Connect callback
-     * @return {@link Mono} emitting the access token string
+     * @return Mono emitting the access token string
      */
     public Mono<String> generateSession(String requestToken) {
         log.info("Exchanging request_token for access_token ...");
@@ -93,7 +95,7 @@ public class ZerodhaAuthService {
      * Stores the access token in Redis with the configured TTL.
      *
      * @param accessToken Kite Connect access token
-     * @return {@link Mono} emitting the stored access token
+     * @return Mono emitting the stored access token
      */
     public Mono<String> storeAccessToken(String accessToken) {
         Duration ttl = Duration.ofHours(config.getAccessTokenTtlHours());
@@ -107,8 +109,6 @@ public class ZerodhaAuthService {
      * Validates the Kite session response, extracts the access token and stores it.
      */
     private Mono<String> handleKiteSessionResponse(KiteSessionResponse response) {
-        log.info("Full Zerodha response: {}", response);
-
         if (response == null) {
             return Mono.error(new IllegalStateException("Response is null"));
         }
@@ -119,19 +119,27 @@ public class ZerodhaAuthService {
         }
 
         String accessToken = data.getAccessToken();
-        log.info("Access token received: [{}]", accessToken);
+        log.info("Access token received: [{}]", SensitiveDataMasker.maskToken(accessToken));
 
         if (accessToken == null || accessToken.isBlank()) {
             return Mono.error(new IllegalStateException("Access token is null or empty"));
         }
 
-        return storeAccessToken(accessToken);
+        return storeAccessToken(accessToken)
+                .doOnSuccess(token -> tokenAvailabilityTracker.resetAll())
+                .flatMap(token -> optionChainService.refreshInstrumentsCache()
+                        .onErrorResume(e -> {
+                            log.warn("Failed to refresh instruments cache after login: {}", e.getMessage());
+                            return Mono.empty();
+                        })
+                        .doOnSuccess(v -> log.info("Instruments cache refreshed after successful login"))
+                        .thenReturn(token));
     }
 
     /**
      * Retrieves the current access token from Redis.
      *
-     * @return {@link Mono} emitting the access token, or empty if not present / expired
+     * @return Mono emitting the access token, or empty if not present / expired
      */
     public Mono<String> getAccessToken() {
         return redisTemplate.opsForValue().get(ACCESS_TOKEN_KEY);
@@ -140,7 +148,7 @@ public class ZerodhaAuthService {
     /**
      * Checks whether a valid (non-expired) access token exists in Redis.
      *
-     * @return {@link Mono} emitting {@code true} if a token is present
+     * @return Mono emitting true if a token is present
      */
     public Mono<Boolean> isTokenValid() {
         return redisTemplate.hasKey(ACCESS_TOKEN_KEY);
@@ -150,7 +158,7 @@ public class ZerodhaAuthService {
 
     /**
      * Computes the SHA-256 checksum required by Kite Connect:
-     * {@code SHA256(api_key + request_token + api_secret)}.
+     * SHA256(api_key + request_token + api_secret).
      */
     private String computeChecksum(String apiKey, String requestToken, String apiSecret) {
         try {
@@ -165,27 +173,31 @@ public class ZerodhaAuthService {
 
     // ─── Inner DTO ────────────────────────────────────────────────────────────────
 
-    /** Minimal representation of the Kite Connect {@code POST /session/token} response. */
-@lombok.Data
-static class KiteSessionResponse {
-
-    private String status;
-    private SessionData data;
-
+    /**
+     * Minimal representation of the Kite Connect POST /session/token response.
+     */
     @lombok.Data
-    static class SessionData {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    static class KiteSessionResponse {
 
-        @JsonProperty("access_token")
-        private String accessToken;
+        private String status;
+        private SessionData data;
 
-        @JsonProperty("public_token")
-        private String publicToken;
+        @lombok.Data
+        @JsonIgnoreProperties(ignoreUnknown = true)
+        static class SessionData {
 
-        @JsonProperty("user_id")
-        private String userId;
+            @JsonProperty("access_token")
+            private String accessToken;
 
-        @JsonProperty("login_time")
-        private String loginTime;
+            @JsonProperty("public_token")
+            private String publicToken;
+
+            @JsonProperty("user_id")
+            private String userId;
+
+            @JsonProperty("login_time")
+            private String loginTime;
+        }
     }
-}
 }

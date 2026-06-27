@@ -32,7 +32,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
     implementation("org.postgresql:r2dbc-postgresql:1.0.5.RELEASE")
     implementation("org.postgresql:postgresql:42.7.3")
-
     // Liquibase (schema migrations)
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.liquibase:liquibase-core")
@@ -60,13 +59,17 @@ dependencies {
     // Jackson (JSON deserialization for Kite Connect API responses)
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-
+    implementation ("org.springframework.boot:spring-boot-starter-data-jpa")
     // Spring Boot Configuration Processor (for @ConfigurationProperties metadata)
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
 
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.projectreactor:reactor-test")
+    testImplementation("com.h2database:h2")
+    testImplementation("io.r2dbc:r2dbc-h2")
+    testImplementation("org.testcontainers:testcontainers:1.19.0")
+    testImplementation("org.testcontainers:postgresql:1.19.0")
 }
 
 tasks.withType<JavaCompile> {

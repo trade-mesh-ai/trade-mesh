@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: 005-create-option-chain-snapshots
+      author: trade-mesh
+      comment: "Create option_chain_snapshots table for storing historical option chain data"
+      changes:
+        - sql:
+            sql: |
+              -- Create option_chain_snapshots table for storing historical option chain data
+              CREATE TABLE IF NOT EXISTS option_chain_snapshots (
+                  id BIGSERIAL PRIMARY KEY,
+                  symbol VARCHAR(20) NOT NULL,
+                  expiry_date DATE NOT NULL,
+                  spot_price DECIMAL(10, 2),
+                  data JSONB NOT NULL,
+                  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              );
+              
+              -- Create indexes for common queries
+              CREATE INDEX IF NOT EXISTS idx_option_chain_snapshots_symbol ON option_chain_snapshots(symbol);
+              CREATE INDEX IF NOT EXISTS idx_option_chain_snapshots_symbol_expiry ON option_chain_snapshots(symbol, expiry_date);
+              CREATE INDEX IF NOT EXISTS idx_option_chain_snapshots_created_at ON option_chain_snapshots(created_at);
+            splitStatements: false

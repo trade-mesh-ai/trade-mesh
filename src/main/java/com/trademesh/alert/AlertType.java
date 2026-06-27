@@ -11,5 +11,6 @@ public enum AlertType {
     ORDER_FILLED,
     ORDER_REJECTED,
     RISK_LIMIT_BREACHED,
-    SYSTEM_ERROR
+    SYSTEM_ERROR,
+    PAPER_TRADE
 }

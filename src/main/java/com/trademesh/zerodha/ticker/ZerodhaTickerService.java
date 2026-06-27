@@ -1,14 +1,12 @@
 package com.trademesh.zerodha.ticker;
 
+import com.trademesh.config.ApplicationConstants;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
 import com.zerodhatech.models.Tick;
-import com.zerodhatech.ticker.KiteTicker;
-import com.zerodhatech.ticker.OnConnect;
-import com.zerodhatech.ticker.OnDisconnect;
-import com.zerodhatech.ticker.OnError;
-import com.zerodhatech.ticker.OnTicks;
+import com.zerodhatech.ticker.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
@@ -18,25 +16,24 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+
+import static com.trademesh.config.ApplicationConstants.CACHE_PRICE_TTL;
+import static com.trademesh.config.ApplicationConstants.PRICE_KEY_PREFIX;
 
 /**
  * Zerodha KiteTicker WebSocket service.
- *
- * <p>Responsibilities:
- * <ul>
- *   <li>Fetches the current access token from Redis.</li>
- *   <li>Connects to the KiteTicker WebSocket feed.</li>
- *   <li>Subscribes to NIFTY 50 (token 256265) and NIFTY BANK (token 260105) in FULL mode.</li>
- *   <li>On each tick: logs the data, stores the latest price in Redis under
- *       {@code price:{symbol}} with a 60-second TTL, and emits to a reactive Flux.</li>
- * </ul>
- *
- * <p>Connection lifecycle (connect / disconnect / reconnect) is delegated to
+ * <p>
+ * Responsibilities:
+ * - Fetches the current access token from Redis.
+ * - Connects to the KiteTicker WebSocket feed.
+ * - Subscribes to NIFTY 50 (token 256265) and NIFTY BANK (token 260105) in FULL mode.
+ * - On each tick: logs the data, stores the latest price in Redis under
+ * {@code price:{symbol}} with a 60-second TTL, and emits to a reactive Flux.
+ * <p>
+ * Connection lifecycle (connect / disconnect / reconnect) is delegated to
  * {@link TickerConnectionManager}.
  */
 @Slf4j
@@ -44,33 +41,19 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ZerodhaTickerService {
 
-    // ─── Instrument tokens ────────────────────────────────────────────────────────
-    public static final long TOKEN_NIFTY_50   = 256265L;
-    public static final long TOKEN_NIFTY_BANK = 260105L;
+    private static final String SCHEDULER_NAME = "ZerodhaTickerService";
 
-    /** Human-readable symbol map keyed by instrument token. */
-    private static final Map<Long, String> TOKEN_SYMBOL_MAP = Map.of(
-            TOKEN_NIFTY_50,   "NIFTY50",
-            TOKEN_NIFTY_BANK, "NIFTYBANK"
-    );
-
-    /** Redis key prefix for latest price cache. */
-    private static final String PRICE_KEY_PREFIX = "price:";
-
-    /** Price TTL in Redis – 60 seconds. */
-    private static final Duration PRICE_TTL = Duration.ofSeconds(60);
-
-    // ─── Dependencies ─────────────────────────────────────────────────────────────
-    private final ZerodhaConfig               config;
-    private final ZerodhaAuthService          authService;
+    private final ZerodhaConfig config;
+    private final ZerodhaAuthService authService;
     private final ReactiveStringRedisTemplate redisTemplate;
-
-    // ─── Internal state ───────────────────────────────────────────────────────────
-    private volatile KiteTicker kiteTicker;
-
-    /** Hot Flux sink – all subscribers receive every tick. */
+    private final TokenAvailabilityTracker tokenTracker;
+    /**
+     * Hot Flux sink – all subscribers receive every tick.
+     */
     private final Sinks.Many<TickData> tickSink =
             Sinks.many().multicast().onBackpressureBuffer();
+    // ─── Internal state ───────────────────────────────────────────────────────────
+    private volatile KiteTicker kiteTicker;
 
     // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -97,7 +80,11 @@ public class ZerodhaTickerService {
                     initKiteTicker(accessToken);
                     return Mono.<Void>empty();
                 })
-                .doOnError(e -> log.error("Failed to connect KiteTicker: {}", e.getMessage(), e));
+                .doOnError(e -> {
+                    if (!(e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token"))) {
+                        log.error("Failed to connect KiteTicker: {}", e.getMessage(), e);
+                    }
+                });
     }
 
     /**
@@ -173,7 +160,7 @@ public class ZerodhaTickerService {
     // ─── Subscription ─────────────────────────────────────────────────────────────
 
     private void subscribeToInstruments() {
-        ArrayList<Long> tokens = new ArrayList<>(List.of(TOKEN_NIFTY_50, TOKEN_NIFTY_BANK));
+        ArrayList<Long> tokens = new ArrayList<>(List.of(ApplicationConstants.TOKEN_NIFTY_50, ApplicationConstants.TOKEN_NIFTY_BANK));
         log.info("Subscribing to instrument tokens: {}", tokens);
         kiteTicker.subscribe(tokens);
         kiteTicker.setMode(tokens, KiteTicker.modeFull);
@@ -183,7 +170,7 @@ public class ZerodhaTickerService {
     // ─── Tick processing ──────────────────────────────────────────────────────────
 
     private void processTick(Tick tick) {
-        String symbol = TOKEN_SYMBOL_MAP.getOrDefault(tick.getInstrumentToken(), "UNKNOWN");
+        String symbol = ApplicationConstants.TOKEN_SYMBOL_MAP.getOrDefault(tick.getInstrumentToken(), "UNKNOWN");
 
         // Tick.getVolumeTradedToday() returns double in this SDK version
         long volume = (long) tick.getVolumeTradedToday();
@@ -202,12 +189,12 @@ public class ZerodhaTickerService {
                 .timestamp(Instant.now())
                 .build();
 
-        log.debug("Tick [{}] LTP={} H={} L={} V={}",
+      /*  log.debug("Tick [{}] LTP={} H={} L={} V={}",
                 symbol,
                 tickData.getLastPrice(),
                 tickData.getHighPrice(),
                 tickData.getLowPrice(),
-                tickData.getVolume());
+                tickData.getVolume());*/
 
         // Emit to reactive stream
         tickSink.tryEmitNext(tickData);
@@ -215,9 +202,9 @@ public class ZerodhaTickerService {
         // Store latest price in Redis (non-blocking)
         String redisKey = PRICE_KEY_PREFIX + symbol;
         redisTemplate.opsForValue()
-                .set(redisKey, tickData.getLastPrice().toPlainString(), PRICE_TTL)
+                .set(redisKey, tickData.getLastPrice().toPlainString(), CACHE_PRICE_TTL)
                 .subscribe(
-                        ok  -> log.trace("Stored price in Redis: {}={}", redisKey, tickData.getLastPrice()),
+                        ok -> log.trace("Stored price in Redis: {}={}", redisKey, tickData.getLastPrice()),
                         err -> log.error("Failed to store price in Redis for {}: {}", symbol, err.getMessage())
                 );
     }

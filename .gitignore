@@ -13,6 +13,8 @@ build/
 *.jar
 *.war
 *.ear
+!gradle/wrapper/gradle-wrapper.jar
+!libs/kiteconnect.jar
 
 # Environment Variables
 .env

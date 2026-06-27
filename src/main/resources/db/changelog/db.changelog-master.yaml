@@ -3,3 +3,17 @@ databaseChangeLog:
       file: db/changelog/changes/001-create-schema.yaml
   - include:
       file: db/changelog/changes/002-create-tables.yaml
+  - include:
+      file: db/changelog/changes/003-create-paper-trades.yaml
+  - include:
+      file: db/changelog/changes/004-create-strategy-execution-logs.yaml
+  - include:
+      file: db/changelog/changes/005-create-option-chain-snapshots.yaml
+  - include:
+      file: db/changelog/changes/006-create-vix-history.yaml
+  - include:
+      file: db/changelog/changes/007-create-vix-alerts.yaml
+  - include:
+      file: db/changelog/changes/008-create-oi-snapshots.yaml
+  - include:
+      file: db/changelog/changes/009-create-max-pain-history.yaml

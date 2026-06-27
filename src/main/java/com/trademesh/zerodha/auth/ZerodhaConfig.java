@@ -21,19 +21,29 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "zerodha.kite")
 public class ZerodhaConfig {
 
-    /** Kite Connect API key (from Zerodha developer console). */
+    /**
+     * Kite Connect API key (from Zerodha developer console).
+     */
     private String apiKey;
 
-    /** Kite Connect API secret (from Zerodha developer console). */
+    /**
+     * Kite Connect API secret (from Zerodha developer console).
+     */
     private String apiSecret;
 
-    /** OAuth2 redirect / callback URL registered in the Kite app. */
+    /**
+     * OAuth2 redirect / callback URL registered in the Kite app.
+     */
     private String redirectUrl;
 
-    /** Base REST URL for Kite Connect API. */
+    /**
+     * Base REST URL for Kite Connect API.
+     */
     private String baseUrl = "https://api.kite.trade";
 
-    /** Kite Connect login page URL. */
+    /**
+     * Kite Connect login page URL.
+     */
     private String loginUrl = "https://kite.zerodha.com/connect/login";
 
     /**

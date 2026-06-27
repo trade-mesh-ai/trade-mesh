@@ -1,18 +1,16 @@
 package com.trademesh.config;
 
-import javax.sql.DataSource;
-
 import com.zaxxer.hikari.HikariDataSource;
-
 import io.swagger.v3.oas.models.OpenAPI;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.sql.DataSource;
+
 /**
  * JdbcConfig sets up the DataSource for database connectivity and configures OpenAPI for API documentation.
- * It reads database connection properties from the application.yml file and initializes a HikariDataSource.    
+ * It reads database connection properties from the application.yml file and initializes a HikariDataSource.
  */
 @Configuration
 public class JdbcConfig {
@@ -39,10 +37,10 @@ public class JdbcConfig {
 
     /**
      * Configures OpenAPI for API documentation. This bean initializes the OpenAPI specification with basic information about the API.
-     *  
+     *
      * @return
      */
-     @Bean
+    @Bean
     public OpenAPI tradeMeshOpenAPI() {
         return new OpenAPI()
                 .info(new io.swagger.v3.oas.models.info.Info()

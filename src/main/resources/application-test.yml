@@ -1,0 +1,139 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: trade-mesh
+
+  # ─── H2 In-Memory Database for Testing ─────────────────────────────────────
+  r2dbc:
+    url: r2dbc:h2:mem:///testdb;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    pool:
+      enabled: true
+      initial-size: 2
+      max-size: 10
+      max-idle-time: 30m
+
+  # ─── JDBC DataSource (used by Liquibase only) ─────────────────────────────────
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    url: jdbc:h2:mem:testdb;MODE=MySQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  # ─── Liquibase ────────────────────────────────────────────────────────────────
+  liquibase:
+    enabled: false
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: PUBLIC
+    liquibase-schema: PUBLIC
+
+  # ─── Disable Spring SQL init (Liquibase handles schema) ───────────────────────
+  sql:
+    init:
+      mode: never
+
+  # ─── Redis (Mock/Embedded for Testing) ────────────────────────────────────────
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+# ─── Zerodha / Kite Connect (Mocked in Tests) ───────────────────────────────
+zerodha:
+  kite:
+    api-key: TEST_API_KEY
+    api-secret: TEST_API_SECRET
+    redirect-url: http://localhost:8080/zerodha/callback
+    base-url: https://api.kite.trade
+    login-url: https://kite.zerodha.com/connect/login
+    access-token-ttl-hours: 8
+
+  # ─── KiteTicker WebSocket ──────────────────────────────────────────────────────
+  ticker:
+    enabled: false
+    instruments:
+      nifty50-token: 256265
+      niftybank-token: 260105
+    price-cache-ttl-seconds: 60
+    health-check-interval-ms: 30000
+    max-reconnect-alerts: 10
+
+# ─── SpringDoc / Swagger UI ──────────────────────────────────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+
+# ─── VIX Monitor ──────────────────────────────────────────────────────────────────
+vix:
+  fetch-interval-minutes: 5
+  persist-interval-minutes: 15
+  alert-threshold: 20.0
+
+# ─── Max Pain Calculator ──────────────────────────────────────────────────────────
+maxpain:
+  persist-interval-minutes: 30
+  cache-ttl-minutes: 15
+  lot-sizes:
+    NIFTY50: 75
+    NIFTYBANK: 30
+
+# ─── Telegram Alerts (Disabled in Tests) ──────────────────────────────────────────
+telegram:
+  bot-token:
+  chat-id:
+
+# ─── Strategy Configuration ───────────────────────────────────────────────────────
+strategy:
+  expiry-day:
+    max-vix: 18.0
+    latest-entry-time: "12:30"
+    min-credit: 20.0
+    min-distance-from-spot: 100
+    max-lots: 1
+    stop-loss-percent: 100
+    target-profit-percent: 50
+
+# ─── Trading Configuration ───────────────────────────────────────────────────────
+trading:
+  mode: paper
+  symbols:
+    - NIFTY
+    - BANKNIFTY
+  paper:
+    enabled: true
+    lot-size:
+      NIFTY: 75
+      BANKNIFTY: 30
+
+# ─── Risk Configuration ──────────────────────────────────────────────────────────
+risk:
+  max-position-size-per-symbol: 5
+  daily-loss-limit-percent: 2.0
+  max-sector-exposure: 50000
+  min-margin-buffer-percent: 10
+  position-sizing:
+    risk-percent: 1.0
+    max-quantity: 10
+
+# ─── Logging ─────────────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: WARN
+    com.trademesh: DEBUG
+    org.springframework.r2dbc: WARN
+    liquibase: WARN
