@@ -24,7 +24,7 @@ public class MarkToMarketScheduler {
      * Marks all open trades to market at scheduled intervals.
      * Only runs during market hours (09:15 to 15:30 IST).
      */
-    @Scheduled(fixedRateString = "${strategy.mark-to-market-interval-ms:60000}")
+    @Scheduled(fixedRateString = "${trading.mark-to-market-interval-ms:60000}")
     public void markToMarketScheduled() {
         // Check if current time is within market hours
         LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));

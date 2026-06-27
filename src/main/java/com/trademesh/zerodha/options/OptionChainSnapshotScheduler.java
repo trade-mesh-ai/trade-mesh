@@ -2,6 +2,7 @@ package com.trademesh.zerodha.options;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
+import io.r2dbc.postgresql.codec.Json;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -67,7 +68,7 @@ public class OptionChainSnapshotScheduler {
                                 .symbol(optionChain.getSymbol())
                                 .expiryDate(optionChain.getExpiryDate())
                                 .spotPrice(optionChain.getSpotPrice())
-                                .data(jsonData)
+                                .data(Json.of(jsonData))
                                 .createdAt(Instant.now())
                                 .build();
 

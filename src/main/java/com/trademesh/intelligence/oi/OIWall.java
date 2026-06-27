@@ -1,7 +1,9 @@
 package com.trademesh.intelligence.oi;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 
@@ -12,6 +14,8 @@ import java.math.BigDecimal;
  * indicating potential resistance (call wall) or support (put wall) levels.
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class OIWall {
 

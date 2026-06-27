@@ -3,6 +3,7 @@ package com.trademesh.strategy.expiryday;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.strategy.*;
+import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.enums.*;
 import com.trademesh.zerodha.options.OptionStrike;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Expiry Day Strangle Strategy Implementation.
@@ -34,10 +36,19 @@ import java.util.UUID;
 @Component
 public class ExpiryDayStrategy implements TradingStrategy {
 
-    private final ExpiryDayConfig config;
+    private final StrategiesConfig strategiesConfig;
 
-    public ExpiryDayStrategy(ExpiryDayConfig config) {
-        this.config = config;
+    public ExpiryDayStrategy(StrategiesConfig strategiesConfig) {
+        this.strategiesConfig = strategiesConfig;
+    }
+
+    /**
+     * Retrieves this strategy's configuration from the unified strategies config.
+     *
+     * @return the StrategyProperties for EXPIRY_DAY_STRANGLE
+     */
+    private com.trademesh.strategy.config.StrategyProperties strategyConfig() {
+        return strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE");
     }
 
     @Override
@@ -78,7 +89,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
             // ─── Step 3: Build Trade Legs ─────────────────────────────────────────────
             TradeLegsResult legsResult = buildTradeLegs(intelligence, strikeSelection);
-            if (legsResult == null || legsResult.getTotalCredit() < config.getMinCredit()) {
+            if (legsResult == null || legsResult.getTotalCredit() < strategyConfig().getMinCredit()) {
                 String reason = "Premium too low — not worth risk";
                 log.info("Expiry Day strategy skipped: {}", reason);
                 return Mono.just(StrategyResult.builder()
@@ -111,14 +122,16 @@ public class ExpiryDayStrategy implements TradingStrategy {
     public StrategyConfig getConfig() {
         return StrategyConfig.builder()
                 .strategyName(getName())
-                .maxLotsPerTrade(config.getMaxLots())
-                .stopLossPercent(config.getStopLossPercent())
-                .targetProfitPercent(config.getTargetProfitPercent())
-                .maxVix(config.getMaxVix())
-                .minVix(config.getMinVix())
-                .allowedDays(java.util.List.of(DayOfWeek.TUESDAY))
+                .maxLotsPerTrade(strategyConfig().getMaxLots())
+                .stopLossPercent(strategyConfig().getStopLossPercent())
+                .targetProfitPercent(strategyConfig().getTargetProfitPercent())
+                .maxVix(strategyConfig().getMaxVix())
+                .minVix(strategyConfig().getMinVix())
+                .allowedDays(strategyConfig().getAllowedDays().stream()
+                        .map(DayOfWeek::valueOf)
+                        .collect(Collectors.toList()))
                 .applicableConditions(java.util.List.of(MarketCondition.EXPIRY_DAY))
-                .isEnabled(true)
+                .isEnabled(strategyConfig().isEnabled())
                 .build();
     }
 
@@ -132,9 +145,9 @@ public class ExpiryDayStrategy implements TradingStrategy {
     private String performSafetyChecks(MarketIntelligence intelligence) {
         // Check 1: VIX threshold
         if (intelligence.getVixData() != null && intelligence.getVixData().getCurrentVix() != null) {
-            if (intelligence.getVixData().getCurrentVix() > config.getMaxVix()) {
+            if (intelligence.getVixData().getCurrentVix() > strategyConfig().getMaxVix()) {
                 return String.format("VIX too high for expiry day (%.1f > %.1f)",
-                        intelligence.getVixData().getCurrentVix(), config.getMaxVix());
+                        intelligence.getVixData().getCurrentVix(), strategyConfig().getMaxVix());
             }
         }
 
@@ -147,11 +160,11 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
         // Check 3: Entry time limit
         LocalTime currentTime = LocalTime.now();
-        LocalTime latestTime = LocalTime.parse(config.getLatestEntryTime(),
+        LocalTime latestTime = LocalTime.parse(strategyConfig().getLatestEntryTime(),
                 DateTimeFormatter.ofPattern("HH:mm"));
         if (currentTime.isAfter(latestTime)) {
             return String.format("Too late to enter expiry day trade (current: %s, limit: %s)",
-                    currentTime.format(DateTimeFormatter.ofPattern("HH:mm")), config.getLatestEntryTime());
+                    currentTime.format(DateTimeFormatter.ofPattern("HH:mm")), strategyConfig().getLatestEntryTime());
         }
 
         return null; // All checks passed
@@ -178,7 +191,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
         BigDecimal putStrike = intelligence.getOiAnalysis().getMaxPutOIStrike();
 
         // Verify minimum distance from spot
-        BigDecimal minDistance = new BigDecimal(config.getMinDistanceFromSpot());
+        BigDecimal minDistance = new BigDecimal(strategyConfig().getMinDistanceFromSpot());
         BigDecimal wideningAmount = "NIFTYBANK".equals(intelligence.getSymbol())
                 ? new BigDecimal(100)
                 : new BigDecimal(50);
@@ -253,7 +266,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .optionType(OptionType.CE)
                 .strikePrice(strikeSelection.getCallStrike().doubleValue())
                 .expiryDate(expiryDate)
-                .quantity(config.getMaxLots())
+                .quantity(strategyConfig().getMaxLots())
                 .limitPrice(callLTP.doubleValue())
                 .legType(LegType.ENTRY)
                 .build();
@@ -265,7 +278,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .optionType(OptionType.PE)
                 .strikePrice(strikeSelection.getPutStrike().doubleValue())
                 .expiryDate(expiryDate)
-                .quantity(config.getMaxLots())
+                .quantity(strategyConfig().getMaxLots())
                 .limitPrice(putLTP.doubleValue())
                 .legType(LegType.ENTRY)
                 .build();
@@ -298,10 +311,10 @@ public class ExpiryDayStrategy implements TradingStrategy {
         );
 
         // Calculate stop loss amount for strangle
-        Double stopLossAmount = legsResult.getTotalCredit() * config.getStopLossPercent() / 100;
+        Double stopLossAmount = legsResult.getTotalCredit() * strategyConfig().getStopLossPercent() / 100;
 
         // Determine confidence based on credit received
-        Confidence confidence = legsResult.getTotalCredit() >= config.getMinCredit() * 2
+        Confidence confidence = legsResult.getTotalCredit() >= strategyConfig().getMinCredit() * 2
                 ? Confidence.HIGH
                 : Confidence.MEDIUM;
 

@@ -1,11 +1,28 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# TradeMesh — Application Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+# Structure:
+#   1. Server
+#   2. Spring Core (R2DBC, DataSource, Liquibase, Redis)
+#   3. External Services (Zerodha, Telegram)
+#   4. API Docs (SpringDoc)
+#   5. Market Intelligence
+#   6. Trading Engine
+#   7. Strategies
+#   8. Risk Management
+#   9. Logging
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ─── 1. Server ───────────────────────────────────────────────────────────────
 server:
   port: 8080
 
+# ─── 2. Spring Core ──────────────────────────────────────────────────────────
 spring:
   application:
     name: trade-mesh
 
-  # ─── R2DBC / PostgreSQL ───────────────────────────────────────────────────────
+  # R2DBC / PostgreSQL (reactive database access)
   r2dbc:
     url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:trade_mesh_db}?schema=trade_mesh
     username: ${DB_USERNAME:postgres}
@@ -16,7 +33,7 @@ spring:
       max-size: 10
       max-idle-time: 30m
 
-  # ─── JDBC DataSource (used by Liquibase only) ─────────────────────────────────
+  # JDBC DataSource (used by Liquibase only — not for app queries)
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:trade_mesh_db}
@@ -24,19 +41,19 @@ spring:
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
-  # ─── Liquibase ────────────────────────────────────────────────────────────────
+  # Liquibase (schema migrations)
   liquibase:
     enabled: true
     change-log: classpath:db/changelog/db.changelog-master.yaml
     default-schema: trade_mesh
     liquibase-schema: trade_mesh
 
-  # ─── Disable Spring SQL init (Liquibase handles schema) ───────────────────────
+  # Disable Spring SQL init — Liquibase handles all schema creation
   sql:
     init:
       mode: never
 
-  # ─── Redis ────────────────────────────────────────────────────────────────────
+  # Redis (token store, option chain cache, tick price cache)
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -50,7 +67,8 @@ spring:
           min-idle: 0
           max-wait: -1ms
 
-# ─── Zerodha / Kite Connect ─────────────────────────────────────────────────────
+
+# ─── 3. External Services(Zerodha / Kite Connect)────────────────────────────────────────────────────
 zerodha:
   kite:
     api-key: ${ZERODHA_API_KEY}
@@ -59,25 +77,26 @@ zerodha:
     base-url: https://api.kite.trade
     login-url: https://kite.zerodha.com/connect/login
     access-token-ttl-hours: 8
+    # Kite /instruments returns ~5-8MB CSV. Buffer set to 20MB in WebClientConfig.
+    # Instruments are fetched once per day and cached in Redis for 24 hours.
+    instruments-buffer-size-mb: 20MB
 
-  # ─── Token Expiry Watcher ──────────────────────────────────────────────────────
-  token-check-interval-ms: 300000   # check every 5 minutes
+  # Polls Redis every 5 minutes to detect token expiry and send Telegram re-auth alert
+  token-check-interval-ms: 300000
 
-  # ─── KiteTicker WebSocket ──────────────────────────────────────────────────────
   ticker:
     instruments:
-      # NIFTY 50 index instrument token
-      nifty50-token: 256265
-      # NIFTY BANK index instrument token
-      niftybank-token: 260105
-    # Redis TTL (seconds) for cached tick prices
-    price-cache-ttl-seconds: 60
-    # WebSocket health-check interval (milliseconds)
-    health-check-interval-ms: 30000
-    # Max consecutive reconnect attempts before escalating to ERROR log (default: 10 cycles = 5 minutes)
-    max-reconnect-alerts: 10
+      nifty50-token: 256265       # NIFTY 50 index instrument token
+      niftybank-token: 260105     # NIFTY BANK index instrument token
+    price-cache-ttl-seconds: 60   # Redis TTL for cached tick prices
+    health-check-interval-ms: 30000   # WebSocket health-check interval
+    max-reconnect-alerts: 10      # Max reconnect attempts before ERROR log
 
-# ─── SpringDoc / Swagger UI ──────────────────────────────────────────────────────
+telegram:
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  chat-id: ${TELEGRAM_CHAT_ID:}
+
+# ─── 4. API Docs ─────────────────────────────────────────────────────────────
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -85,54 +104,106 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
 
-# ─── VIX Monitor ──────────────────────────────────────────────────────────────────
-vix:
-  fetch-interval-minutes: 5
-  persist-interval-minutes: 15
-  alert-threshold: 20.0
+# ─── 5. Market Intelligence ──────────────────────────────────────────────────
+intelligence:
+  market-data:
+    fetch-interval-minutes: "0 */5 9-15 ? * MON-FRI"
+    cache-ttl-minutes: 10
+  vix:
+    fetch-interval-cron: "0 */5 9-15 ? * MON-FRI"
+    persist-interval-cron: "0 */15 9-15 ? * MON-FRI"
+    fetch-interval-minutes: "5"
+    persist-interval-minutes: "15"
+    alert-threshold: 20.0
+  maxpain:
+    persist-interval-minutes: "0 */30 9-15 ? * MON-FRI"
+    cache-ttl-minutes: 15
+    lot-sizes:
+      NIFTY50: 75
+      NIFTYBANK: 30
+  oi:
+    persist-interval-minutes: "0 */15 9-15 ? * MON-FRI"
 
-# ─── Max Pain Calculator ──────────────────────────────────────────────────────────
-maxpain:
-  persist-interval-minutes: 30
-  cache-ttl-minutes: 15
-  lot-sizes:
-    NIFTY50: 75
-    NIFTYBANK: 30
+# ─── 6. Trading Engine ───────────────────────────────────────────────────────
+trading:
+  mode: paper                     # paper | live
+  expiry-day: THU                 # NSE options expiry day — update if NSE changes
+  symbols:
+    - NIFTY50
+    - NIFTYBANK
+  mark-to-market-interval-ms: 60000   # How often open trades are marked to market
+  paper:
+    enabled: true
+    lot-size:
+      NIFTY50: 75
+      NIFTYBANK: 30
 
-# ─── Telegram Alerts ──────────────────────────────────────────────────────────────
-telegram:
-  bot-token: ${TELEGRAM_BOT_TOKEN:}
-  chat-id: ${TELEGRAM_CHAT_ID:}
-
-# ─── Strategy Configuration ───────────────────────────────────────────────────────
-strategy:
-  expiry-day:
+# ─── 7. Strategies ───────────────────────────────────────────────────────────
+# All strategies share the same config structure.
+# Set enabled: false for strategies not yet implemented.
+# allowed-days: days of week this strategy is allowed to trade
+# applicable-conditions: market conditions that trigger this strategy
+# min/max-vix: VIX range within which the strategy is allowed to trade
+# latest-entry-time: no new trades after this time (HH:mm, IST)
+# min-credit: minimum premium collected to justify the trade (points)
+# min-distance-from-spot: minimum strike distance from spot price (points)
+# stop-loss-percent: exit if loss reaches this % of credit collected
+# target-profit-percent: exit if profit reaches this % of credit collected
+trading-strategies:
+  items:
+  - name: EXPIRY_DAY_STRANGLE
+    enabled: true
+    allowed-days: [THURSDAY]
+    applicable-conditions: [EXPIRY_DAY]
     max-vix: 18.0
+    min-vix: 10.0
     latest-entry-time: "12:30"
     min-credit: 20.0
     min-distance-from-spot: 100
     max-lots: 1
-    stop-loss-percent: 100
-    target-profit-percent: 50
-  mark-to-market-interval-ms: 60000
+    stop-loss-percent: 100.0
+    target-profit-percent: 50.0
 
-# ─── Trading Configuration ───────────────────────────────────────────────────────
-trading:
-  # Expiry day for NIFTY/BANKNIFTY options (NSE).
-  # Currently THU. Update cron expressions in TradingScheduler manually if NSE changes this.
-  # Future: will be used for dynamic scheduler when Spring supports runtime cron updates.
-  expiry-day: THU
-  mode: paper
-  symbols:
-    - NIFTY
-    - BANKNIFTY
-  paper:
-    enabled: true
-    lot-size:
-      NIFTY: 75
-      BANKNIFTY: 30
+  - name: THETA_SPREAD
+    enabled: false
+    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
+    applicable-conditions: [SIDEWAYS]
+    max-vix: 15.0
+    min-vix: 8.0
+    latest-entry-time: "13:00"
+    min-credit: 15.0
+    min-distance-from-spot: 150
+    max-lots: 1
+    stop-loss-percent: 50.0
+    target-profit-percent: 30.0
 
-# ─── Risk Configuration ──────────────────────────────────────────────────────────
+  - name: BULL_PUT_SPREAD
+    enabled: false
+    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
+    applicable-conditions: [TRENDING_BULLISH]
+    max-vix: 20.0
+    min-vix: 8.0
+    latest-entry-time: "13:00"
+    min-credit: 10.0
+    min-distance-from-spot: 100
+    max-lots: 1
+    stop-loss-percent: 100.0
+    target-profit-percent: 50.0
+
+  - name: BULL_CALL_SPREAD
+    enabled: false
+    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
+    applicable-conditions: [TRENDING_BEARISH]
+    max-vix: 20.0
+    min-vix: 8.0
+    latest-entry-time: "13:00"
+    min-credit: 10.0
+    min-distance-from-spot: 100
+    max-lots: 1
+    stop-loss-percent: 100.0
+    target-profit-percent: 50.0
+
+# ─── 8. Risk Management ──────────────────────────────────────────────────────
 risk:
   max-position-size-per-symbol: 5
   daily-loss-limit-percent: 2.0
@@ -142,10 +213,12 @@ risk:
     risk-percent: 1.0
     max-quantity: 10
 
-# ─── Logging ─────────────────────────────────────────────────────────────────────
+# ─── 9. Logging ──────────────────────────────────────────────────────────────
 logging:
   level:
     root: INFO
     com.trademesh: DEBUG
     org.springframework.r2dbc: DEBUG
+    reactor.netty: INFO
+    io.netty: INFO
     liquibase: INFO

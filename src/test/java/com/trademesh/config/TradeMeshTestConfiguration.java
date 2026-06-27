@@ -1,7 +1,7 @@
 package com.trademesh.config;
 
 import com.trademesh.alert.TelegramProperties;
-import com.trademesh.strategy.expiryday.ExpiryDayConfig;
+import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -20,7 +20,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 @EnableConfigurationProperties({
         ZerodhaConfig.class,
         TelegramProperties.class,
-        ExpiryDayConfig.class
+        StrategiesConfig.class
 })
 public class TradeMeshTestConfiguration {
 

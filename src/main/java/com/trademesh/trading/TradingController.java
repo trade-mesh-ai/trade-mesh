@@ -61,7 +61,7 @@ public class TradingController {
     @Operation(summary = "Manually trigger a trading cycle for a symbol")
     @PostMapping(value = "/run/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> runTradingCycle(
-            @Parameter(description = "Trading symbol (e.g., NIFTY50, BANKNIFTY)")
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
             @PathVariable String symbol) {
         log.info("Manual request to run trading cycle for symbol: {}", symbol);
 

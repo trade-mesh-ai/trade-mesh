@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.options;
 
+import io.r2dbc.postgresql.codec.Json;
 import lombok.Builder;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
@@ -42,7 +43,7 @@ public class OptionChainSnapshot {
     /**
      * Full option chain data serialized as JSON.
      */
-    private String data;
+    private Json data;
 
     /**
      * Timestamp when this snapshot was created.
