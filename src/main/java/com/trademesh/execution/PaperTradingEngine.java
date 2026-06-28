@@ -18,7 +18,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Paper Trading Engine for simulating trades without real money.
@@ -73,22 +72,20 @@ public class PaperTradingEngine {
             return Mono.empty();
         }
 
-        // Create PaperTrade entity
-         LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
-         PaperTrade trade = PaperTrade.builder()
-                 .id(UUID.randomUUID())
-                 .tradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")))
-                 .symbol(signal.getSymbol())
-                 .strategyName(signal.getStrategyName())
-                 .status(TradeStatus.OPEN)
-                 .legs(signal.getLegs())
-                 .entryCredit(signal.getExpectedCredit())
-                 .currentValue(signal.getExpectedCredit())
-                 .unrealizedPnl(0.0)
-                 .entryTime(now)
-                 .createdAt(now)
-                 .updatedAt(now)
-                 .build();
+        // Create PaperTrade entity using factory method
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+        PaperTrade trade = PaperTrade.createNew();
+        trade.setTradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")));
+        trade.setSymbol(signal.getSymbol());
+        trade.setStrategyName(signal.getStrategyName());
+        trade.setStatus(TradeStatus.OPEN);
+        trade.setLegs(signal.getLegs());
+        trade.setEntryCredit(signal.getExpectedCredit());
+        trade.setCurrentValue(signal.getExpectedCredit());
+        trade.setUnrealizedPnl(0.0);
+        trade.setEntryTime(now);
+        trade.setCreatedAt(now);
+        trade.setUpdatedAt(now);
 
         // Save to PostgreSQL
         return paperTradeRepository.save(trade)

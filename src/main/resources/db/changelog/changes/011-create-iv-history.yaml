@@ -1,0 +1,78 @@
+databaseChangeLog:
+  - changeSet:
+      id: 011-create-iv-history
+      author: trade-mesh
+      comment: "Create iv_history table for storing daily ATM IV data for Iron Condor strategy"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: iv_history
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: symbol
+                  type: VARCHAR(20)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: trade_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: atm_strike
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: atm_iv
+                  type: NUMERIC(8,4)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: call_iv
+                  type: NUMERIC(8,4)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: put_iv
+                  type: NUMERIC(8,4)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: spot_price
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expiry_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+              - column:
+                  name: recorded_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            schemaName: trade_mesh
+            tableName: iv_history
+            columnNames: symbol,trade_date
+            constraintName: uk_iv_history_symbol_trade_date
+        - createIndex:
+            indexName: idx_iv_history_symbol_trade_date_desc
+            schemaName: trade_mesh
+            tableName: iv_history
+            columns:
+              - column:
+                  name: symbol
+              - column:
+                  name: trade_date
+                  descending: true

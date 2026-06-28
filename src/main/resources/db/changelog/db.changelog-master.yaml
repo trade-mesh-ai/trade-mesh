@@ -17,3 +17,7 @@ databaseChangeLog:
       file: db/changelog/changes/008-create-oi-snapshots.yaml
   - include:
       file: db/changelog/changes/009-create-max-pain-history.yaml
+  - include:
+      file: db/changelog/changes/010-create-nifty-daily-prices.yaml
+  - include:
+      file: db/changelog/changes/011-create-iv-history.yaml

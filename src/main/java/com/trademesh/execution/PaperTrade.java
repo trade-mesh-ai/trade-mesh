@@ -2,7 +2,7 @@ package com.trademesh.execution;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import jakarta.persistence.PostLoad;
+import com.trademesh.strategy.TradeLeg;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -12,7 +12,6 @@ import org.springframework.data.annotation.Transient;
 import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
-import com.trademesh.strategy.TradeLeg;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -47,11 +46,13 @@ public class PaperTrade implements Persistable<UUID> {
     /**
      * Flag to indicate if this entity is new (not yet persisted).
      * Used by Spring Data R2DBC to determine INSERT vs UPDATE.
+     * Default is false because entities loaded from DB are not new.
+     * Only use createNew() factory method to create entities with isNew=true.
      */
     @Builder.Default
     @Transient
     @JsonIgnore
-    private boolean isNew = true;
+    private boolean isNew = false;
 
     /**
      * Date when the trade was entered.
@@ -147,6 +148,20 @@ public class PaperTrade implements Persistable<UUID> {
     @Column("updated_at")
     private LocalDateTime updatedAt;
 
+    /**
+     * Factory method to create a new PaperTrade entity for insertion.
+     * Sets isNew=true and generates a UUID for the trade.
+     * Use this method whenever creating a new trade that needs to be persisted.
+     *
+     * @return a new PaperTrade with isNew=true and a generated UUID
+     */
+    public static PaperTrade createNew() {
+        PaperTrade trade = new PaperTrade();
+        trade.isNew = true;
+        trade.id = UUID.randomUUID();
+        return trade;
+    }
+
     @Override
     public UUID getId() {
         return id;
@@ -155,15 +170,6 @@ public class PaperTrade implements Persistable<UUID> {
     @Override
     public boolean isNew() {
         return isNew;
-    }
-
-    /**
-     * Called by Spring after loading entity from database.
-     * Marks the entity as no longer new to ensure subsequent saves use UPDATE.
-     */
-    @PostLoad
-    void markNotNew() {
-        this.isNew = false;
     }
 
 }
