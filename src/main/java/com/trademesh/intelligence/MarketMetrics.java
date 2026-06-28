@@ -90,4 +90,6 @@ public class MarketMetrics {
      * True if at least 30 days of IV history exists for IVR calculation.
      */
     private boolean ivrAvailable;
+
+    private BigDecimal atrPct; // ATR14 / spotPrice × 100
 }

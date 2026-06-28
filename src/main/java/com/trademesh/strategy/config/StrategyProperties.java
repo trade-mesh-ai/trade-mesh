@@ -3,7 +3,9 @@ package com.trademesh.strategy.config;
 import lombok.Data;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Configuration properties for a single strategy from the strategies list.
@@ -95,4 +97,45 @@ public class StrategyProperties {
      * Default: 50.0
      */
     private Double targetProfitPercent = 50.0;
+
+    /**
+     * Strategy-specific extra configuration parameters.
+     * Allows each strategy to define custom fields without
+     * polluting the shared StrategyProperties model.
+     */
+    private Map<String, Object> extra = new HashMap<>();
+
+    /**
+     * Safely retrieves a double value from the extra map.
+     *
+     * @param key          the configuration key
+     * @param defaultValue the default value if key not found or conversion fails
+     * @return the double value or defaultValue
+     */
+    public double getExtraDouble(String key, double defaultValue) {
+        Object val = extra.get(key);
+        if (val == null) return defaultValue;
+        try {
+            return Double.parseDouble(val.toString());
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Safely retrieves an integer value from the extra map.
+     *
+     * @param key          the configuration key
+     * @param defaultValue the default value if key not found or conversion fails
+     * @return the integer value or defaultValue
+     */
+    public int getExtraInt(String key, int defaultValue) {
+        Object val = extra.get(key);
+        if (val == null) return defaultValue;
+        try {
+            return Integer.parseInt(val.toString());
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
 }

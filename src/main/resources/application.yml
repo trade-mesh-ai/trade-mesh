@@ -203,6 +203,38 @@ trading-strategies:
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
 
+  - name: IRON_CONDOR
+    enabled: true
+    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
+    applicable-conditions: [SIDEWAYS]
+    max-vix: 20.0
+    min-vix: 12.0
+    latest-entry-time: "13:00"
+    min-credit: 30.0
+    max-lots: 1
+    stop-loss-percent: 200.0
+    target-profit-percent: 50.0
+    extra:
+      target-delta: 0.18
+      wing-width: 200
+      strike-step: 50
+      min-credit-pct: 0.15
+      min-score: 60
+      ivr-min: 20.0
+      ivr-max: 80.0
+      iv-hv-ratio-min: 1.1
+      atr-pct-max: 1.0
+      dte-min: 3
+      dte-max: 15
+      atr-calm-threshold: 0.7
+      atr-high-threshold: 1.0
+      calm-target-multiplier: 0.9
+      calm-sl-multiplier: 0.8
+      high-target-multiplier: 1.1
+      high-sl-multiplier: 1.2
+      vix-panic-threshold: 25.0
+      force-close-time: "15:15"
+
 # ─── 8. Risk Management ──────────────────────────────────────────────────────
 risk:
   max-position-size-per-symbol: 5

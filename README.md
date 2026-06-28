@@ -66,6 +66,10 @@ TradeMesh is a **Spring WebFlux-based reactive trading engine** for automated op
 - `TradingSignal` — Signal DTO (symbol, strategy, legs, expected credit, confidence)
 - `IntelligenceScheduler` — Periodic intelligence generation (every 5 minutes during market hours)
 - `MarketIntelligenceController` — REST endpoints for intelligence queries
+- `MarketMetrics` — DTO containing calculated volatility and technical indicators (HV20, ATR14, IVR, IV/HV ratio, ATR percentile)
+- `MarketMetricsService` — Service for calculating comprehensive market metrics (HV20, ATR14, IVR, IV/HV ratio, ATR percentile)
+- `NiftyDailyPriceService` — Service for fetching and managing daily OHLC price data
+- `KiteHistoricalService` — Service for fetching historical candle data from Zerodha Kite API
 
 #### `com.trademesh.intelligence.vix`
 **VIX (Volatility Index) monitoring**

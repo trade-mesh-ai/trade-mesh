@@ -1,8 +1,10 @@
 package com.trademesh.trading;
 
 import com.trademesh.intelligence.KiteHistoricalService;
+import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.intelligence.NiftyDailyPriceService;
 import com.trademesh.intelligence.iv.IvHistoryService;
+import com.trademesh.strategy.ironcondor.IronCondorStrategy;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +37,8 @@ public class AdminController {
     private final KiteHistoricalService kiteHistoricalService;
     private final NiftyDailyPriceService niftyDailyPriceService;
     private final IvHistoryService ivHistoryService;
+    private final MarketIntelligenceService marketIntelligenceService;
+    private final IronCondorStrategy ironCondorStrategy;
 
     /**
      * Bootstrap endpoint to fetch historical NIFTY50 OHLC data from Kite Connect
@@ -147,6 +151,41 @@ public class AdminController {
                     log.error("Error calculating ATM IV for {}: {}", symbol, e.getMessage(), e);
                     Map<String, Object> errorResponse = new HashMap<>();
                     errorResponse.put("error", "Error calculating ATM IV");
+                    errorResponse.put("message", e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
+                });
+    }
+
+    /**
+     * Debug endpoint to test Iron Condor strategy evaluation without persisting to database.
+     * <p>
+     * This endpoint generates market intelligence for NIFTY50 and calls the evaluate()
+     * method of IronCondorStrategy to verify the strategy logic without executing any trades.
+     * <p>
+     * Example: {@code GET /admin/test/iron-condor-evaluate}
+     *
+     * @return Mono emitting ResponseEntity with StrategyResult as JSON
+     */
+    @Operation(summary = "Test Iron Condor strategy evaluation (debug endpoint, no DB save)")
+    @GetMapping(value = "/test/iron-condor-evaluate", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<?>> testIronCondorEvaluation() {
+
+        log.info("Testing Iron Condor strategy evaluation");
+
+        return marketIntelligenceService.generateIntelligence("NIFTY50")
+                .flatMap(intelligence -> {
+                    log.debug("Generated market intelligence for Iron Condor evaluation: {}", intelligence.summary());
+                    return ironCondorStrategy.evaluate(intelligence);
+                })
+                .<ResponseEntity<?>>map(strategyResult -> {
+                    log.info("Iron Condor evaluation completed: isExecutable={}, skipReason={}",
+                            strategyResult.getIsExecutable(), strategyResult.getSkipReason());
+                    return ResponseEntity.ok((Object) strategyResult);
+                })
+                .<ResponseEntity<?>>onErrorResume(e -> {
+                    log.error("Error evaluating Iron Condor strategy: {}", e.getMessage(), e);
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("error", "Error evaluating Iron Condor strategy");
                     errorResponse.put("message", e.getMessage());
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
                 });

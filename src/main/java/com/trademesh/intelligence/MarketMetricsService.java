@@ -145,6 +145,14 @@ public class MarketMetricsService {
             ivHvRatio = currentAtmIv.divide(hv20, 4, RoundingMode.HALF_UP);
         }
 
+        // Calculate ATR as percentage of spot price
+        BigDecimal atrPct = null;
+        if (atr14 != null && spotPrice != null && spotPrice.compareTo(BigDecimal.ZERO) > 0) {
+            atrPct = atr14.divide(spotPrice, 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(4, RoundingMode.HALF_UP);
+        }
+
         return MarketMetrics.builder()
                 .symbol(symbol)
                 .calculatedAt(calculatedAt)
@@ -158,6 +166,7 @@ public class MarketMetricsService {
                 .ivHistoryDays(ivHistoryDays)
                 .hv20Available(hv20Available)
                 .ivrAvailable(ivrAvailable)
+                .atrPct(atrPct)
                 .build();
     }
 

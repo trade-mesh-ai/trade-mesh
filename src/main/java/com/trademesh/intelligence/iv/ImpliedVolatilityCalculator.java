@@ -147,4 +147,30 @@ public class ImpliedVolatilityCalculator {
         double result = 1 - poly * Math.exp(-z * z);
         return z >= 0 ? result : -result;
     }
+
+    /**
+     * Calculates option delta using Black-Scholes model.
+     * Delta measures the rate of change of option price with respect to spot price.
+     *
+     * @param spotPrice    the current spot price of the underlying
+     * @param strikePrice  the strike price of the option
+     * @param timeToExpiry time to expiry in years (must be positive)
+     * @param iv           implied volatility as a percentage (e.g., 18.45 for 18.45%)
+     * @param optionType   "CE" for call option, "PE" for put option
+     * @return delta value (typically 0 to 1 for calls, -1 to 0 for puts)
+     */
+    public static double delta(double spotPrice, double strikePrice,
+                               double timeToExpiry, double iv,
+                               String optionType) {
+        if (timeToExpiry <= 0 || iv <= 0) return 0.0;
+        double sigma = iv / 100.0;
+        double d1 = (Math.log(spotPrice / strikePrice)
+                + (RISK_FREE_RATE + 0.5 * sigma * sigma) * timeToExpiry)
+                / (sigma * Math.sqrt(timeToExpiry));
+        if ("CE".equals(optionType)) {
+            return norm(d1);
+        } else {
+            return norm(d1) - 1.0;
+        }
+    }
 }
