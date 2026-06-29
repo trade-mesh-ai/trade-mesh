@@ -56,6 +56,8 @@ TradeMesh is a **Spring WebFlux-based reactive trading engine** for automated op
 **Core domain entities**
 - `Instrument` — Master list of tradeable instruments (stocks, options, indices)
 - `InstrumentRepository` — R2DBC repository for instruments table
+- `NiftyDailyPrice` — Entity for daily OHLC (Open, High, Low, Close) price data (UUID-based, Persistable)
+- `NiftyDailyPriceRepository` — R2DBC repository for nifty_daily_prices table
 
 ### `com.trademesh.intelligence`
 **Market intelligence aggregation and condition classification**
@@ -84,6 +86,16 @@ TradeMesh is a **Spring WebFlux-based reactive trading engine** for automated op
 - `OIAnalysis` — OI analysis result (max call/put strikes, walls, market bias)
 - `OISnapshot` — Historical OI snapshots (persisted to PostgreSQL)
 
+#### `com.trademesh.intelligence.iv`
+**Implied Volatility (IV) history and analysis**
+- `IvHistory` — Entity for daily ATM (At-The-Money) implied volatility data (UUID-based, Persistable)
+- `IvHistoryRepository` — R2DBC repository for iv_history table
+- `IvHistoryService` — Service with READ/SAVE method variants for IV calculation and persistence
+  - READ method: `calculateAtmIv()` — calculates ATM IV without saving
+  - SAVE method: `calculateAndSaveAtmIv()` — calculates and persists (idempotent, once per day)
+- `IvHistoryScheduler` — Periodic IV recording scheduler (every 5 minutes during market hours)
+- `ImpliedVolatilityCalculator` — Utility for calculating Greeks (delta, gamma, vega, theta) and implied volatility
+
 #### `com.trademesh.intelligence.maxpain`
 **Max Pain calculation for strike prediction**
 - `MaxPainCalculatorService` — Calculates max pain strike from option chain
@@ -110,6 +122,17 @@ TradeMesh is a **Spring WebFlux-based reactive trading engine** for automated op
   - Strike selection from OI analysis
   - Trade leg building with premium calculation
   - Confidence assessment based on credit collected
+
+#### `com.trademesh.strategy.ironcondor`
+**Iron Condor Strategy (NEW)**
+- `IronCondorStrategy` — Sells both call and put spreads in sideways markets for theta decay
+  - Delta-based strike selection (target delta 0.18 for OTM options)
+  - Dynamic exit level adjustment based on ATR% volatility
+  - Confidence scoring based on IVR, IV/HV ratio, and ATR%
+  - Risk/reward ratio calculation
+  - Adjusted profit targets and stop loss levels
+  - Applicable condition: SIDEWAYS market
+- `IronCondorSignal` — Signal DTO with strike details, P&L matrix, and Greeks
 
 #### `com.trademesh.strategy.config`
 **Strategy configuration management**
@@ -424,7 +447,7 @@ risk:
 ### 3.2 Liquibase Changelog Naming Convention
 **Format:** `NNN-description.yaml` (zero-padded 3-digit number)
 
-**Current changesets (latest: 009):**
+**Current changesets (latest: 011):**
 1. `001-create-schema.yaml` — Creates trade_mesh schema
 2. `002-create-tables.yaml` — zerodha_sessions, instruments, strategies, orders, portfolio_positions
 3. `003-create-paper-trades.yaml` — paper_trades table with indexes
@@ -434,8 +457,10 @@ risk:
 7. `007-create-vix-alerts.yaml` — vix_alerts table
 8. `008-create-oi-snapshots.yaml` — oi_snapshots table
 9. `009-create-max-pain-history.yaml` — max_pain_history table
+10. `010-create-nifty-daily-prices.yaml` — nifty_daily_prices table for daily OHLC data
+11. `011-create-iv-history.yaml` — iv_history table for daily ATM IV data
 
-**Next changeset:** `010-*.yaml`
+**Next changeset:** `012-*.yaml`
 
 ### 3.3 Redis Usage
 **Key prefixes and TTLs:**
@@ -444,10 +469,46 @@ risk:
 - `market:intelligence:{symbol}` — Market intelligence snapshot (TTL: 5 minutes)
 - `market:maxpain:{symbol}` — Max pain calculation (TTL: 15 minutes)
 - `optionchain:{symbol}` — Option chain snapshot (TTL: 3 minutes)
+- `market:metrics:{symbol}` — Market metrics (HV20, ATR14, IVR, IV/HV) (TTL: 5 minutes)
+
+### 3.4 Market Metrics Calculations
+**Comprehensive technical and volatility indicators:**
+
+#### HV20 (20-Day Historical Volatility)
+- Calculated from 21 days of price data (20 log returns)
+- Formula: HV20 = dailyStdDev × √252 × 100
+- Annualized percentage volatility
+- Requires: 21 days of price data
+
+#### ATR14 (14-Day Average True Range)
+- Calculated from 21 days of price data
+- Uses last 14 True Range values
+- TR = max(high - low, |high - prevClose|, |low - prevClose|)
+- Measured in points
+
+#### ATR Percentile
+- Calculated from 60 days of price data
+- Percentile = (count of TR < current ATR14) / total TR values × 100
+- Range: 0-100
+- Indicates volatility level relative to recent history
+
+#### IVR (IV Rank)
+- Calculated from 365 days of IV history
+- Formula: IVR = (currentIV - minIV) / (maxIV - minIV) × 100
+- Range: 0-100
+- Requires: At least 30 days of IV history
+- Returns 50 if maxIV == minIV (flat IV environment)
+
+#### IV/HV Ratio
+- Ratio of current ATM IV to HV20
+- Indicates if IV is expensive (>1.0) or cheap (<1.0) relative to realized volatility
+- Example: 1.04 means IV is 4% higher than HV20
 
 ---
 
-## 4. EXPIRY_DAY_STRANGLE Strategy
+## 4. Trading Strategies
+
+### 4.1 EXPIRY_DAY_STRANGLE Strategy
 
 **Status:** ENABLED (configured in application.yml)
 
@@ -502,6 +563,99 @@ risk:
   max-lots: 1
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
+```
+
+### 4.2 IRON_CONDOR Strategy (NEW)
+
+**Status:** ENABLED (configured in application.yml)
+
+**Trigger:** SIDEWAYS market condition (low VIX, neutral OI bias, range-bound)
+
+**Key Classes:**
+- `IronCondorStrategy` — Main strategy implementation
+- `IronCondorSignal` — Signal DTO with strike details and P&L matrix
+- `ImpliedVolatilityCalculator` — Greeks calculation (delta, gamma, vega, theta)
+
+**Strategy Logic:**
+
+1. **Applicability Check:**
+   - Market condition must be SIDEWAYS
+   - Enabled flag must be true
+   - DTE (Days To Expiry) must be within configured range (default: 3-15 days)
+
+2. **Market Metrics Validation:**
+   - ATR% must not exceed configured maximum (default: 1.0%)
+   - Confidence score must meet minimum threshold (default: 60/100)
+
+3. **Confidence Scoring (0-100):**
+   - IVR (IV Rank) scoring:
+     - 20-50: +20 points
+     - 50-65: +30 points
+     - 65-80: +15 points
+   - IV/HV Ratio scoring:
+     - ≥ 1.3: +20 points
+     - ≥ 1.1: +10 points
+   - ATR% scoring:
+     - < 0.6%: +15 points
+     - < 0.8%: +20 points
+     - < 1.0%: +10 points
+     - ≥ 1.0%: -20 points (penalty)
+
+4. **Strike Selection (Delta-Based):**
+   - Target delta: 0.18 (18% probability of expiring ITM)
+   - Short CALL: First strike above spot with delta ≤ 0.18
+   - Short PUT: First strike below spot with delta ≤ 0.18
+   - Wing width: 200 points (distance between short and long strikes)
+   - Long CALL: Short call strike + 200 points
+   - Long PUT: Short put strike - 200 points
+
+5. **Credit Calculation:**
+   - Net credit = (Short Call LTP + Short Put LTP) - (Long Call LTP + Long Put LTP)
+   - Minimum credit: 15% of wing width (default: 30 points for 200-point wing)
+
+6. **P&L Matrix:**
+   - Max Profit = Net Credit × Lot Size × Quantity
+   - Max Loss = (Wing Width - Net Credit) × Lot Size × Quantity
+   - Upper Breakeven = Short Call Strike + Net Credit
+   - Lower Breakeven = Short Put Strike - Net Credit
+   - Risk/Reward Ratio = Max Profit / Max Loss
+
+7. **Dynamic Exit Level Adjustment (Based on ATR%):**
+   - **Calm Market (ATR% < 0.7%):**
+     - Profit target: 90% of base (tighter)
+     - Stop loss: 80% of base (tighter)
+   - **Normal Market (0.7% ≤ ATR% ≤ 1.0%):**
+     - Profit target: 100% of base
+     - Stop loss: 100% of base
+   - **High Volatility (ATR% > 1.0%):**
+     - Profit target: 110% of base (wider)
+     - Stop loss: 120% of base (wider)
+
+**Example Configuration:**
+```yaml
+- name: IRON_CONDOR
+  enabled: true
+  allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  applicable-conditions: [SIDEWAYS]
+  max-vix: 25.0
+  min-vix: 10.0
+  max-lots: 1
+  stop-loss-percent: 100.0
+  target-profit-percent: 50.0
+  extra:
+    target-delta: 0.18
+    wing-width: 200
+    min-credit-pct: 0.15
+    dte-min: 3
+    dte-max: 15
+    min-score: 60
+    atr-pct-max: 1.0
+    atr-calm-threshold: 0.7
+    atr-high-threshold: 1.0
+    calm-target-multiplier: 0.9
+    calm-sl-multiplier: 0.8
+    high-target-multiplier: 1.1
+    high-sl-multiplier: 1.2
 ```
 
 ---
@@ -645,6 +799,18 @@ Master list of tradeable instruments fetched from Zerodha
 - `lot_size` (INTEGER)
 - `last_updated` (TIMESTAMPTZ, default NOW())
 
+### nifty_daily_prices
+Daily OHLC (Open, High, Low, Close) price data for NIFTY50
+- `id` (UUID, PK)
+- `trade_date` (DATE)
+- `open` (DECIMAL)
+- `high` (DECIMAL)
+- `low` (DECIMAL)
+- `close` (DECIMAL)
+- `volume` (BIGINT)
+- `recorded_at` (TIMESTAMP, default CURRENT_TIMESTAMP)
+- **Indexes:** trade_date, (trade_date DESC)
+
 ### strategies
 Trading strategy definitions
 - `id` (BIGSERIAL, PK)
@@ -770,6 +936,20 @@ Max pain calculation snapshots
 - `calculated_at` (TIMESTAMP, default CURRENT_TIMESTAMP)
 - **Indexes:** symbol, expiry_date, calculated_at, (symbol, calculated_at DESC)
 
+### iv_history
+Daily ATM (At-The-Money) implied volatility data
+- `id` (UUID, PK)
+- `symbol` (VARCHAR)
+- `trade_date` (DATE)
+- `atm_strike` (DECIMAL)
+- `atm_iv` (DECIMAL) — Average of call and put IV at ATM strike
+- `call_iv` (DECIMAL) — Call option IV at ATM strike
+- `put_iv` (DECIMAL) — Put option IV at ATM strike
+- `spot_price` (DECIMAL)
+- `expiry_date` (DATE)
+- `recorded_at` (TIMESTAMP, default CURRENT_TIMESTAMP)
+- **Indexes:** symbol, trade_date, (symbol, trade_date DESC), recorded_at
+
 ---
 
 ## 8. Running the Application
@@ -869,5 +1049,38 @@ logging:
 
 ---
 
+## 13. Market Metrics & Technical Indicators
+
+The system now calculates comprehensive market metrics to support strategy decisions:
+
+### HV20 (20-Day Historical Volatility)
+- Measures realized volatility from 21 days of price data
+- Annualized percentage (e.g., 14.5%)
+- Used to compare against IV for relative valuation
+
+### ATR14 (14-Day Average True Range)
+- Measures average price movement range
+- Calculated from 21 days of price data
+- Used to assess market volatility and adjust exit levels
+
+### ATR Percentile
+- Percentile ranking of current ATR14 within 60-day history
+- Range: 0-100
+- Indicates if current volatility is high or low relative to recent history
+
+### IVR (IV Rank)
+- Measures where current IV stands within 365-day range
+- Range: 0-100 (0 = lowest IV in past year, 100 = highest)
+- Requires minimum 30 days of IV history
+- Used for confidence scoring in Iron Condor strategy
+
+### IV/HV Ratio
+- Ratio of current ATM IV to HV20
+- Values > 1.0 indicate IV is expensive (higher than realized volatility)
+- Values < 1.0 indicate IV is cheap (lower than realized volatility)
+- Used for confidence scoring in Iron Condor strategy
+
+---
+
 **Last Updated:** June 28, 2026
-**Version:** 1.0.0
+**Version:** 1.0.1

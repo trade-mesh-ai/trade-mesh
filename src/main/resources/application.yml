@@ -164,19 +164,6 @@ trading-strategies:
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
 
-  - name: THETA_SPREAD
-    enabled: false
-    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
-    applicable-conditions: [SIDEWAYS]
-    max-vix: 15.0
-    min-vix: 8.0
-    latest-entry-time: "13:00"
-    min-credit: 15.0
-    min-distance-from-spot: 150
-    max-lots: 1
-    stop-loss-percent: 50.0
-    target-profit-percent: 30.0
-
   - name: BULL_PUT_SPREAD
     enabled: false
     allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
@@ -224,7 +211,7 @@ trading-strategies:
       ivr-max: 80.0
       iv-hv-ratio-min: 1.1
       atr-pct-max: 1.0
-      dte-min: 3
+      dte-min: 1
       dte-max: 15
       atr-calm-threshold: 0.7
       atr-high-threshold: 1.0

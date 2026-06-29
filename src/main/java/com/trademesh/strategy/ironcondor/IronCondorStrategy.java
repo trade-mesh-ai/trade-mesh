@@ -5,6 +5,8 @@ import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
 import com.trademesh.intelligence.MarketMetricsService;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
+import com.trademesh.intelligence.vix.VixData;
+import com.trademesh.intelligence.vix.VixMonitorService;
 import com.trademesh.strategy.StrategyConfig;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
@@ -43,6 +45,7 @@ public class IronCondorStrategy implements TradingStrategy {
     private final StrategiesConfig strategiesConfig;
     private final MarketMetricsService marketMetricsService;
     private final OptionChainService optionChainService;
+    private final VixMonitorService vixMonitorService;
 
     @Override
     public String getName() {
@@ -62,10 +65,10 @@ public class IronCondorStrategy implements TradingStrategy {
     }
 
     /**
-     * Calculates confidence score based on market metrics.
-     * Scores IVR, IV/HV ratio, and ATR% to determine entry confidence.
+     * Calculates confidence score based on market metrics and VIX data.
+     * Scores IVR, IV/HV ratio, ATR%, VIX, and PCR to determine entry confidence.
      */
-    private int calculateConfidenceScore(MarketMetrics metrics) {
+    private int calculateConfidenceScore(MarketMetrics metrics, VixData vixData) {
         int score = 0;
 
         // IVR scoring
@@ -92,8 +95,30 @@ public class IronCondorStrategy implements TradingStrategy {
             else score -= 20; // penalty for high ATR
         }
 
-        log.debug("Iron Condor confidence score breakdown: IVR={}, IV/HV={}, ATR%={}, total={}",
-                metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(), score);
+        // VIX scoring
+        if (vixData != null) {
+            double vix = vixData.getCurrentVix();
+            if (vix >= 12 && vix < 16) score += 15;      // ideal
+            else if (vix >= 16 && vix <= 20) score += 5;  // acceptable
+            else if (vix > 20) score -= 50;               // hard penalty
+            // vix < 12 → 0 pts (too calm, low premium)
+        } else {
+            log.debug("VIX unavailable for scoring");
+        }
+
+        // PCR scoring
+        if (metrics.getPcr() != null) {
+            double pcr = metrics.getPcr().doubleValue();
+            if (pcr >= 0.8 && pcr <= 1.2) score += 15;  // balanced sentiment
+            else score += 0;                              // directional — no pts
+
+            log.debug("PCR scoring: pcr={}, contribution={}", pcr, (pcr >= 0.8 && pcr <= 1.2) ? 15 : 0);
+        }
+
+        log.debug("Iron Condor confidence score: IVR={}, IV/HV={}, ATR%={}, VIX={}, PCR={}, total={}",
+                metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(),
+                vixData != null ? vixData.getCurrentVix() : "N/A",
+                metrics.getPcr(), score);
 
         return score;
     }
@@ -336,74 +361,120 @@ public class IronCondorStrategy implements TradingStrategy {
                     .build());
         }
 
-        return marketMetricsService.calculateMetrics("NIFTY50")
-                .flatMap(metrics -> {
-                    // ATR% hard gate
-                    if (metrics.getAtrPct() != null &&
-                            metrics.getAtrPct().doubleValue() > cfg.getExtraDouble("atr-pct-max", 1.0)) {
-                        log.warn("ATR% exceeds max — skipping Iron Condor");
+        return vixMonitorService.fetchCurrentVix()
+                .defaultIfEmpty(VixData.builder().currentVix(15.0).build())
+                // default 15.0 if VIX unavailable — conservative assumption
+                .flatMap(vixData -> {
+
+                    // VIX hard gate
+                    double currentVix = vixData.getCurrentVix();
+                    double maxVix = cfg.getMaxVix();
+                    if (currentVix > maxVix) {
+                        log.warn("VIX {} exceeds max {} — skipping Iron Condor", currentVix, maxVix);
                         return Mono.just(StrategyResult.builder()
                                 .isExecutable(false)
-                                .skipReason("ATR% too high")
+                                .skipReason("VIX too high: " + currentVix)
                                 .build());
                     }
 
-                    // Confidence score
-                    int score = calculateConfidenceScore(metrics);
-                    int minScore = cfg.getExtraInt("min-score", 60);
-                    log.info("Iron Condor confidence score: {}/{}", score, minScore);
-
-                    if (score < minScore) {
-                        return Mono.just(StrategyResult.builder()
-                                .isExecutable(false)
-                                .skipReason("Confidence score " + score + " below minimum " + minScore)
-                                .build());
-                    }
-
-                    // Strike selection
-                    return optionChainService.fetchOptionChain("NIFTY50")
-                            .flatMap(chain -> {
-                                int dte = (int) ChronoUnit.DAYS.between(
-                                        LocalDate.now(), chain.getExpiryDate());
-
-                                int dteMin = cfg.getExtraInt("dte-min", 3);
-                                int dteMax = cfg.getExtraInt("dte-max", 15);
-
-                                if (dte < dteMin || dte > dteMax) {
+                    // Continue with existing pipeline
+                    return marketMetricsService.calculateMetrics("NIFTY50")
+                            .flatMap(metrics -> {
+                                // ATR% hard gate
+                                if (metrics.getAtrPct() != null &&
+                                        metrics.getAtrPct().doubleValue() > cfg.getExtraDouble("atr-pct-max", 1.0)) {
+                                    log.warn("ATR% exceeds max — skipping Iron Condor");
                                     return Mono.just(StrategyResult.builder()
                                             .isExecutable(false)
-                                            .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
+                                            .skipReason("ATR% too high")
                                             .build());
                                 }
 
-                                return selectStrikesAndBuildSignal(chain, metrics, score, cfg)
-                                        .map(signal -> StrategyResult.builder()
-                                                .signal(com.trademesh.strategy.TradeSignal.builder()
-                                                        .symbol("NIFTY50")
-                                                        .strategyName(getName())
-                                                        .legs(signal.getLegs())
-                                                        .expectedCredit(signal.getNetCredit().doubleValue())
-                                                        .maxLoss(signal.getMaxLoss().doubleValue())
-                                                        .reason("Iron Condor: " + signal.getShortCallStrike() + "CE / " +
-                                                                signal.getShortPutStrike() + "PE | Credit: " +
-                                                                signal.getNetCredit() + " | Score: " + score)
-                                                        .build())
-                                                .isExecutable(true)
-                                                .build())
+                                // Confidence score — now pass vixData
+                                int score = calculateConfidenceScore(metrics, vixData);
+                                int minScore = cfg.getExtraInt("min-score", 60);
+                                log.info("Iron Condor confidence score: {}/{}", score, minScore);
+
+                                if (score < minScore) {
+                                    return Mono.just(StrategyResult.builder()
+                                            .isExecutable(false)
+                                            .skipReason("Confidence score " + score + " below minimum " + minScore)
+                                            .build());
+                                }
+
+                                // Strike selection
+                                return optionChainService.fetchOptionChain("NIFTY50")
+                                        .flatMap(chain -> {
+                                            int dte = (int) ChronoUnit.DAYS.between(
+                                                    LocalDate.now(), chain.getExpiryDate());
+
+                                            int dteMin = cfg.getExtraInt("dte-min", 3);
+                                            int dteMax = cfg.getExtraInt("dte-max", 15);
+
+                                            if (dte < dteMin || dte > dteMax) {
+                                                return Mono.just(StrategyResult.builder()
+                                                        .isExecutable(false)
+                                                        .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
+                                                        .build());
+                                            }
+
+                                            return selectStrikesAndBuildSignal(chain, metrics, score, cfg)
+                                                    .map(signal -> {
+                                                        // Build metadata map with P&L matrix and market context
+                                                        java.util.Map<String, String> metadata = new java.util.HashMap<>();
+                                                        metadata.put("maxProfit", signal.getMaxProfit().toString());
+                                                        metadata.put("maxLoss", signal.getMaxLoss().toString());
+                                                        metadata.put("upperBreakeven", signal.getUpperBreakeven().toString());
+                                                        metadata.put("lowerBreakeven", signal.getLowerBreakeven().toString());
+                                                        metadata.put("riskRewardRatio", signal.getRiskRewardRatio().toString());
+                                                        metadata.put("confidenceScore", String.valueOf(signal.getConfidenceScore()));
+                                                        metadata.put("atrPct", signal.getAtrPct() != null ? signal.getAtrPct().toString() : "0");
+                                                        metadata.put("ivHvRatio", signal.getIvHvRatio() != null ? signal.getIvHvRatio().toString() : "0");
+                                                        metadata.put("ivr", signal.getIvr() != null ? signal.getIvr().toString() : "0");
+                                                        metadata.put("adjustedProfitTarget", signal.getAdjustedProfitTarget().toString());
+                                                        metadata.put("adjustedStopLoss", signal.getAdjustedStopLoss().toString());
+                                                        metadata.put("shortCallStrike", signal.getShortCallStrike().toString());
+                                                        metadata.put("shortPutStrike", signal.getShortPutStrike().toString());
+                                                        metadata.put("longCallStrike", signal.getLongCallStrike().toString());
+                                                        metadata.put("longPutStrike", signal.getLongPutStrike().toString());
+                                                        metadata.put("shortCallLtp", signal.getShortCallLtp().toString());
+                                                        metadata.put("shortPutLtp", signal.getShortPutLtp().toString());
+                                                        metadata.put("longCallLtp", signal.getLongCallLtp().toString());
+                                                        metadata.put("longPutLtp", signal.getLongPutLtp().toString());
+                                                        metadata.put("netCredit", signal.getNetCredit().toString());
+                                                        metadata.put("dte", String.valueOf(signal.getDte()));
+                                                        metadata.put("currentAtmIv", signal.getCurrentAtmIv() != null ? signal.getCurrentAtmIv().toString() : "0");
+
+                                                        return StrategyResult.builder()
+                                                                .signal(com.trademesh.strategy.TradeSignal.builder()
+                                                                        .symbol("NIFTY50")
+                                                                        .strategyName(getName())
+                                                                        .legs(signal.getLegs())
+                                                                        .expectedCredit(signal.getNetCredit().doubleValue())
+                                                                        .maxLoss(signal.getMaxLoss().doubleValue())
+                                                                        .reason("Iron Condor: " + signal.getShortCallStrike() + "CE / " +
+                                                                                signal.getShortPutStrike() + "PE | Credit: " +
+                                                                                signal.getNetCredit() + " | Score: " + score)
+                                                                        .metadata(metadata)
+                                                                        .build())
+                                                                .isExecutable(true)
+                                                                .build();
+                                                    })
+                                                    .defaultIfEmpty(StrategyResult.builder()
+                                                            .isExecutable(false)
+                                                            .skipReason("Strike selection failed")
+                                                            .build());
+                                        })
                                         .defaultIfEmpty(StrategyResult.builder()
                                                 .isExecutable(false)
-                                                .skipReason("Strike selection failed")
+                                                .skipReason("Option chain unavailable")
                                                 .build());
                             })
                             .defaultIfEmpty(StrategyResult.builder()
                                     .isExecutable(false)
-                                    .skipReason("Option chain unavailable")
+                                    .skipReason("Market metrics unavailable")
                                     .build());
                 })
-                .defaultIfEmpty(StrategyResult.builder()
-                        .isExecutable(false)
-                        .skipReason("Market metrics unavailable")
-                        .build())
                 .onErrorResume(e -> {
                     log.error("Iron Condor evaluation error: {}", e.getMessage(), e);
                     return Mono.just(StrategyResult.builder()
@@ -412,6 +483,7 @@ public class IronCondorStrategy implements TradingStrategy {
                             .build());
                 });
     }
+
 
     @Override
     public StrategyConfig getConfig() {

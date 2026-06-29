@@ -15,7 +15,7 @@ import java.util.Map;
 public class StrategyProperties {
 
     /**
-     * Name of the strategy (e.g., "EXPIRY_DAY_STRANGLE", "THETA_SPREAD").
+     * Name of the strategy (e.g., "EXPIRY_DAY_STRANGLE", "IRON_CONDOR").
      * Used for identification and lookup.
      */
     private String name;

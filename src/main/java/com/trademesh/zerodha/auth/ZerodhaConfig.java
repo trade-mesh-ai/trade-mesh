@@ -50,5 +50,5 @@ public class ZerodhaConfig {
      * How long (in hours) the access token should be cached in Redis.
      * Zerodha tokens are valid for one trading day; we default to 8 hours.
      */
-    private long accessTokenTtlHours = 8;
+    private long accessTokenTtlHours = 16;
 }

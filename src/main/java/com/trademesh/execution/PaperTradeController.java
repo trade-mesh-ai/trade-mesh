@@ -246,7 +246,7 @@ public class PaperTradeController {
     @Operation(summary = "Get all paper trades for a specific strategy")
     @GetMapping(value = "/strategy/{strategyName}", produces = MediaType.APPLICATION_JSON_VALUE)
     public Flux<PaperTrade> getTradesByStrategy(
-            @Parameter(description = "Strategy Name(e.g., EXPIRY_DAY_STRANGLE, THETA_SPREAD, BULL_PUT_SPREAD, BULL_CALL_SPREAD)")
+            @Parameter(description = "Strategy Name(e.g., EXPIRY_DAY_STRANGLE, IRON_CONDOR, BULL_PUT_SPREAD, BULL_CALL_SPREAD)")
             @PathVariable String strategyName) {
         log.info("Fetching paper trades for strategy: {}", strategyName);
         return paperTradeRepository.findByStrategyName(strategyName)

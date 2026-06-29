@@ -8,7 +8,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -95,4 +97,13 @@ public class TradeSignal {
      */
     @Builder.Default
     private LocalDateTime generatedAt = LocalDateTime.now();
+
+    /**
+     * Strategy-specific metadata for signal enrichment.
+     * Used by strategies to pass additional context to execution layer.
+     * For Iron Condor: stores P&L matrix, confidence score, market metrics.
+     * Key examples: "maxProfit", "maxLoss", "upperBreakeven", "confidenceScore", etc.
+     */
+    @Builder.Default
+    private Map<String, String> metadata = new HashMap<>();
 }

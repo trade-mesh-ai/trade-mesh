@@ -153,7 +153,7 @@ public class StrategySelector {
                     .orElse(null);
 
             case SIDEWAYS -> applicableStrategies.stream()
-                    .filter(s -> s.getName().equals("THETA_SPREAD"))
+                    .filter(s -> s.getName().equals("IRON_CONDOR"))
                     .findFirst()
                     .orElse(null);
 

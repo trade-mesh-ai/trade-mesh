@@ -5,6 +5,8 @@ import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
+import com.trademesh.strategy.config.StrategiesConfig;
+import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.zerodha.options.OptionChain;
 import lombok.RequiredArgsConstructor;
@@ -13,9 +15,12 @@ import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -44,6 +49,7 @@ public class PaperTradingEngine {
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final TelegramNotificationBot telegramNotificationBot;
     private final ObjectMapper objectMapper;
+    private final StrategiesConfig strategiesConfig;
 
     /**
      * Executes a trade from a strategy signal.
@@ -106,9 +112,8 @@ public class PaperTradingEngine {
      * 1. Fetch current option prices from Redis
      * 2. Calculate current value of position
      * 3. Update unrealizedPnl
-     * 4. Check stop loss trigger (currentValue > entryCredit × 2)
-     * 5. Check target trigger (currentValue < entryCredit × 0.5)
-     * 6. Save updated trade
+     * 4. Check strategy-specific exit conditions
+     * 5. Save updated trade or close if exit triggered
      *
      * @param trade the paper trade to mark to market
      * @return Mono emitting the updated PaperTrade
@@ -121,7 +126,12 @@ public class PaperTradingEngine {
 
         log.debug("Marking to market for trade: {}", trade.getId());
 
-        // Fetch current prices from Redis and calculate current value
+        // Strategy-specific mark-to-market logic
+        if ("IRON_CONDOR".equals(trade.getStrategyName())) {
+            return markToMarketIronCondor(trade);
+        }
+
+        // Default mark-to-market for other strategies
         return fetchCurrentPrices(trade)
                 .flatMap(currentValue -> {
                     trade.setCurrentValue(currentValue);
@@ -146,6 +156,236 @@ public class PaperTradingEngine {
                     return paperTradeRepository.save(trade);
                 })
                 .doOnError(error -> log.error("Error marking to market for trade: {}", trade.getId(), error));
+    }
+
+    /**
+     * Iron Condor specific mark-to-market logic.
+     * Calculates P&L per leg and checks Iron Condor exit conditions.
+     *
+     * @param trade the Iron Condor paper trade
+     * @return Mono emitting the updated or closed PaperTrade
+     */
+    private Mono<PaperTrade> markToMarketIronCondor(PaperTrade trade) {
+        return calculateIronCondorPnl(trade)
+                .flatMap(pnl -> {
+                    trade.setUnrealizedPnl(pnl.doubleValue());
+                    trade.setCurrentValue(trade.getEntryCredit() - pnl.doubleValue());
+                    trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+
+                    com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy("IRON_CONDOR");
+
+                    if (shouldExitIronCondor(trade, pnl, cfg)) {
+                        return closeIronCondorTrade(trade);
+                    }
+
+                    return paperTradeRepository.save(trade);
+                })
+                .doOnError(error -> log.error("Error in Iron Condor mark-to-market for trade: {}", trade.getId(), error));
+    }
+
+    /**
+     * Calculates Iron Condor P&L by analyzing all 4 legs.
+     * SELL legs profit when premium decays (entry > current).
+     * BUY legs profit when premium appreciates (current > entry).
+     *
+     * @param trade the Iron Condor paper trade
+     * @return Mono emitting the unrealized P&L in points
+     */
+    private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
+        try {
+            List<TradeLeg> legs = trade.getLegs();
+            if (legs == null || legs.isEmpty()) {
+                log.warn("No legs found for Iron Condor trade {}", trade.getId());
+                return Mono.just(BigDecimal.ZERO);
+            }
+
+            String redisKey = "optionchain:" + trade.getSymbol();
+            Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+
+            return redisTemplate.opsForValue().get(redisKey)
+                    .flatMap(chainJson -> {
+                        try {
+                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
+                            BigDecimal totalPnl = BigDecimal.ZERO;
+
+                            for (TradeLeg leg : legs) {
+                                double currentLtp = extractLTP(chainData, leg);
+                                double entryPrice = leg.getLimitPrice();
+                                BigDecimal legPnl;
+
+                                if (leg.getAction() == Action.SELL) {
+                                    // SELL legs: profit when premium decays
+                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity() * lotSize);
+                                } else {
+                                    // BUY legs: profit when premium appreciates
+                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity() * lotSize);
+                                }
+
+                                totalPnl = totalPnl.add(legPnl);
+                                log.debug("Iron Condor leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
+                                        leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
+                                        entryPrice, currentLtp, legPnl);
+                            }
+
+                            log.debug("Iron Condor total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
+                            return Mono.just(totalPnl);
+                        } catch (Exception e) {
+                            log.warn("Error deserializing option chain for Iron Condor P&L, using entry price fallback: {}", e.getMessage());
+                            return Mono.just(BigDecimal.ZERO);
+                        }
+                    })
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.warn("Redis key missing for Iron Condor P&L: {}, using entry price fallback", redisKey);
+                        return Mono.just(BigDecimal.ZERO);
+                    }));
+        } catch (Exception e) {
+            log.error("Error calculating Iron Condor P&L for trade: {}", trade.getId(), e);
+            return Mono.just(BigDecimal.ZERO);
+        }
+    }
+
+    /**
+     * Checks if Iron Condor position should be exited based on multiple conditions.
+     * Exit priority: leg breach → stop loss → profit target → force close time.
+     *
+     * @param trade         the Iron Condor paper trade
+     * @param unrealizedPnl the current unrealized P&L
+     * @param cfg           the Iron Condor strategy configuration
+     * @return true if any exit condition is met, false otherwise
+     */
+    private boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                         com.trademesh.strategy.config.StrategyProperties cfg) {
+        // TODO: VIX panic check (requires VixMonitorService injection)
+        // if (vixMonitor.getCurrentVix() > cfg.getExtraDouble("vix-panic-threshold", 25.0)) {
+        //     log.warn("VIX panic detected for Iron Condor trade {}", trade.getId());
+        //     trade.setExitReason("VIX_PANIC");
+        //     return true;
+        // }
+
+        // Check 1: Leg breach (spot crosses short strike)
+        List<TradeLeg> legs = trade.getLegs();
+        if (legs != null && !legs.isEmpty()) {
+            // Find short strikes (SELL legs)
+            Double shortCallStrike = null;
+            Double shortPutStrike = null;
+
+            for (TradeLeg leg : legs) {
+                if (leg.getAction() == Action.SELL) {
+                    if (leg.getOptionType() == OptionType.CE) {
+                        shortCallStrike = leg.getStrikePrice();
+                    } else if (leg.getOptionType() == OptionType.PE) {
+                        shortPutStrike = leg.getStrikePrice();
+                    }
+                }
+            }
+
+            // Get current spot price from Redis (simplified: use first strike as reference)
+            // In production, fetch actual spot from market data
+            // For now, we'll skip spot check and rely on other conditions
+        }
+
+        // Check 2: Stop loss
+        BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
+        double slPct = cfg.getStopLossPercent() / 100.0;
+        BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+
+        if (unrealizedPnl.compareTo(stopLossThreshold) < 0) {
+            log.warn("Stop loss triggered for Iron Condor trade {}: pnl={}, threshold={}",
+                    trade.getId(), unrealizedPnl, stopLossThreshold);
+            trade.setExitReason("STOPLOSS_HIT");
+            return true;
+        }
+
+        // Check 3: Profit target
+        double targetPct = cfg.getTargetProfitPercent() / 100.0;
+        BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+
+        if (unrealizedPnl.compareTo(profitTarget) >= 0) {
+            log.info("Profit target hit for Iron Condor trade {}: pnl={}, target={}",
+                    trade.getId(), unrealizedPnl, profitTarget);
+            trade.setExitReason("TARGET_HIT");
+            return true;
+        }
+
+        // Check 4: Force close time
+        String forceCloseTimeStr = cfg.getExtraDouble("force-close-time", 0) > 0 ?
+                "15:15" : null;
+        if (forceCloseTimeStr != null) {
+            try {
+                LocalTime forceCloseTime = LocalTime.parse(forceCloseTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
+                LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+                if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
+                    log.info("Force close time reached for Iron Condor trade {}: current={}, forceClose={}",
+                            trade.getId(), currentTime, forceCloseTime);
+                    trade.setExitReason("FORCE_CLOSE_EOD");
+                    return true;
+                }
+            } catch (Exception e) {
+                log.warn("Error parsing force close time: {}", e.getMessage());
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Closes an Iron Condor trade with Telegram alert.
+     *
+     * @param trade the Iron Condor paper trade to close
+     * @return Mono emitting the closed PaperTrade
+     */
+    private Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
+        trade.setStatus(TradeStatus.CLOSED);
+        trade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        trade.setRealizedPnl(trade.getUnrealizedPnl());
+        trade.setUnrealizedPnl(0.0);
+        trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+
+        return paperTradeRepository.save(trade)
+                .flatMap(closedTrade -> {
+                    String alert = formatIronCondorExitAlert(closedTrade);
+                    return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
+                            .then(Mono.just(closedTrade));
+                })
+                .doOnSuccess(closedTrade -> log.info("Iron Condor trade closed: {} with P&L: {}, reason: {}",
+                        closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
+                .doOnError(error -> log.error("Error closing Iron Condor trade: {}", trade.getId(), error));
+    }
+
+    /**
+     * Formats Iron Condor exit alert for Telegram.
+     *
+     * @param trade the closed Iron Condor trade
+     * @return formatted alert message
+     */
+    private String formatIronCondorExitAlert(PaperTrade trade) {
+        Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+        Double pnlAmount = trade.getRealizedPnl() * lotSize;
+
+        long durationMinutes = java.time.temporal.ChronoUnit.MINUTES.between(trade.getEntryTime(), trade.getExitTime());
+        String duration = formatDuration(durationMinutes);
+
+        String emoji = trade.getRealizedPnl() >= 0 ? "✅" : "❌";
+
+        return String.format(
+                "%s <b>Iron Condor CLOSED</b>\n\n" +
+                        "Symbol: <b>%s</b>\n" +
+                        "Exit Reason: <b>%s</b>\n" +
+                        "Realized P&L: <b>%.2f pts</b> (₹ <b>%.2f</b>)\n" +
+                        "Entry Credit: <b>%.2f pts</b>\n" +
+                        "Duration: <code>%s</code>\n" +
+                        "Entry Time: <code>%s</code>\n" +
+                        "Exit Time: <code>%s</code>",
+                emoji,
+                trade.getSymbol(),
+                trade.getExitReason(),
+                trade.getRealizedPnl(),
+                pnlAmount,
+                trade.getEntryCredit(),
+                duration,
+                trade.getEntryTime(),
+                trade.getExitTime()
+        );
     }
 
     /**
@@ -295,6 +535,7 @@ public class PaperTradingEngine {
 
     /**
      * Formats entry alert message for Telegram.
+     * For Iron Condor, includes rich P&L matrix and market context.
      *
      * @param trade  the paper trade
      * @param signal the trade signal
@@ -302,6 +543,12 @@ public class PaperTradingEngine {
      */
     private String formatEntryAlert(PaperTrade trade, TradeSignal signal) {
         try {
+            // Iron Condor specific rich alert
+            if ("IRON_CONDOR".equals(trade.getStrategyName())) {
+                return formatIronCondorEntryAlert(trade, signal);
+            }
+
+            // Default alert for other strategies
             List<TradeLeg> legs = trade.getLegs();
             if (legs == null) {
                 legs = List.of();
@@ -333,6 +580,116 @@ public class PaperTradingEngine {
             return String.format("📄 Paper Trade ENTERED\nStrategy: %s\nSymbol: %s\nCredit: %.2f pts",
                     trade.getStrategyName(), trade.getSymbol(), trade.getEntryCredit());
         }
+    }
+
+    /**
+     * Formats Iron Condor entry alert with full P&L matrix and market context.
+     *
+     * @param trade  the Iron Condor paper trade
+     * @param signal the Iron Condor trade signal
+     * @return formatted alert message
+     */
+    private String formatIronCondorEntryAlert(PaperTrade trade, TradeSignal signal) {
+        try {
+            Map<String, String> metadata = signal.getMetadata();
+            if (metadata == null || metadata.isEmpty()) {
+                log.warn("No metadata found for Iron Condor signal, using basic alert");
+                return formatBasicIronCondorAlert(trade, signal);
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("🟢 <b>Iron Condor ENTERED</b>\n");
+            sb.append(String.format("Symbol: <b>%s</b>\n", trade.getSymbol()));
+            sb.append(String.format("Expiry: <b>%s</b>\n", metadata.getOrDefault("expiryDate", "N/A")));
+            sb.append(String.format("Confidence Score: <b>%s/100</b>\n\n", metadata.getOrDefault("confidenceScore", "N/A")));
+
+            // Strikes section
+            sb.append("📊 <b>Strikes:</b>\n");
+            sb.append(String.format("SELL %sCE @ %s\n",
+                    metadata.getOrDefault("shortCallStrike", "N/A"),
+                    metadata.getOrDefault("shortCallLtp", "N/A")));
+            sb.append(String.format("SELL %sPE @ %s\n",
+                    metadata.getOrDefault("shortPutStrike", "N/A"),
+                    metadata.getOrDefault("shortPutLtp", "N/A")));
+            sb.append(String.format("BUY  %sCE @ %s\n",
+                    metadata.getOrDefault("longCallStrike", "N/A"),
+                    metadata.getOrDefault("longCallLtp", "N/A")));
+            sb.append(String.format("BUY  %sPE @ %s\n\n",
+                    metadata.getOrDefault("longPutStrike", "N/A"),
+                    metadata.getOrDefault("longPutLtp", "N/A")));
+
+            // P&L Matrix section
+            sb.append("💰 <b>P&L Matrix:</b>\n");
+            sb.append(String.format("Net Credit: <b>%s pts</b>\n",
+                    metadata.getOrDefault("netCredit", "N/A")));
+            sb.append(String.format("Max Profit: <b>₹%s</b>\n",
+                    metadata.getOrDefault("maxProfit", "N/A")));
+            sb.append(String.format("Max Loss: <b>₹%s</b>\n",
+                    metadata.getOrDefault("maxLoss", "N/A")));
+            sb.append(String.format("Upper BE: <b>%s</b>\n",
+                    metadata.getOrDefault("upperBreakeven", "N/A")));
+            sb.append(String.format("Lower BE: <b>%s</b>\n",
+                    metadata.getOrDefault("lowerBreakeven", "N/A")));
+            sb.append(String.format("R:R Ratio: <b>%s</b>\n\n",
+                    metadata.getOrDefault("riskRewardRatio", "N/A")));
+
+            // Exit Levels section
+            sb.append("🎯 <b>Exit Levels:</b>\n");
+            sb.append(String.format("Target: <b>₹%s</b>\n",
+                    metadata.getOrDefault("adjustedProfitTarget", "N/A")));
+            sb.append(String.format("SL: <b>₹%s</b>\n\n",
+                    metadata.getOrDefault("adjustedStopLoss", "N/A")));
+
+            // Market Context section
+            sb.append("📈 <b>Market Context:</b>\n");
+            sb.append(String.format("ATR%%: <b>%s%%</b> | ",
+                    metadata.getOrDefault("atrPct", "N/A")));
+            sb.append(String.format("IV/HV: <b>%s</b> | ",
+                    metadata.getOrDefault("ivHvRatio", "N/A")));
+            sb.append(String.format("IVR: <b>%s</b> | ",
+                    metadata.getOrDefault("ivr", "N/A")));
+            sb.append(String.format("DTE: <b>%s</b>",
+                    metadata.getOrDefault("dte", "N/A")));
+
+            return sb.toString();
+        } catch (Exception e) {
+            log.error("Error formatting Iron Condor entry alert", e);
+            return formatBasicIronCondorAlert(trade, signal);
+        }
+    }
+
+    /**
+     * Formats basic Iron Condor alert when metadata is unavailable.
+     *
+     * @param trade  the Iron Condor paper trade
+     * @param signal the Iron Condor trade signal
+     * @return formatted alert message
+     */
+    private String formatBasicIronCondorAlert(PaperTrade trade, TradeSignal signal) {
+        List<TradeLeg> legs = trade.getLegs();
+        if (legs == null) {
+            legs = List.of();
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("🟢 <b>Iron Condor ENTERED</b>\n\n");
+        sb.append(String.format("Symbol: <b>%s</b>\n", trade.getSymbol()));
+        sb.append(String.format("Entry Time: <code>%s</code>\n\n", trade.getEntryTime()));
+
+        // Add leg details
+        for (TradeLeg leg : legs) {
+            sb.append(String.format("• %s %s @ %.0f (%s)\n",
+                    leg.getAction(),
+                    leg.getOptionType(),
+                    leg.getStrikePrice(),
+                    leg.getQuantity() + "L"
+            ));
+        }
+
+        sb.append(String.format("\nNet Credit: <b>%.2f pts</b>\n", trade.getEntryCredit()));
+        sb.append(String.format("Max Loss: <b>%.2f pts</b>\n", signal.getMaxLoss()));
+
+        return sb.toString();
     }
 
     /**

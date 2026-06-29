@@ -48,7 +48,7 @@ public class StrategyExecutionLog implements Persistable<UUID> {
 
     /**
      * Name of the strategy that was executed.
-     * Examples: "IRON_CONDOR", "THETA_SPREAD", "BULL_PUT_SPREAD"
+     * Examples: "IRON_CONDOR", "EXPIRY_DAY", "BULL_PUT_SPREAD"
      */
     @Column("strategy_name")
     private String strategyName;

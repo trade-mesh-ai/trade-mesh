@@ -4,6 +4,8 @@ import com.trademesh.domain.NiftyDailyPrice;
 import com.trademesh.intelligence.iv.IvHistory;
 import com.trademesh.intelligence.iv.IvHistoryRepository;
 import com.trademesh.intelligence.iv.IvHistoryService;
+import com.trademesh.zerodha.options.OptionChain;
+import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,10 +32,11 @@ public class MarketMetricsService {
     private final NiftyDailyPriceService niftyDailyPriceService;
     private final IvHistoryService ivHistoryService;
     private final IvHistoryRepository ivHistoryRepository;
+    private final OptionChainService optionChainService;
 
     /**
      * Calculates comprehensive market metrics for a given symbol.
-     * Fetches price data and IV data in parallel, then computes HV20, ATR14, IVR, and IV/HV ratio.
+     * Fetches price data, IV data, and option chain in parallel, then computes HV20, ATR14, IVR, IV/HV ratio, and PCR.
      *
      * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
      * @return Mono emitting the calculated MarketMetrics
@@ -66,18 +69,29 @@ public class MarketMetricsService {
                             return Mono.just(Optional.empty());
                         });
 
+         // Fetch option chain for PCR calculation
+         Mono<Optional<OptionChain>> optionChainMono =
+                 optionChainService.fetchOptionChain(symbol)
+                         .map(Optional::of)
+                         .defaultIfEmpty(Optional.empty())
+                         .onErrorResume(e -> {
+                             log.warn("Option chain unavailable for PCR: {}", e.getMessage());
+                             return Mono.just(Optional.empty());
+                         });
+
         // Combine all data sources in parallel
-        return Mono.zip(last21, last60, ivHistList, currentIv)
+        return Mono.zip(last21, last60, ivHistList, currentIv, optionChainMono)
                 .map(tuple -> buildMetrics(
                         symbol,
                         tuple.getT1(),  // last21
                         tuple.getT2(),  // last60
                         tuple.getT3(),  // ivHistList
-                        tuple.getT4()   // Optional<IvHistory>
+                        tuple.getT4(),  // Optional<IvHistory>
+                        tuple.getT5()   // Optional<OptionChain>
                 ))
                 .doOnSuccess(metrics -> log.info(
-                        "Market metrics calculated for {}: HV20={}, ATR14={}, IVR={}, IV/HV={}",
-                        symbol, metrics.getHv20(), metrics.getAtr14(), metrics.getIvr(), metrics.getIvHvRatio()
+                        "Market metrics calculated for {}: HV20={}, ATR14={}, IVR={}, IV/HV={}, PCR={}",
+                        symbol, metrics.getHv20(), metrics.getAtr14(), metrics.getIvr(), metrics.getIvHvRatio(), metrics.getPcr()
                 ))
                 .doOnError(e -> log.error("Error calculating metrics for {}: {}", symbol, e.getMessage(), e));
     }
@@ -90,7 +104,8 @@ public class MarketMetricsService {
             List<NiftyDailyPrice> last21,
             List<NiftyDailyPrice> last60,
             List<IvHistory> ivHistList,
-            Optional<IvHistory> currentIvOpt) {
+            Optional<IvHistory> currentIvOpt,
+            Optional<OptionChain> chainOpt) {
 
         LocalDateTime calculatedAt = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
 
@@ -153,6 +168,10 @@ public class MarketMetricsService {
                     .setScale(4, RoundingMode.HALF_UP);
         }
 
+        // Calculate PCR (Put-Call Ratio) from option chain
+        OptionChain chain = chainOpt.orElse(null);
+        BigDecimal pcr = calculatePcr(chain);
+
         return MarketMetrics.builder()
                 .symbol(symbol)
                 .calculatedAt(calculatedAt)
@@ -167,6 +186,7 @@ public class MarketMetricsService {
                 .hv20Available(hv20Available)
                 .ivrAvailable(ivrAvailable)
                 .atrPct(atrPct)
+                .pcr(pcr)
                 .build();
     }
 
@@ -344,5 +364,41 @@ public class MarketMetricsService {
 
         log.debug("IVR calculated: {} (minIV={}, maxIV={}, currentIV={})", ivrValue, minIv, maxIv, currentAtmIv);
         return ivrValue.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Calculates Put-Call Ratio (PCR) from option chain data.
+     * PCR = total put OI / total call OI across all strikes.
+     * Balanced range: 0.8 - 1.2
+     *
+     * @param chain the option chain to analyze
+     * @return PCR value rounded to 4 decimal places, or null if chain unavailable
+     */
+    private BigDecimal calculatePcr(OptionChain chain) {
+        if (chain == null || chain.getStrikes() == null || 
+            chain.getStrikes().isEmpty()) {
+            return null;
+        }
+        
+        long totalCallOI = chain.getStrikes().stream()
+            .mapToLong(s -> s.getCallOI())
+            .sum();
+        
+        long totalPutOI = chain.getStrikes().stream()
+            .mapToLong(s -> s.getPutOI())
+            .sum();
+        
+        if (totalCallOI == 0) {
+            log.warn("Total call OI is zero, cannot calculate PCR");
+            return null;
+        }
+        
+        BigDecimal pcr = BigDecimal.valueOf(totalPutOI)
+            .divide(BigDecimal.valueOf(totalCallOI), 4, RoundingMode.HALF_UP);
+        
+        log.debug("PCR calculated: putOI={}, callOI={}, pcr={}", 
+            totalPutOI, totalCallOI, pcr);
+        
+        return pcr;
     }
 }

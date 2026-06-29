@@ -91,5 +91,12 @@ public class MarketMetrics {
      */
     private boolean ivrAvailable;
 
-    private BigDecimal atrPct; // ATR14 / spotPrice × 100
+     private BigDecimal atrPct; // ATR14 / spotPrice × 100
+
+     /**
+      * Put-Call Ratio = total put OI / total call OI across all strikes.
+      * null if option chain data unavailable.
+      * Balanced range: 0.8 - 1.2
+      */
+     private BigDecimal pcr;
 }
