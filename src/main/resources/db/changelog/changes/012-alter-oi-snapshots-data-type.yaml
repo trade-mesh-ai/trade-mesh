@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 012-alter-oi-snapshots-data-type
+      author: trade-mesh
+      comment: "Alter oi_snapshots data column from JSONB to TEXT for consistency with String field"
+      changes:
+        - sql:
+            sql: |
+              -- Alter data column from JSONB to TEXT
+              -- The data field is a serialized JSON string for display purposes, not queried as JSONB
+              ALTER TABLE oi_snapshots ALTER COLUMN data TYPE TEXT;
+            splitStatements: false

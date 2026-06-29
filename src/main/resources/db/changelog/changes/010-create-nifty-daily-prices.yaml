@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: 010-create-nifty-daily-prices
+      author: trade-mesh
+      comment: "Create nifty_daily_prices table for storing NIFTY50 historical OHLC data"
+      changes:
+        - createTable:
+            schemaName: trade_mesh
+            tableName: nifty_daily_prices
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  defaultValueComputed: gen_random_uuid()
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: trade_date
+                  type: DATE
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: open
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: high
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: low
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: close
+                  type: NUMERIC(10,2)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: volume
+                  type: BIGINT
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  defaultValueComputed: now()
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: idx_nifty_daily_prices_trade_date
+            schemaName: trade_mesh
+            tableName: nifty_daily_prices
+            columns:
+              - column:
+                  name: trade_date

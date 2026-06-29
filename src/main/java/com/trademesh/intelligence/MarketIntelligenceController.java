@@ -28,6 +28,7 @@ import reactor.core.publisher.Mono;
 public class MarketIntelligenceController {
 
     private final MarketIntelligenceService marketIntelligenceService;
+    private final MarketMetricsService marketMetricsService;
 
     /**
      * Fetches complete market intelligence for a given symbol.
@@ -114,6 +115,31 @@ public class MarketIntelligenceController {
                 })
                 .onErrorResume(e -> {
                     log.error("Error fetching intelligence summary for {}: {}", symbol, e.getMessage(), e);
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
+                });
+    }
+
+    /**
+     * Fetches market metrics for a given symbol.
+     * <p>
+     * Returns calculated volatility and technical indicators including HV20, ATR14,
+     * IVR, IV/HV ratio, and ATR percentile.
+     *
+     * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @return {@link Mono} emitting the MarketMetrics with HTTP 200 OK, or 404 if empty
+     */
+    @Operation(summary = "Get market metrics for a symbol")
+    @GetMapping(value = "/metrics/{symbol}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<MarketMetrics>> getMetrics(
+            @Parameter(description = "Trading symbol (e.g., NIFTY50, NIFTYBANK)")
+            @PathVariable String symbol) {
+        log.info("Received request for market metrics: {}", symbol);
+
+        return marketMetricsService.calculateMetrics(symbol)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build())
+                .onErrorResume(e -> {
+                    log.error("Error calculating metrics for {}: {}", symbol, e.getMessage(), e);
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build());
                 });
     }
