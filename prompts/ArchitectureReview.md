@@ -1,0 +1,1 @@
+Review the Paper Trading architecture.
