@@ -9,10 +9,12 @@ import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.StrategySelector;
 import com.trademesh.strategy.TradeSignal;
+import com.trademesh.strategy.enums.Confidence;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -180,7 +182,7 @@ public class TradingOrchestrator {
                 .symbol(symbol)
                 .strategyName(signal.getStrategyName())
                 .marketCondition(intelligence.getMarketCondition().name())
-                .action(signal.getSignalType().name())
+                .action(signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name())
                 .reason(signal.getReason())
                 .vixLevel(intelligence.getVixData().getCurrentVix())
                 .executedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
@@ -203,23 +205,23 @@ public class TradingOrchestrator {
             return Mono.empty();
         }
 
-        String message = String.format(
-                "🤖 <b>Trading Cycle Complete</b>\n\n" +
-                        "Symbol: <b>%s</b>\n" +
-                        "Condition: <b>%s</b>\n" +
-                        "Strategy: <b>%s</b>\n" +
-                        "Action: <b>%s</b>\n" +
-                        "Signal: <code>%s</code>\n" +
-                        "VIX: <b>%.1f</b>\n" +
-                        "Confidence: <b>%s</b>",
-                symbol,
-                intelligence.getMarketCondition().name(),
-                signal.getStrategyName(),
-                signal.getSignalType().name(),
-                signal.getReason(),
-                intelligence.getVixData().getCurrentVix(),
-                signal.getConfidence().name()
-        );
+         String message = String.format(
+                 "🤖 <b>Trading Cycle Complete</b>\n\n" +
+                         "Symbol: <b>%s</b>\n" +
+                         "Condition: <b>%s</b>\n" +
+                         "Strategy: <b>%s</b>\n" +
+                         "Action: <b>%s</b>\n" +
+                         "Signal: <code>%s</code>\n" +
+                         "VIX: <b>%.1f</b>\n" +
+                         "Confidence: <b>%s</b>",
+                 symbol,
+                 intelligence.getMarketCondition().name(),
+                 signal.getStrategyName(),
+                 signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name(),
+                 signal.getReason(),
+                 intelligence.getVixData().getCurrentVix(),
+                 signal.getConfidence() != null ? signal.getConfidence().name() : Confidence.MEDIUM.name()
+         );
 
         Alert alert = Alert.builder()
                 .type(AlertType.SIGNAL_GENERATED)

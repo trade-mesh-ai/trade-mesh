@@ -10,6 +10,7 @@ import com.trademesh.strategy.TradingStrategy;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.config.StrategyProperties;
 import com.trademesh.strategy.enums.Action;
+import com.trademesh.strategy.enums.Confidence;
 import com.trademesh.strategy.enums.LegType;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.zerodha.options.OptionChain;
@@ -205,17 +206,19 @@ public class BearCallSpreadStrategy implements TradingStrategy {
         metadata.put("dte", String.valueOf(dte));
         metadata.put("currentVix", String.valueOf(currentVix));
 
-        return Mono.just(StrategyResult.builder()
-                .signal(com.trademesh.strategy.TradeSignal.builder()
-                        .symbol("NIFTY50")
-                        .strategyName(getName())
-                        .legs(legs)
-                        .expectedCredit(netCredit.doubleValue())
-                        .maxLoss(maxLoss.doubleValue())
-                        .reason("Bear Call Spread: " + shortCallStrikePrice + "CE / " +
-                                longCallStrikePrice + "CE | Credit: " + netCredit)
-                        .metadata(metadata)
-                        .build())
+         return Mono.just(StrategyResult.builder()
+                 .signal(com.trademesh.strategy.TradeSignal.builder()
+                         .symbol("NIFTY50")
+                         .strategyName(getName())
+                         .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
+                         .legs(legs)
+                         .expectedCredit(netCredit.doubleValue())
+                         .maxLoss(maxLoss.doubleValue())
+                         .reason("Bear Call Spread: " + shortCallStrikePrice + "CE / " +
+                                 longCallStrikePrice + "CE | Credit: " + netCredit)
+                         .confidence(Confidence.MEDIUM)
+                         .metadata(metadata)
+                         .build())
                 .isExecutable(true)
                 .build());
     }

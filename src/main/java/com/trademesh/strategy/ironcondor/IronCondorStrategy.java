@@ -14,6 +14,7 @@ import com.trademesh.strategy.TradingStrategy;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.config.StrategyProperties;
 import com.trademesh.strategy.enums.Action;
+import com.trademesh.strategy.enums.Confidence;
 import com.trademesh.strategy.enums.LegType;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.zerodha.options.OptionChain;
@@ -445,16 +446,21 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         metadata.put("dte", String.valueOf(signal.getDte()));
                                                         metadata.put("currentAtmIv", signal.getCurrentAtmIv() != null ? signal.getCurrentAtmIv().toString() : "0");
 
+                                                        Confidence confidence = score >= 70 ? Confidence.HIGH
+                                                                              : score >= 50 ? Confidence.MEDIUM
+                                                                              : Confidence.LOW;
                                                         return StrategyResult.builder()
                                                                 .signal(com.trademesh.strategy.TradeSignal.builder()
                                                                         .symbol("NIFTY50")
                                                                         .strategyName(getName())
+                                                                        .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
                                                                         .legs(signal.getLegs())
                                                                         .expectedCredit(signal.getNetCredit().doubleValue())
                                                                         .maxLoss(signal.getMaxLoss().doubleValue())
                                                                         .reason("Iron Condor: " + signal.getShortCallStrike() + "CE / " +
                                                                                 signal.getShortPutStrike() + "PE | Credit: " +
                                                                                 signal.getNetCredit() + " | Score: " + score)
+                                                                        .confidence(confidence)
                                                                         .metadata(metadata)
                                                                         .build())
                                                                 .isExecutable(true)
