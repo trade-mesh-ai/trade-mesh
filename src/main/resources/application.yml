@@ -173,9 +173,11 @@ trading-strategies:
     latest-entry-time: "13:00"
     min-credit: 20.0
     max-lots: 1
-    stop-loss-percent: 200.0
+    stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
+      dte-min: 3
+      dte-max: 15
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -190,9 +192,11 @@ trading-strategies:
     latest-entry-time: "13:00"
     min-credit: 20.0
     max-lots: 1
-    stop-loss-percent: 200.0
+    stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
+      dte-min: 3
+      dte-max: 15
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -207,7 +211,7 @@ trading-strategies:
     latest-entry-time: "13:00"
     min-credit: 30.0
     max-lots: 1
-    stop-loss-percent: 200.0
+    stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
       target-delta: 0.18
@@ -219,7 +223,7 @@ trading-strategies:
       ivr-max: 80.0
       iv-hv-ratio-min: 1.1
       atr-pct-max: 1.0
-      dte-min: 1
+      dte-min: 3
       dte-max: 15
       atr-calm-threshold: 0.7
       atr-high-threshold: 1.0

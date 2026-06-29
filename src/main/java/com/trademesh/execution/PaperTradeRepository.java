@@ -77,4 +77,14 @@ public interface PaperTradeRepository extends ReactiveCrudRepository<PaperTrade,
      * @return Mono emitting the paper trade if found
      */
     Mono<PaperTrade> findById(UUID id);
+
+    /**
+     * Checks if an open trade exists for a given strategy on a specific date.
+     *
+     * @param strategyName the strategy name to filter by
+     * @param tradeDate the trade date to filter by
+     * @param status the trade status to filter by
+     * @return Mono emitting true if a trade exists, false otherwise
+     */
+    Mono<Boolean> existsByStrategyNameAndTradeDateAndStatus(String strategyName, LocalDate tradeDate, TradeStatus status);
 }

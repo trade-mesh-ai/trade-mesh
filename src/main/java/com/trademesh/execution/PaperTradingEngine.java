@@ -56,9 +56,10 @@ public class PaperTradingEngine {
      * <p>
      * Process:
      * 1. Check if signal is executable
-     * 2. Create PaperTrade entity from signal
-     * 3. Save to PostgreSQL
-     * 4. Send Telegram alert
+     * 2. Check if an OPEN trade already exists for this strategy today
+     * 3. Create PaperTrade entity from signal
+     * 4. Save to PostgreSQL
+     * 5. Send Telegram alert
      *
      * @param result the strategy result containing the signal
      * @return Mono emitting the created PaperTrade
@@ -78,31 +79,44 @@ public class PaperTradingEngine {
             return Mono.empty();
         }
 
-        // Create PaperTrade entity using factory method
-        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
-        PaperTrade trade = PaperTrade.createNew();
-        trade.setTradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")));
-        trade.setSymbol(signal.getSymbol());
-        trade.setStrategyName(signal.getStrategyName());
-        trade.setStatus(TradeStatus.OPEN);
-        trade.setLegs(signal.getLegs());
-        trade.setEntryCredit(signal.getExpectedCredit());
-        trade.setCurrentValue(signal.getExpectedCredit());
-        trade.setUnrealizedPnl(0.0);
-        trade.setEntryTime(now);
-        trade.setCreatedAt(now);
-        trade.setUpdatedAt(now);
+        // Check if an OPEN trade already exists for this strategy today
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        return paperTradeRepository.existsByStrategyNameAndTradeDateAndStatus(
+                signal.getStrategyName(),
+                today,
+                TradeStatus.OPEN)
+                .flatMap(hasOpenTrade -> {
+                    if (hasOpenTrade) {
+                        log.info("Open trade already exists for {} today, skipping entry", signal.getStrategyName());
+                        return Mono.empty();
+                    }
 
-        // Save to PostgreSQL
-        return paperTradeRepository.save(trade)
-                .flatMap(savedTrade -> {
-                    // Send Telegram alert
-                    String alert = formatEntryAlert(savedTrade, signal);
-                    return telegramNotificationBot.sendAlert(createAlert(savedTrade, alert))
-                            .then(Mono.just(savedTrade));
-                })
-                .doOnSuccess(savedTrade -> log.info("Paper trade executed: {} for {}", savedTrade.getId(), savedTrade.getSymbol()))
-                .doOnError(error -> log.error("Error executing paper trade", error));
+                    // Create PaperTrade entity using factory method
+                    LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+                    PaperTrade trade = PaperTrade.createNew();
+                    trade.setTradeDate(today);
+                    trade.setSymbol(signal.getSymbol());
+                    trade.setStrategyName(signal.getStrategyName());
+                    trade.setStatus(TradeStatus.OPEN);
+                    trade.setLegs(signal.getLegs());
+                    trade.setEntryCredit(signal.getExpectedCredit());
+                    trade.setCurrentValue(signal.getExpectedCredit());
+                    trade.setUnrealizedPnl(0.0);
+                    trade.setEntryTime(now);
+                    trade.setCreatedAt(now);
+                    trade.setUpdatedAt(now);
+
+                    // Save to PostgreSQL
+                    return paperTradeRepository.save(trade)
+                            .flatMap(savedTrade -> {
+                                // Send Telegram alert
+                                String alert = formatEntryAlert(savedTrade, signal);
+                                return telegramNotificationBot.sendAlert(createAlert(savedTrade, alert))
+                                        .then(Mono.just(savedTrade));
+                            })
+                            .doOnSuccess(savedTrade -> log.info("Paper trade executed: {} for {}", savedTrade.getId(), savedTrade.getSymbol()))
+                            .doOnError(error -> log.error("Error executing paper trade", error));
+                });
     }
 
     /**
@@ -129,6 +143,14 @@ public class PaperTradingEngine {
         // Strategy-specific mark-to-market logic
         if ("IRON_CONDOR".equals(trade.getStrategyName())) {
             return markToMarketIronCondor(trade);
+        }
+
+        if ("BULL_PUT_SPREAD".equals(trade.getStrategyName())) {
+            return markToMarketSpread(trade);
+        }
+
+        if ("BEAR_CALL_SPREAD".equals(trade.getStrategyName())) {
+            return markToMarketSpread(trade);
         }
 
         // Default mark-to-market for other strategies
@@ -739,6 +761,171 @@ public class PaperTradingEngine {
         long hours = minutes / 60;
         long mins = minutes % 60;
         return String.format("%dh %dm", hours, mins);
+    }
+
+    /**
+     * Bull Put Spread and Bear Call Spread specific mark-to-market logic.
+     * Calculates P&L for 2-leg spreads and checks exit conditions.
+     *
+     * @param trade the spread paper trade
+     * @return Mono emitting the updated or closed PaperTrade
+     */
+    private Mono<PaperTrade> markToMarketSpread(PaperTrade trade) {
+        return calculateSpreadPnl(trade)
+                .flatMap(pnl -> {
+                    trade.setUnrealizedPnl(pnl.doubleValue());
+                    trade.setCurrentValue(trade.getEntryCredit() - pnl.doubleValue());
+                    trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+
+                    String strategyName = trade.getStrategyName();
+                    com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
+
+                    if (shouldExitSpread(trade, pnl, cfg)) {
+                        return closeSpreadTrade(trade);
+                    }
+
+                    return paperTradeRepository.save(trade);
+                })
+                .doOnError(error -> log.error("Error in spread mark-to-market for trade: {}", trade.getId(), error));
+    }
+
+    /**
+     * Calculates spread P&L by analyzing both legs.
+     * SELL legs profit when premium decays (entry > current).
+     * BUY legs profit when premium appreciates (current > entry).
+     *
+     * @param trade the spread paper trade
+     * @return Mono emitting the unrealized P&L in points
+     */
+    private Mono<BigDecimal> calculateSpreadPnl(PaperTrade trade) {
+        try {
+            List<TradeLeg> legs = trade.getLegs();
+            if (legs == null || legs.isEmpty()) {
+                log.warn("No legs found for spread trade {}", trade.getId());
+                return Mono.just(BigDecimal.ZERO);
+            }
+
+            String redisKey = "optionchain:" + trade.getSymbol();
+            Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+
+            return redisTemplate.opsForValue().get(redisKey)
+                    .flatMap(chainJson -> {
+                        try {
+                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
+                            BigDecimal totalPnl = BigDecimal.ZERO;
+
+                            for (TradeLeg leg : legs) {
+                                double currentLtp = extractLTP(chainData, leg);
+                                double entryPrice = leg.getLimitPrice();
+                                BigDecimal legPnl;
+
+                                if (leg.getAction() == Action.SELL) {
+                                    // SELL legs: profit when premium decays
+                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity() * lotSize);
+                                } else {
+                                    // BUY legs: profit when premium appreciates
+                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity() * lotSize);
+                                }
+
+                                totalPnl = totalPnl.add(legPnl);
+                                log.debug("Spread leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
+                                        leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
+                                        entryPrice, currentLtp, legPnl);
+                            }
+
+                            log.debug("Spread total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
+                            return Mono.just(totalPnl);
+                        } catch (Exception e) {
+                            log.warn("Error deserializing option chain for spread P&L, using entry price fallback: {}", e.getMessage());
+                            return Mono.just(BigDecimal.ZERO);
+                        }
+                    })
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.warn("Redis key missing for spread P&L: {}, using entry price fallback", redisKey);
+                        return Mono.just(BigDecimal.ZERO);
+                    }));
+        } catch (Exception e) {
+            log.error("Error calculating spread P&L for trade: {}", trade.getId(), e);
+            return Mono.just(BigDecimal.ZERO);
+        }
+    }
+
+    /**
+     * Checks if spread position should be exited based on multiple conditions.
+     * Exit priority: stop loss → profit target → force close time.
+     *
+     * @param trade         the spread paper trade
+     * @param unrealizedPnl the current unrealized P&L
+     * @param cfg           the strategy configuration
+     * @return true if any exit condition is met, false otherwise
+     */
+    private boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
+                                     com.trademesh.strategy.config.StrategyProperties cfg) {
+        // Check 1: Profit target
+        BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
+        double targetPct = cfg.getTargetProfitPercent() / 100.0;
+        BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+
+        if (unrealizedPnl.compareTo(profitTarget) >= 0) {
+            log.info("Profit target hit for spread trade {}: pnl={}, target={}",
+                    trade.getId(), unrealizedPnl, profitTarget);
+            trade.setExitReason("TARGET_HIT");
+            return true;
+        }
+
+        // Check 2: Stop loss (based on wing width and max loss)
+        int wingWidth = cfg.getExtraInt("wing-width", 100);
+        Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+        BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize);
+        double slPct = cfg.getStopLossPercent() / 100.0;
+        BigDecimal stopLossThreshold = maxLoss.multiply(BigDecimal.valueOf(slPct)).negate();
+
+        if (unrealizedPnl.compareTo(stopLossThreshold) <= 0) {
+            log.warn("Stop loss triggered for spread trade {}: pnl={}, threshold={}",
+                    trade.getId(), unrealizedPnl, stopLossThreshold);
+            trade.setExitReason("STOPLOSS_HIT");
+            return true;
+        }
+
+        // Check 3: Force close time
+        try {
+            LocalTime forceCloseTime = LocalTime.parse("15:15", DateTimeFormatter.ofPattern("HH:mm"));
+            LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+            if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
+                log.info("Force close time reached for spread trade {}: current={}, forceClose={}",
+                        trade.getId(), currentTime, forceCloseTime);
+                trade.setExitReason("FORCE_CLOSE_EOD");
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("Error parsing force close time: {}", e.getMessage());
+        }
+
+        return false;
+    }
+
+    /**
+     * Closes a spread trade with Telegram alert.
+     *
+     * @param trade the spread paper trade to close
+     * @return Mono emitting the closed PaperTrade
+     */
+    private Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
+        trade.setStatus(TradeStatus.CLOSED);
+        trade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        trade.setRealizedPnl(trade.getUnrealizedPnl());
+        trade.setUnrealizedPnl(0.0);
+        trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+
+        return paperTradeRepository.save(trade)
+                .flatMap(closedTrade -> {
+                    String alert = formatExitAlert(closedTrade);
+                    return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
+                            .then(Mono.just(closedTrade));
+                })
+                .doOnSuccess(closedTrade -> log.info("Spread trade closed: {} with P&L: {}, reason: {}",
+                        closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
+                .doOnError(error -> log.error("Error closing spread trade: {}", trade.getId(), error));
     }
 
     /**
