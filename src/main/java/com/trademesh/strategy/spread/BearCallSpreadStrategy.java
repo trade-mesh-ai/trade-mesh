@@ -92,10 +92,13 @@ public class BearCallSpreadStrategy implements TradingStrategy {
 
         // DTE check
         int dte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
-        if (dte < 3 || dte > 15) {
+
+        int dteMin = cfg.getExtraInt("dte-min", 3);
+        int dteMax = cfg.getExtraInt("dte-max", 15);
+        if (dte < dteMin || dte > dteMax) {
             return Mono.just(StrategyResult.builder()
                     .isExecutable(false)
-                    .skipReason("DTE " + dte + " outside range [3, 15]")
+                    .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
                     .build());
         }
 

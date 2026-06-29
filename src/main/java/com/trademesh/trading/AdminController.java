@@ -4,6 +4,7 @@ import com.trademesh.intelligence.KiteHistoricalService;
 import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.intelligence.NiftyDailyPriceService;
 import com.trademesh.intelligence.iv.IvHistoryService;
+import com.trademesh.strategy.expiryday.ExpiryDayStrategy;
 import com.trademesh.strategy.ironcondor.IronCondorStrategy;
 import com.trademesh.strategy.spread.BullPutSpreadStrategy;
 import com.trademesh.strategy.spread.BearCallSpreadStrategy;
@@ -43,6 +44,7 @@ public class AdminController {
     private final IronCondorStrategy ironCondorStrategy;
     private final BullPutSpreadStrategy bullPutSpreadStrategy;
     private final BearCallSpreadStrategy bearCallSpreadStrategy;
+    private final ExpiryDayStrategy expiryDayStrategy;
 
     /**
      * Bootstrap endpoint to fetch historical NIFTY50 OHLC data from Kite Connect
@@ -212,8 +214,15 @@ public class AdminController {
          log.info("Testing Bull Put Spread strategy evaluation");
 
          return marketIntelligenceService.generateIntelligence("NIFTY50")
-                 .flatMap(intelligence -> bullPutSpreadStrategy.evaluate(intelligence))
-                 .<ResponseEntity<?>>map(result -> ResponseEntity.ok((Object) result))
+                 .flatMap(intelligence -> {
+                     log.debug("Generated market intelligence for Bull Put Spread evaluation: {}", intelligence.summary());
+                     return bullPutSpreadStrategy.evaluate(intelligence);
+                 })
+                 .<ResponseEntity<?>>map(result -> {
+                     log.info("Bull Put Spread evaluation completed: isExecutable={}, skipReason={}",
+                             result.getIsExecutable(), result.getSkipReason());
+                     return ResponseEntity.ok((Object) result);
+                 })
                  .<ResponseEntity<?>>onErrorResume(e -> {
                      log.error("Error evaluating Bull Put Spread: {}", e.getMessage(), e);
                      Map<String, Object> error = new HashMap<>();
@@ -241,8 +250,15 @@ public class AdminController {
          log.info("Testing Bear Call Spread strategy evaluation");
 
          return marketIntelligenceService.generateIntelligence("NIFTY50")
-                 .flatMap(intelligence -> bearCallSpreadStrategy.evaluate(intelligence))
-                 .<ResponseEntity<?>>map(result -> ResponseEntity.ok((Object) result))
+                 .flatMap(intelligence -> {
+                     log.debug("Generated market intelligence for Bear Call Spread evaluation: {}", intelligence.summary());
+                     return bearCallSpreadStrategy.evaluate(intelligence);
+                 })
+                 .<ResponseEntity<?>>map(result -> {
+                     log.debug("Bear Call Spread evaluation completed: isExecutable={}, skipReason={}",
+                             result.getIsExecutable(), result.getSkipReason());
+                     return ResponseEntity.ok((Object) result);
+                 })
                  .<ResponseEntity<?>>onErrorResume(e -> {
                      log.error("Error evaluating Bear Call Spread: {}", e.getMessage(), e);
                      Map<String, Object> error = new HashMap<>();
@@ -252,4 +268,29 @@ public class AdminController {
                          .body((Object) error));
                  });
      }
+
+    @Operation(summary = "Test Expiry Day strategy evaluation (debug endpoint, no DB save)")
+    @GetMapping(value = "/test/expiry-day-evaluate", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<?>> testExpiryDayEvaluation() {
+
+        log.info("Testing Expiry Day strategy evaluation");
+
+        return marketIntelligenceService.generateIntelligence("NIFTY50")
+                .flatMap(intelligence -> {
+                    log.debug("Generated market intelligence for Expiry Day evaluation: {}", intelligence.summary());
+                    return expiryDayStrategy.evaluate(intelligence);
+                })
+                .<ResponseEntity<?>>map(strategyResult -> {
+                    log.info("Expiry Day evaluation completed: isExecutable={}, skipReason={}",
+                            strategyResult.getIsExecutable(), strategyResult.getSkipReason());
+                    return ResponseEntity.ok((Object) strategyResult);
+                })
+                .<ResponseEntity<?>>onErrorResume(e -> {
+                    log.error("Error evaluating Expiry Day strategy: {}", e.getMessage(), e);
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("error", "Error evaluating Expiry Day strategy");
+                    errorResponse.put("message", e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
+                });
+    }
 }

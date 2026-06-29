@@ -92,6 +92,14 @@ public class BullPutSpreadStrategy implements TradingStrategy {
 
         // DTE check
         int dte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
+        int dteMin = cfg.getExtraInt("dte-min", 3);
+        int dteMax = cfg.getExtraInt("dte-max", 15);
+        if (dte < dteMin || dte > dteMax) {
+            return Mono.just(StrategyResult.builder()
+                    .isExecutable(false)
+                    .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
+                    .build());
+        }
         if (dte < 3 || dte > 15) {
             return Mono.just(StrategyResult.builder()
                     .isExecutable(false)
