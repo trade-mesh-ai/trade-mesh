@@ -263,6 +263,59 @@ TradeMesh follows a **reactive, event-driven architecture** with clear separatio
   target-profit-percent: 50.0
 ```
 
+#### `com.trademesh.strategy.spread`
+
+**Spread Strategies** — Bull Put Spread and Bear Call Spread for directional trades.
+
+| Class | Responsibility |
+|-------|-----------------|
+| `BullPutSpreadStrategy` | Implements BULL_PUT_SPREAD strategy (bullish markets) |
+| `BearCallSpreadStrategy` | Implements BEAR_CALL_SPREAD strategy (bearish markets) |
+
+**Bull Put Spread Status:** ✅ **ENABLED** (Mon/Wed/Thu/Fri, 9:30 AM entry, 3:15 PM exit)
+
+**Configuration:**
+```yaml
+- name: BULL_PUT_SPREAD
+  enabled: true
+  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  applicable-conditions: [TRENDING_BULLISH]
+  max-vix: 20.0
+  min-vix: 10.0
+  latest-entry-time: "13:00"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 200.0
+  target-profit-percent: 50.0
+  extra:
+    target-delta: 0.30
+    wing-width: 100
+    strike-step: 50
+    min-credit-pct: 0.10
+```
+
+**Bear Call Spread Status:** ✅ **ENABLED** (Mon/Wed/Thu/Fri, 9:30 AM entry, 3:15 PM exit)
+
+**Configuration:**
+```yaml
+- name: BEAR_CALL_SPREAD
+  enabled: true
+  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  applicable-conditions: [TRENDING_BEARISH]
+  max-vix: 20.0
+  min-vix: 10.0
+  latest-entry-time: "13:00"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 200.0
+  target-profit-percent: 50.0
+  extra:
+    target-delta: 0.30
+    wing-width: 100
+    strike-step: 50
+    min-credit-pct: 0.10
+```
+
 #### `com.trademesh.strategy.ironcondor`
 
 **Iron Condor Strategy** — Sells call & put spreads in sideways markets.
@@ -775,12 +828,99 @@ IRON_CONDOR:
 
 ---
 
+### 3. BULL PUT SPREAD
+
+**Status:** ✅ **ENABLED**
+
+**Concept:** Sells OTM put spread in bullish markets to collect premium. Profits when market stays above short put strike.
+
+**Entry Conditions:**
+- **Days:** Monday, Wednesday, Thursday, Friday
+- **Time:** **9:30 AM IST**
+- **Market Condition:** **TRENDING_BULLISH**
+- **VIX Range:** **10.0 – 20.0**
+- **Entry Deadline:** **1:00 PM**
+
+**Strike Selection (Delta-Based):**
+1. Find short put strike: first strike below spot with delta ≤ 0.30
+2. Long put strike = short put − wing width (100 points)
+
+**Exit Conditions:**
+- **Time:** **3:15 PM IST** (forced close)
+- **Profit Target:** 50% of credit collected
+- **Stop Loss:** 200% of credit collected
+
+**Configuration:**
+```yaml
+BULL_PUT_SPREAD:
+  enabled: true
+  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  applicable-conditions: [TRENDING_BULLISH]
+  max-vix: 20.0
+  min-vix: 10.0
+  latest-entry-time: "13:00"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 200.0
+  target-profit-percent: 50.0
+  extra:
+    target-delta: 0.30
+    wing-width: 100
+    strike-step: 50
+    min-credit-pct: 0.10
+```
+
+---
+
+### 4. BEAR CALL SPREAD
+
+**Status:** ✅ **ENABLED**
+
+**Concept:** Sells OTM call spread in bearish markets to collect premium. Profits when market stays below short call strike.
+
+**Entry Conditions:**
+- **Days:** Monday, Wednesday, Thursday, Friday
+- **Time:** **9:30 AM IST**
+- **Market Condition:** **TRENDING_BEARISH**
+- **VIX Range:** **10.0 – 20.0**
+- **Entry Deadline:** **1:00 PM**
+
+**Strike Selection (Delta-Based):**
+1. Find short call strike: first strike above spot with delta ≤ 0.30
+2. Long call strike = short call + wing width (100 points)
+
+**Exit Conditions:**
+- **Time:** **3:15 PM IST** (forced close)
+- **Profit Target:** 50% of credit collected
+- **Stop Loss:** 200% of credit collected
+
+**Configuration:**
+```yaml
+BEAR_CALL_SPREAD:
+  enabled: true
+  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  applicable-conditions: [TRENDING_BEARISH]
+  max-vix: 20.0
+  min-vix: 10.0
+  latest-entry-time: "13:00"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 200.0
+  target-profit-percent: 50.0
+  extra:
+    target-delta: 0.30
+    wing-width: 100
+    strike-step: 50
+    min-credit-pct: 0.10
+```
+
+---
+
 ### Disabled Strategies
 
 | Strategy | Status | Reason |
 |----------|--------|--------|
-| BULL_PUT_SPREAD | ❌ Disabled | Not yet implemented |
-| BULL_CALL_SPREAD | ❌ Disabled | Not yet implemented |
+| (None) | ✅ All Enabled | All strategies are now implemented and enabled |
 
 ---
 

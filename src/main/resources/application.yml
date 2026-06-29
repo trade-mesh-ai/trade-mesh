@@ -165,30 +165,38 @@ trading-strategies:
     target-profit-percent: 50.0
 
   - name: BULL_PUT_SPREAD
-    enabled: false
-    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
+    enabled: true
+    allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
     applicable-conditions: [TRENDING_BULLISH]
     max-vix: 20.0
-    min-vix: 8.0
+    min-vix: 10.0
     latest-entry-time: "13:00"
-    min-credit: 10.0
-    min-distance-from-spot: 100
+    min-credit: 20.0
     max-lots: 1
-    stop-loss-percent: 100.0
+    stop-loss-percent: 200.0
     target-profit-percent: 50.0
+    extra:
+      target-delta: 0.30
+      wing-width: 100
+      strike-step: 50
+      min-credit-pct: 0.10
 
-  - name: BULL_CALL_SPREAD
-    enabled: false
-    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, FRIDAY]
+  - name: BEAR_CALL_SPREAD
+    enabled: true
+    allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
     applicable-conditions: [TRENDING_BEARISH]
     max-vix: 20.0
-    min-vix: 8.0
+    min-vix: 10.0
     latest-entry-time: "13:00"
-    min-credit: 10.0
-    min-distance-from-spot: 100
+    min-credit: 20.0
     max-lots: 1
-    stop-loss-percent: 100.0
+    stop-loss-percent: 200.0
     target-profit-percent: 50.0
+    extra:
+      target-delta: 0.30
+      wing-width: 100
+      strike-step: 50
+      min-credit-pct: 0.10
 
   - name: IRON_CONDOR
     enabled: true
