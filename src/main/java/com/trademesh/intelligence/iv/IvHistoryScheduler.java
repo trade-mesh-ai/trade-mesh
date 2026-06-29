@@ -51,7 +51,20 @@ public class IvHistoryScheduler {
                 })
                 .doOnError(e -> log.error("Error capturing ATM IV for NIFTY50: {}", e.getMessage()))
                 .onErrorResume(e -> {
-                    log.debug("ATM IV capture failed, continuing gracefully");
+                    log.debug("ATM IV capture failed for NIFTY50, continuing gracefully");
+                    return reactor.core.publisher.Mono.empty();
+                })
+                .subscribe();
+
+        ivHistoryService.calculateAndSaveAtmIv("NIFTYBANK")
+                .doOnSuccess(saved -> {
+                    if (saved != null) {
+                        log.info("ATM IV recorded for NIFTYBANK: {}%", saved.getAtmIv());
+                    }
+                })
+                .doOnError(e -> log.error("Error capturing ATM IV for NIFTYBANK: {}", e.getMessage()))
+                .onErrorResume(e -> {
+                    log.debug("ATM IV capture failed for NIFTYBANK, continuing gracefully");
                     return reactor.core.publisher.Mono.empty();
                 })
                 .subscribe();

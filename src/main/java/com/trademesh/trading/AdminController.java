@@ -5,6 +5,8 @@ import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.intelligence.NiftyDailyPriceService;
 import com.trademesh.intelligence.iv.IvHistoryService;
 import com.trademesh.strategy.ironcondor.IronCondorStrategy;
+import com.trademesh.strategy.spread.BullPutSpreadStrategy;
+import com.trademesh.strategy.spread.BearCallSpreadStrategy;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +41,8 @@ public class AdminController {
     private final IvHistoryService ivHistoryService;
     private final MarketIntelligenceService marketIntelligenceService;
     private final IronCondorStrategy ironCondorStrategy;
+    private final BullPutSpreadStrategy bullPutSpreadStrategy;
+    private final BearCallSpreadStrategy bearCallSpreadStrategy;
 
     /**
      * Bootstrap endpoint to fetch historical NIFTY50 OHLC data from Kite Connect
@@ -156,38 +160,96 @@ public class AdminController {
                 });
     }
 
-    /**
-     * Debug endpoint to test Iron Condor strategy evaluation without persisting to database.
-     * <p>
-     * This endpoint generates market intelligence for NIFTY50 and calls the evaluate()
-     * method of IronCondorStrategy to verify the strategy logic without executing any trades.
-     * <p>
-     * Example: {@code GET /admin/test/iron-condor-evaluate}
-     *
-     * @return Mono emitting ResponseEntity with StrategyResult as JSON
-     */
-    @Operation(summary = "Test Iron Condor strategy evaluation (debug endpoint, no DB save)")
-    @GetMapping(value = "/test/iron-condor-evaluate", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<?>> testIronCondorEvaluation() {
+     /**
+      * Debug endpoint to test Iron Condor strategy evaluation without persisting to database.
+      * <p>
+      * This endpoint generates market intelligence for NIFTY50 and calls the evaluate()
+      * method of IronCondorStrategy to verify the strategy logic without executing any trades.
+      * <p>
+      * Example: {@code GET /admin/test/iron-condor-evaluate}
+      *
+      * @return Mono emitting ResponseEntity with StrategyResult as JSON
+      */
+     @Operation(summary = "Test Iron Condor strategy evaluation (debug endpoint, no DB save)")
+     @GetMapping(value = "/test/iron-condor-evaluate", produces = MediaType.APPLICATION_JSON_VALUE)
+     public Mono<ResponseEntity<?>> testIronCondorEvaluation() {
 
-        log.info("Testing Iron Condor strategy evaluation");
+         log.info("Testing Iron Condor strategy evaluation");
 
-        return marketIntelligenceService.generateIntelligence("NIFTY50")
-                .flatMap(intelligence -> {
-                    log.debug("Generated market intelligence for Iron Condor evaluation: {}", intelligence.summary());
-                    return ironCondorStrategy.evaluate(intelligence);
-                })
-                .<ResponseEntity<?>>map(strategyResult -> {
-                    log.info("Iron Condor evaluation completed: isExecutable={}, skipReason={}",
-                            strategyResult.getIsExecutable(), strategyResult.getSkipReason());
-                    return ResponseEntity.ok((Object) strategyResult);
-                })
-                .<ResponseEntity<?>>onErrorResume(e -> {
-                    log.error("Error evaluating Iron Condor strategy: {}", e.getMessage(), e);
-                    Map<String, Object> errorResponse = new HashMap<>();
-                    errorResponse.put("error", "Error evaluating Iron Condor strategy");
-                    errorResponse.put("message", e.getMessage());
-                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
-                });
-    }
+         return marketIntelligenceService.generateIntelligence("NIFTY50")
+                 .flatMap(intelligence -> {
+                     log.debug("Generated market intelligence for Iron Condor evaluation: {}", intelligence.summary());
+                     return ironCondorStrategy.evaluate(intelligence);
+                 })
+                 .<ResponseEntity<?>>map(strategyResult -> {
+                     log.info("Iron Condor evaluation completed: isExecutable={}, skipReason={}",
+                             strategyResult.getIsExecutable(), strategyResult.getSkipReason());
+                     return ResponseEntity.ok((Object) strategyResult);
+                 })
+                 .<ResponseEntity<?>>onErrorResume(e -> {
+                     log.error("Error evaluating Iron Condor strategy: {}", e.getMessage(), e);
+                     Map<String, Object> errorResponse = new HashMap<>();
+                     errorResponse.put("error", "Error evaluating Iron Condor strategy");
+                     errorResponse.put("message", e.getMessage());
+                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
+                 });
+     }
+
+     /**
+      * Debug endpoint to test Bull Put Spread strategy evaluation without persisting to database.
+      * <p>
+      * This endpoint generates market intelligence for NIFTY50 and calls the evaluate()
+      * method of BullPutSpreadStrategy to verify the strategy logic without executing any trades.
+      * <p>
+      * Example: {@code GET /admin/test/bull-put-spread-evaluate}
+      *
+      * @return Mono emitting ResponseEntity with StrategyResult as JSON
+      */
+     @Operation(summary = "Test Bull Put Spread strategy evaluation (debug endpoint, no DB save)")
+     @GetMapping(value = "/test/bull-put-spread-evaluate", produces = MediaType.APPLICATION_JSON_VALUE)
+     public Mono<ResponseEntity<?>> testBullPutSpreadEvaluation() {
+
+         log.info("Testing Bull Put Spread strategy evaluation");
+
+         return marketIntelligenceService.generateIntelligence("NIFTY50")
+                 .flatMap(intelligence -> bullPutSpreadStrategy.evaluate(intelligence))
+                 .<ResponseEntity<?>>map(result -> ResponseEntity.ok((Object) result))
+                 .<ResponseEntity<?>>onErrorResume(e -> {
+                     log.error("Error evaluating Bull Put Spread: {}", e.getMessage(), e);
+                     Map<String, Object> error = new HashMap<>();
+                     error.put("error", "Error evaluating Bull Put Spread");
+                     error.put("message", e.getMessage());
+                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                         .body((Object) error));
+                 });
+     }
+
+     /**
+      * Debug endpoint to test Bear Call Spread strategy evaluation without persisting to database.
+      * <p>
+      * This endpoint generates market intelligence for NIFTY50 and calls the evaluate()
+      * method of BearCallSpreadStrategy to verify the strategy logic without executing any trades.
+      * <p>
+      * Example: {@code GET /admin/test/bear-call-spread-evaluate}
+      *
+      * @return Mono emitting ResponseEntity with StrategyResult as JSON
+      */
+     @Operation(summary = "Test Bear Call Spread strategy evaluation (debug endpoint, no DB save)")
+     @GetMapping(value = "/test/bear-call-spread-evaluate", produces = MediaType.APPLICATION_JSON_VALUE)
+     public Mono<ResponseEntity<?>> testBearCallSpreadEvaluation() {
+
+         log.info("Testing Bear Call Spread strategy evaluation");
+
+         return marketIntelligenceService.generateIntelligence("NIFTY50")
+                 .flatMap(intelligence -> bearCallSpreadStrategy.evaluate(intelligence))
+                 .<ResponseEntity<?>>map(result -> ResponseEntity.ok((Object) result))
+                 .<ResponseEntity<?>>onErrorResume(e -> {
+                     log.error("Error evaluating Bear Call Spread: {}", e.getMessage(), e);
+                     Map<String, Object> error = new HashMap<>();
+                     error.put("error", "Error evaluating Bear Call Spread");
+                     error.put("message", e.getMessage());
+                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                         .body((Object) error));
+                 });
+     }
 }
