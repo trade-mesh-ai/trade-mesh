@@ -3,6 +3,7 @@ package com.trademesh.trading;
 import com.trademesh.alert.Alert;
 import com.trademesh.alert.AlertType;
 import com.trademesh.alert.TelegramNotificationBot;
+import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
@@ -33,6 +34,7 @@ public class DailyReportService {
 
     private final PaperTradeRepository paperTradeRepository;
     private final TelegramNotificationBot telegramNotificationBot;
+    private final LotSizeService lotSizeService;
 
     /**
      * Generates and sends the daily trading report.
@@ -87,7 +89,7 @@ public class DailyReportService {
                     double winRate = totalTrades > 0 ? (winningTrades * 100.0) / totalTrades : 0;
 
                     // Send report
-                    return sendDailyReport(today, totalTrades, winningTrades, losingTrades, totalPnl, bestTrade, worstTrade, winRate);
+                    return sendDailyReport(today, totalTrades, winningTrades, losingTrades, totalPnl, bestTrade, worstTrade, winRate, trades);
                 })
                 .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e));
     }
@@ -103,18 +105,24 @@ public class DailyReportService {
      * @param bestTrade     the best performing trade
      * @param worstTrade    the worst performing trade
      * @param winRate       win rate percentage
+     * @param trades        list of all trades for the day
      * @return Mono emitting void
      */
     private Mono<Void> sendDailyReport(LocalDate date, int totalTrades, long winningTrades, long losingTrades,
-                                       double totalPnl, PaperTrade bestTrade, PaperTrade worstTrade, double winRate) {
+                                       double totalPnl, PaperTrade bestTrade, PaperTrade worstTrade, double winRate, java.util.List<PaperTrade> trades) {
 
-        // Calculate rupee amount (assuming lot sizes)
-        double totalPnlAmount = calculatePnlAmount(totalPnl);
+        // Calculate rupee amount using per-trade lot sizes
+        double totalPnlAmount = trades.stream()
+                .mapToDouble(t -> {
+                    int lotSize = lotSizeService.getLotSize(t.getSymbol());
+                    return (t.getRealizedPnl() != null ? t.getRealizedPnl() : 0) * lotSize;
+                })
+                .sum();
         double bestPnlAmount = bestTrade != null && bestTrade.getRealizedPnl() != null
-                ? calculatePnlAmount(bestTrade.getRealizedPnl())
+                ? bestTrade.getRealizedPnl() * lotSizeService.getLotSize(bestTrade.getSymbol())
                 : 0;
         double worstPnlAmount = worstTrade != null && worstTrade.getRealizedPnl() != null
-                ? calculatePnlAmount(worstTrade.getRealizedPnl())
+                ? worstTrade.getRealizedPnl() * lotSizeService.getLotSize(worstTrade.getSymbol())
                 : 0;
 
         String emoji = totalPnl >= 0 ? "📊" : "📉";
@@ -182,21 +190,4 @@ public class DailyReportService {
                 .doOnError(e -> log.error("Error sending no trades alert: {}", e.getMessage(), e));
     }
 
-    /**
-     * Calculates the rupee amount from points based on lot sizes.
-     * <p>
-     * Assumes:
-     * - NIFTY: 75 contracts per lot
-     * - BANKNIFTY: 30 contracts per lot
-     * <p>
-     * For simplicity, uses average lot size of 50 contracts.
-     *
-     * @param points the P&L in points
-     * @return P&L in rupees
-     */
-    private double calculatePnlAmount(double points) {
-        // Average lot size: 50 contracts
-        // Each point = 1 rupee per contract
-        return points * 50;
-    }
 }

@@ -1,5 +1,6 @@
 package com.trademesh.strategy.spread;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
@@ -39,6 +40,7 @@ import java.util.stream.Collectors;
 public class BearCallSpreadStrategy implements TradingStrategy {
 
     private final StrategiesConfig strategiesConfig;
+    private final LotSizeService lotSizeService;
 
     @Override
     public String getName() {
@@ -107,7 +109,7 @@ public class BearCallSpreadStrategy implements TradingStrategy {
         double tte = dte / 365.0;
         double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
         int wingWidth = cfg.getExtraInt("wing-width", 100);
-        int lotSize = 75;
+        int lotSize = lotSizeService.getLotSize("NIFTY50");
         int lots = cfg.getMaxLots();
 
         // Find short CALL strike (above spot, closest OTM with delta <= targetDelta)

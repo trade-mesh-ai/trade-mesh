@@ -1,5 +1,6 @@
 package com.trademesh.trading;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
@@ -43,6 +44,7 @@ public class TradingController {
     private final DailyReportService dailyReportService;
     private final PaperTradeRepository paperTradeRepository;
     private final TradingScheduler tradingScheduler;
+    private final LotSizeService lotSizeService;
 
     @Operation(summary = "Manually trigger expiry day entry")
     @PostMapping("/expiry-day/trigger")
@@ -266,13 +268,22 @@ public class TradingController {
                     response.put("losingTrades", losingTrades);
                     response.put("winRate", String.format("%.1f%%", winRate));
                     response.put("totalPnl", String.format("%.2f pts", totalPnl));
-                    response.put("totalPnlAmount", String.format("₹ %.2f", totalPnl * 50)); // Average lot size
+                    
+                    // Calculate total P&L amount using per-trade lot sizes
+                    double totalPnlAmount = trades.stream()
+                            .mapToDouble(t -> {
+                                int lotSize = lotSizeService.getLotSize(t.getSymbol());
+                                return (t.getRealizedPnl() != null ? t.getRealizedPnl() : 0) * lotSize;
+                            })
+                            .sum();
+                    response.put("totalPnlAmount", String.format("₹ %.2f", totalPnlAmount));
 
                     if (bestTrade != null) {
                         Map<String, Object> bestInfo = new HashMap<>();
                         bestInfo.put("strategy", bestTrade.getStrategyName());
                         bestInfo.put("pnl", String.format("%.2f pts", bestTrade.getRealizedPnl()));
-                        bestInfo.put("pnlAmount", String.format("₹ %.2f", bestTrade.getRealizedPnl() * 50));
+                        int bestLotSize = lotSizeService.getLotSize(bestTrade.getSymbol());
+                        bestInfo.put("pnlAmount", String.format("₹ %.2f", bestTrade.getRealizedPnl() * bestLotSize));
                         response.put("bestTrade", bestInfo);
                     }
 
@@ -280,7 +291,8 @@ public class TradingController {
                         Map<String, Object> worstInfo = new HashMap<>();
                         worstInfo.put("strategy", worstTrade.getStrategyName());
                         worstInfo.put("pnl", String.format("%.2f pts", worstTrade.getRealizedPnl()));
-                        worstInfo.put("pnlAmount", String.format("₹ %.2f", worstTrade.getRealizedPnl() * 50));
+                        int worstLotSize = lotSizeService.getLotSize(worstTrade.getSymbol());
+                        worstInfo.put("pnlAmount", String.format("₹ %.2f", worstTrade.getRealizedPnl() * worstLotSize));
                         response.put("worstTrade", worstInfo);
                     }
 

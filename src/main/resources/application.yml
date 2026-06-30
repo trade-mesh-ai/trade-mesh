@@ -118,9 +118,6 @@ intelligence:
   maxpain:
     persist-interval-minutes: "0 */30 9-15 ? * MON-FRI"
     cache-ttl-minutes: 15
-    lot-sizes:
-      NIFTY50: 75
-      NIFTYBANK: 30
   oi:
     persist-interval-minutes: "0 */15 9-15 ? * MON-FRI"
 
@@ -132,11 +129,11 @@ trading:
     - NIFTY50
     - NIFTYBANK
   mark-to-market-interval-ms: 60000   # How often open trades are marked to market
+  lot-sizes:
+    NIFTY50: 65
+    NIFTYBANK: 30
   paper:
     enabled: true
-    lot-size:
-      NIFTY50: 75
-      NIFTYBANK: 30
 
 # ─── 7. Strategies ───────────────────────────────────────────────────────────
 # All strategies share the same config structure.
@@ -163,6 +160,8 @@ trading-strategies:
     max-lots: 1
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
+    extra:
+      min-distance-atr-multiplier: 0.4
 
   - name: BULL_PUT_SPREAD
     enabled: true

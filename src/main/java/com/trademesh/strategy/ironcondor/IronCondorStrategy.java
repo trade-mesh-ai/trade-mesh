@@ -1,5 +1,6 @@
 package com.trademesh.strategy.ironcondor;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
@@ -47,6 +48,7 @@ public class IronCondorStrategy implements TradingStrategy {
     private final MarketMetricsService marketMetricsService;
     private final OptionChainService optionChainService;
     private final VixMonitorService vixMonitorService;
+    private final LotSizeService lotSizeService;
 
     @Override
     public String getName() {
@@ -167,13 +169,13 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
-        double tte = dte / 365.0;
-        double atmIv = metrics.getCurrentAtmIv() != null ?
-                metrics.getCurrentAtmIv().doubleValue() : 15.0;
-        double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
-        int wingWidth = cfg.getExtraInt("wing-width", 200);
-        int lotSize = 75; // NIFTY lot size
-        int lots = cfg.getMaxLots();
+         double tte = dte / 365.0;
+         double atmIv = metrics.getCurrentAtmIv() != null ?
+                 metrics.getCurrentAtmIv().doubleValue() : 15.0;
+         double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
+         int wingWidth = cfg.getExtraInt("wing-width", 200);
+         int lotSize = lotSizeService.getLotSize("NIFTY50");
+         int lots = cfg.getMaxLots();
 
         // Find short CALL strike (first strike with delta <= targetDelta, above spot)
         OptionStrike callStrike = chain.getStrikes().stream()
