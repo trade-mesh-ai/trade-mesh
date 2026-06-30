@@ -15,8 +15,10 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -95,41 +97,61 @@ public class TradingController {
     }
 
     /**
-     * Retrieves all currently open positions.
+     * Retrieves all currently open positions with live P&L refresh.
      * <p>
      * Returns a list of all paper trades with OPEN status, including:
      * - Trade ID, symbol, strategy name
-     * - Entry credit and current value
-     * - Unrealized P&L
+     * - Entry credit and current value (refreshed from market data)
+     * - Unrealized P&L (recalculated based on current market prices)
      * - Entry time and current status
+     * - Last refresh timestamp
+     * <p>
+     * Note: This endpoint refreshes P&L for each position by fetching current
+     * market prices from Redis. This ensures users always see live P&L values.
      *
-     * @return Mono emitting ResponseEntity with list of open positions
+     * @return Mono emitting ResponseEntity with list of open positions with live P&L
      */
-    @Operation(summary = "Get all currently open positions")
+    @Operation(summary = "Get all currently open positions with live P&L refresh")
     @GetMapping(value = "/positions/open", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getOpenPositions() {
-        log.info("Fetching all open positions");
+        log.info("Fetching all open positions with live P&L refresh");
 
         return paperTradeRepository.findByStatus(TradeStatus.OPEN)
                 .collectList()
-                .map(positions -> {
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("count", positions.size());
-                    response.put("positions", positions.stream().map(trade -> {
-                        Map<String, Object> tradeInfo = new HashMap<>();
-                        tradeInfo.put("id", trade.getId());
-                        tradeInfo.put("symbol", trade.getSymbol());
-                        tradeInfo.put("strategyName", trade.getStrategyName());
-                        tradeInfo.put("entryCredit", trade.getEntryCredit());
-                        tradeInfo.put("currentValue", trade.getCurrentValue());
-                        tradeInfo.put("unrealizedPnl", trade.getUnrealizedPnl());
-                        tradeInfo.put("entryTime", trade.getEntryTime());
-                        tradeInfo.put("status", trade.getStatus());
-                        return tradeInfo;
-                    }).toList());
+                .flatMap(positions -> {
+                    if (positions.isEmpty()) {
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("count", 0);
+                        response.put("positions", List.of());
+                        response.put("refreshedAt", LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                        log.info("No open positions found");
+                        return Mono.just(ResponseEntity.ok(response));
+                    }
 
-                    log.info("Found {} open positions", positions.size());
-                    return ResponseEntity.ok(response);
+                    // Refresh P&L for each position by calling markToMarket
+                    return reactor.core.publisher.Flux.fromIterable(positions)
+                            .flatMap(tradingOrchestrator::refreshPositionPnl)
+                            .collectList()
+                            .map(refreshedPositions -> {
+                                Map<String, Object> response = new HashMap<>();
+                                response.put("count", refreshedPositions.size());
+                                response.put("positions", refreshedPositions.stream().map(trade -> {
+                                    Map<String, Object> tradeInfo = new HashMap<>();
+                                    tradeInfo.put("id", trade.getId());
+                                    tradeInfo.put("symbol", trade.getSymbol());
+                                    tradeInfo.put("strategyName", trade.getStrategyName());
+                                    tradeInfo.put("entryCredit", trade.getEntryCredit());
+                                    tradeInfo.put("currentValue", trade.getCurrentValue());
+                                    tradeInfo.put("unrealizedPnl", Math.round(trade.getUnrealizedPnl() * 100.0) / 100.0);
+                                    tradeInfo.put("entryTime", trade.getEntryTime());
+                                    tradeInfo.put("status", trade.getStatus());
+                                    return tradeInfo;
+                                }).toList());
+                                response.put("refreshedAt", LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+
+                                log.info("Found {} open positions with live P&L refresh", refreshedPositions.size());
+                                return ResponseEntity.ok(response);
+                            });
                 })
                 .onErrorResume(e -> {
                     log.error("Error fetching open positions: {}", e.getMessage(), e);

@@ -2,6 +2,8 @@ package com.trademesh.strategy.expiryday;
 
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
+import com.trademesh.intelligence.MarketMetrics;
+import com.trademesh.intelligence.MarketMetricsService;
 import com.trademesh.strategy.*;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.enums.*;
@@ -37,9 +39,11 @@ import java.util.stream.Collectors;
 public class ExpiryDayStrategy implements TradingStrategy {
 
     private final StrategiesConfig strategiesConfig;
+    private final MarketMetricsService marketMetricsService;
 
-    public ExpiryDayStrategy(StrategiesConfig strategiesConfig) {
+    public ExpiryDayStrategy(StrategiesConfig strategiesConfig, MarketMetricsService marketMetricsService) {
         this.strategiesConfig = strategiesConfig;
+        this.marketMetricsService = marketMetricsService;
     }
 
     /**
@@ -76,38 +80,49 @@ public class ExpiryDayStrategy implements TradingStrategy {
                         .build());
             }
 
-            // ─── Step 2: Strike Selection ──────────────────────────────────────────────
-            StrikeSelection strikeSelection = selectStrikes(intelligence);
-            if (strikeSelection == null) {
-                String reason = "Unable to select valid strikes from OI analysis";
-                log.info("Expiry Day strategy skipped: {}", reason);
-                return Mono.just(StrategyResult.builder()
-                        .isExecutable(false)
-                        .skipReason(reason)
-                        .build());
-            }
+            // ─── Step 2: Fetch Market Metrics (ATR) ────────────────────────────────────
+            return marketMetricsService.calculateMetrics(intelligence.getSymbol())
+                    .flatMap(metrics -> {
+                        // ─── Step 3: Strike Selection ──────────────────────────────────────────────
+                        StrikeSelection strikeSelection = selectStrikes(intelligence, metrics);
+                        if (strikeSelection == null) {
+                            String reason = "Unable to select valid strikes from OI analysis";
+                            log.info("Expiry Day strategy skipped: {}", reason);
+                            return Mono.just(StrategyResult.builder()
+                                    .isExecutable(false)
+                                    .skipReason(reason)
+                                    .build());
+                        }
 
-            // ─── Step 3: Build Trade Legs ─────────────────────────────────────────────
-            TradeLegsResult legsResult = buildTradeLegs(intelligence, strikeSelection);
-            if (legsResult == null || legsResult.getTotalCredit() < strategyConfig().getMinCredit()) {
-                String reason = "Premium too low — not worth risk";
-                log.info("Expiry Day strategy skipped: {}", reason);
-                return Mono.just(StrategyResult.builder()
-                        .isExecutable(false)
-                        .skipReason(reason)
-                        .build());
-            }
+                        // ─── Step 4: Build Trade Legs ─────────────────────────────────────────────
+                        TradeLegsResult legsResult = buildTradeLegs(intelligence, strikeSelection);
+                        if (legsResult == null || legsResult.getTotalCredit() < strategyConfig().getMinCredit()) {
+                            String reason = "Premium too low — not worth risk";
+                            log.info("Expiry Day strategy skipped: {}", reason);
+                            return Mono.just(StrategyResult.builder()
+                                    .isExecutable(false)
+                                    .skipReason(reason)
+                                    .build());
+                        }
 
-            // ─── Step 4: Build and Return StrategyResult ───────────────────────────────
-            TradeSignal signal = buildTradeSignal(intelligence, strikeSelection, legsResult);
+                        // ─── Step 5: Build and Return StrategyResult ───────────────────────────────
+                        TradeSignal signal = buildTradeSignal(intelligence, strikeSelection, legsResult);
 
-            log.info("Expiry Day Strangle signal generated: {} | Credit: {} points",
-                    signal.getReason(), legsResult.getTotalCredit());
+                        log.info("Expiry Day Strangle signal generated: {} | Credit: {} points",
+                                signal.getReason(), legsResult.getTotalCredit());
 
-            return Mono.just(StrategyResult.builder()
-                    .signal(signal)
-                    .isExecutable(true)
-                    .build());
+                        return Mono.just(StrategyResult.builder()
+                                .signal(signal)
+                                .isExecutable(true)
+                                .build());
+                    })
+                    .onErrorResume(e -> {
+                        log.error("Error evaluating Expiry Day strategy", e);
+                        return Mono.just(StrategyResult.builder()
+                                .isExecutable(false)
+                                .skipReason("Strategy evaluation error: " + e.getMessage())
+                                .build());
+                    });
 
         } catch (Exception e) {
             log.error("Error evaluating Expiry Day strategy", e);
@@ -171,13 +186,14 @@ public class ExpiryDayStrategy implements TradingStrategy {
     }
 
     /**
-     * Selects call and put strikes based on OI analysis.
+     * Selects call and put strikes based on OI analysis and ATR-scaled safety distance.
      * Returns StrikeSelection with validated strikes, or null if invalid.
      *
      * @param intelligence market intelligence data
+     * @param metrics market metrics including ATR14
      * @return StrikeSelection or null
      */
-    private StrikeSelection selectStrikes(MarketIntelligence intelligence) {
+    private StrikeSelection selectStrikes(MarketIntelligence intelligence, MarketMetrics metrics) {
         BigDecimal spotPrice = intelligence.getSpotPrice() != null
                 ? new BigDecimal(intelligence.getSpotPrice())
                 : null;
@@ -190,22 +206,43 @@ public class ExpiryDayStrategy implements TradingStrategy {
         BigDecimal callStrike = intelligence.getOiAnalysis().getMaxCallOIStrike();
         BigDecimal putStrike = intelligence.getOiAnalysis().getMaxPutOIStrike();
 
-        // Verify minimum distance from spot
-        BigDecimal minDistance = new BigDecimal(strategyConfig().getMinDistanceFromSpot());
-        BigDecimal wideningAmount = "NIFTYBANK".equals(intelligence.getSymbol())
-                ? new BigDecimal(100)
-                : new BigDecimal(50);
+        // --- ATR-scaled minimum distance (fail fast if unavailable) ---
+        double atr14 = metrics.getAtr14() != null ? metrics.getAtr14().doubleValue() : 0.0;
+        double atrMultiplier = strategyConfig().getExtraDouble("min-distance-atr-multiplier", 0.4);
 
-        // Call strike must be > spot + minDistance
-        if (callStrike.compareTo(spotPrice.add(minDistance)) <= 0) {
-            callStrike = callStrike.add(wideningAmount);
-            log.debug("Call strike widened to {} due to proximity to spot", callStrike);
+        if (atr14 <= 0) {
+            log.warn("ATR14 unavailable, cannot calculate safety distance — skipping");
+            return null;
         }
 
-        // Put strike must be < spot - minDistance
-        if (putStrike.compareTo(spotPrice.subtract(minDistance)) >= 0) {
-            putStrike = putStrike.subtract(wideningAmount);
-            log.debug("Put strike widened to {} due to proximity to spot", putStrike);
+        BigDecimal minDistance = BigDecimal.valueOf(atr14 * atrMultiplier);
+        int strikeStep = 50; // NIFTY strike step
+
+        // --- Compute ATR-scaled boundary strikes (round to valid strike step) ---
+        BigDecimal boundaryCall = roundUpToStep(spotPrice.add(minDistance), strikeStep);
+        BigDecimal boundaryPut = roundDownToStep(spotPrice.subtract(minDistance), strikeStep);
+
+        // --- Apply principled fallback (Option C) — no arbitrary widening ---
+        if (callStrike.compareTo(boundaryCall) < 0) {
+            log.info("Call OI wall {} inside ATR-scaled safety boundary {} " +
+                    "(ATR14={}, multiplier={}) — falling back to boundary strike",
+                    callStrike, boundaryCall, atr14, atrMultiplier);
+            callStrike = boundaryCall;
+        }
+
+        if (putStrike.compareTo(boundaryPut) > 0) {
+            log.info("Put OI wall {} inside ATR-scaled safety boundary {} " +
+                    "(ATR14={}, multiplier={}) — falling back to boundary strike",
+                    putStrike, boundaryPut, atr14, atrMultiplier);
+            putStrike = boundaryPut;
+        }
+
+        // --- Final invariant assertion (regression guard, not expected to fire) ---
+        if (callStrike.compareTo(boundaryCall) < 0 || putStrike.compareTo(boundaryPut) > 0) {
+            log.error("Strike selection invariant violated after correction — " +
+                    "this should never happen. callStrike={}, boundaryCall={}, " +
+                    "putStrike={}, boundaryPut={}", callStrike, boundaryCall, putStrike, boundaryPut);
+            return null;
         }
 
         return new StrikeSelection(callStrike, putStrike);
@@ -358,6 +395,28 @@ public class ExpiryDayStrategy implements TradingStrategy {
             case "NIFTY50" -> "NIFTY";
             default -> symbol;
         };
+    }
+
+    /**
+     * Rounds a value up to the nearest strike step.
+     *
+     * @param value the value to round
+     * @param step the strike step (e.g., 50 for NIFTY)
+     * @return the rounded-up value
+     */
+    private static BigDecimal roundUpToStep(BigDecimal value, int step) {
+        return BigDecimal.valueOf(Math.ceil(value.doubleValue() / step) * step);
+    }
+
+    /**
+     * Rounds a value down to the nearest strike step.
+     *
+     * @param value the value to round
+     * @param step the strike step (e.g., 50 for NIFTY)
+     * @return the rounded-down value
+     */
+    private static BigDecimal roundDownToStep(BigDecimal value, int step) {
+        return BigDecimal.valueOf(Math.floor(value.doubleValue() / step) * step);
     }
 
     /**

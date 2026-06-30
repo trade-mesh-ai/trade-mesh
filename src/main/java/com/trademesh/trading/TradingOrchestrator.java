@@ -234,6 +234,21 @@ public class TradingOrchestrator {
     }
 
     /**
+     * Refreshes P&L for a single position by calling markToMarket.
+     * Used by REST endpoints to ensure live P&L values.
+     *
+     * @param position the paper trade position to refresh
+     * @return Mono emitting the refreshed PaperTrade
+     */
+    public Mono<com.trademesh.execution.PaperTrade> refreshPositionPnl(com.trademesh.execution.PaperTrade position) {
+        log.debug("Refreshing P&L for position: {}", position.getId());
+        return paperTradingEngine.markToMarket(position)
+                .doOnSuccess(refreshed -> log.debug("P&L refreshed for position {}: unrealizedPnl={}",
+                        refreshed.getId(), refreshed.getUnrealizedPnl()))
+                .doOnError(error -> log.error("Error refreshing P&L for position: {}", position.getId(), error));
+    }
+
+    /**
      * Sends an end-of-day alert when positions are forcefully exited.
      *
      * @param symbol        trading symbol
