@@ -553,7 +553,7 @@ public class OptionChainService {
                 .filter(inst -> inst.getTradingSymbol() != null && inst.getTradingSymbol().startsWith(baseSymbol))
                 .map(KiteInstrumentsResponse.Instrument::getExpiryDate)
                 .distinct()
-                .filter(date -> date.isAfter(LocalDate.now()))
+                .filter(date -> !date.isBefore(LocalDate.now()))
                 .min(LocalDate::compareTo)
                 .orElse(null);
     }

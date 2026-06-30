@@ -63,7 +63,7 @@ public class TradingOrchestrator {
     public Mono<StrategyResult> runTradingCycle(String symbol) {
         log.info("Starting trading cycle for symbol: {}", symbol);
 
-        return marketIntelligenceService.generateIntelligence(symbol)
+        return marketIntelligenceService.generateFreshIntelligence(symbol)
                 .flatMap(intelligence -> {
                     // Step 2: Check if safe to trade
                     if (!intelligence.getIsSafeToTrade()) {

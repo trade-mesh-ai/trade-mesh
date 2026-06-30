@@ -69,26 +69,59 @@ public class MarketIntelligenceService {
                     }
                 })
                 .switchIfEmpty(performGeneration(symbol))
-                .flatMap(intelligence -> {
-                    // Cache the result
-                    try {
-                        String json = objectMapper.writeValueAsString(intelligence);
-                        return redisTemplate.opsForValue()
-                                .set(redisKey, json, ApplicationConstants.CACHE_INTELLIGENCE_TTL)
-                                .thenReturn(intelligence)
-                                .doOnSuccess(i -> log.info("Cached market intelligence for {} in Redis (TTL=5m): condition={}",
-                                        symbol, i.getMarketCondition()));
-                    } catch (Exception e) {
-                        log.error("Failed to cache intelligence: {}", e.getMessage());
-                        return Mono.just(intelligence);
-                    }
-                })
+                .flatMap(intelligence -> cacheIntelligence(symbol, intelligence))
                 .doOnError(e -> log.error("Failed to generate intelligence for {}: {}", symbol, e.getMessage(), e))
                 .onErrorResume(e -> {
                     // Suppress error propagation to prevent ErrorCallbackNotImplemented
                     log.debug("Intelligence generation failed for {}, returning empty", symbol);
                     return Mono.empty();
                 });
+    }
+
+    /**
+     * Generates fresh market intelligence for a given symbol, bypassing Redis cache read.
+     * Always performs a fresh fetch of all components (option chain, VIX, OI analysis).
+     * The result is written to Redis cache after generation, refreshing the cache for
+     * read-only callers.
+     *
+     * This method is intended for trade-execution paths where decision freshness is critical.
+     * Read-only endpoints should use generateIntelligence() to benefit from caching.
+     *
+     * @param symbol trading symbol (e.g., "NIFTY50", "NIFTYBANK")
+     * @return {@link Mono} emitting the fresh MarketIntelligence
+     */
+    public Mono<MarketIntelligence> generateFreshIntelligence(String symbol) {
+        // Skip cache read, go directly to generation
+        return performGeneration(symbol)
+                .flatMap(intelligence -> cacheIntelligence(symbol, intelligence))
+                .doOnError(e -> log.error("Failed to generate fresh intelligence for {}: {}", symbol, e.getMessage(), e))
+                .onErrorResume(e -> {
+                    // Suppress error propagation to prevent ErrorCallbackNotImplemented
+                    log.debug("Fresh intelligence generation failed for {}, returning empty", symbol);
+                    return Mono.empty();
+                });
+    }
+
+    /**
+     * Caches the given intelligence in Redis with the configured TTL.
+     *
+     * @param symbol trading symbol
+     * @param intelligence the market intelligence to cache
+     * @return Mono emitting the cached intelligence
+     */
+    private Mono<MarketIntelligence> cacheIntelligence(String symbol, MarketIntelligence intelligence) {
+        String redisKey = REDIS_KEY_INTELLIGENCE_PREFIX + symbol;
+        try {
+            String json = objectMapper.writeValueAsString(intelligence);
+            return redisTemplate.opsForValue()
+                    .set(redisKey, json, ApplicationConstants.CACHE_INTELLIGENCE_TTL)
+                    .thenReturn(intelligence)
+                    .doOnSuccess(i -> log.info("Cached market intelligence for {} in Redis (TTL=5m): condition={}",
+                            symbol, i.getMarketCondition()));
+        } catch (Exception e) {
+            log.error("Failed to cache intelligence: {}", e.getMessage());
+            return Mono.just(intelligence);
+        }
     }
 
 

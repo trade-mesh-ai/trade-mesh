@@ -121,46 +121,87 @@ public class AdminController {
         }
     }
 
-    /**
-     * Debug endpoint to test ATM IV calculation without persisting to database.
-     * <p>
-     * This endpoint calls the READ method of IvHistoryService (calculateAtmIv)
-     * which fetches the option chain, finds the ATM strike, and calculates IV
-     * without saving to the database.
-     * <p>
-     * Example: {@code GET /admin/test/atm-iv?symbol=NIFTY50}
-     *
-     * @param symbol the trading symbol (default "NIFTY50")
-     * @return Mono emitting ResponseEntity with IvHistory object or error
-     */
-    @Operation(summary = "Test ATM IV calculation (debug endpoint, no DB save)")
-    @GetMapping(value = "/test/atm-iv", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<?>> testAtmIvCalculation(
-            @Parameter(description = "Trading symbol, default NIFTY50")
-            @RequestParam(defaultValue = "NIFTY50") String symbol) {
+     /**
+      * Debug endpoint to test ATM IV calculation without persisting to database.
+      * <p>
+      * This endpoint calls the READ method of IvHistoryService (calculateAtmIv)
+      * which fetches the option chain, finds the ATM strike, and calculates IV
+      * without saving to the database.
+      * <p>
+      * Example: {@code GET /admin/test/atm-iv?symbol=NIFTY50}
+      *
+      * @param symbol the trading symbol (default "NIFTY50")
+      * @return Mono emitting ResponseEntity with IvHistory object or error
+      */
+     @Operation(summary = "Test ATM IV calculation (debug endpoint, no DB save)")
+     @GetMapping(value = "/test/atm-iv", produces = MediaType.APPLICATION_JSON_VALUE)
+     public Mono<ResponseEntity<?>> testAtmIvCalculation(
+             @Parameter(description = "Trading symbol, default NIFTY50")
+             @RequestParam(defaultValue = "NIFTY50") String symbol) {
 
-        log.info("Testing ATM IV calculation for symbol: {}", symbol);
+         log.info("Testing ATM IV calculation for symbol: {}", symbol);
 
-        return ivHistoryService.calculateAtmIv(symbol)
-                .<ResponseEntity<?>>map(ivHistory -> {
-                    log.info("ATM IV calculated successfully for {}: atmIv={}%", symbol, ivHistory.getAtmIv());
-                    return ResponseEntity.ok((Object) ivHistory);
-                })
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.warn("Could not calculate ATM IV for {}: option chain unavailable or both IVs are zero", symbol);
-                    Map<String, Object> errorResponse = new HashMap<>();
-                    errorResponse.put("error", "Could not calculate ATM IV");
-                    errorResponse.put("reason", "Option chain unavailable or both IVs are zero");
-                    return Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.NOT_FOUND).body((Object) errorResponse));
-                }))
-                .<ResponseEntity<?>>onErrorResume(e -> {
-                    log.error("Error calculating ATM IV for {}: {}", symbol, e.getMessage(), e);
-                    Map<String, Object> errorResponse = new HashMap<>();
-                    errorResponse.put("error", "Error calculating ATM IV");
-                    errorResponse.put("message", e.getMessage());
-                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
-                });
-    }
+         return ivHistoryService.calculateAtmIv(symbol)
+                 .<ResponseEntity<?>>map(ivHistory -> {
+                     log.info("ATM IV calculated successfully for {}: atmIv={}%", symbol, ivHistory.getAtmIv());
+                     return ResponseEntity.ok((Object) ivHistory);
+                 })
+                 .switchIfEmpty(Mono.defer(() -> {
+                     log.warn("Could not calculate ATM IV for {}: option chain unavailable or both IVs are zero", symbol);
+                     Map<String, Object> errorResponse = new HashMap<>();
+                     errorResponse.put("error", "Could not calculate ATM IV");
+                     errorResponse.put("reason", "Option chain unavailable or both IVs are zero");
+                     return Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.NOT_FOUND).body((Object) errorResponse));
+                 }))
+                 .<ResponseEntity<?>>onErrorResume(e -> {
+                     log.error("Error calculating ATM IV for {}: {}", symbol, e.getMessage(), e);
+                     Map<String, Object> errorResponse = new HashMap<>();
+                     errorResponse.put("error", "Error calculating ATM IV");
+                     errorResponse.put("message", e.getMessage());
+                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
+                 });
+     }
+
+     /**
+      * Debug endpoint to test ATM IV calculation and save to database.
+      * <p>
+      * This endpoint calls the SAVE method of IvHistoryService (calculateAndSaveAtmIv)
+      * which fetches the option chain, calculates IV, and persists to the database.
+      * Intended for manual catch-up scenarios only.
+      * <p>
+      * Example: {@code GET /admin/test/atm-iv-save?symbol=NIFTY50}
+      *
+      * @param symbol the trading symbol (default "NIFTY50")
+      * @return Mono emitting ResponseEntity with saved IvHistory object or error
+      */
+     @Operation(summary = "Test ATM IV calculation and save (debug endpoint, saves to DB)")
+     @GetMapping(value = "/test/atm-iv-save", produces = MediaType.APPLICATION_JSON_VALUE)
+     public Mono<ResponseEntity<?>> testAtmIvSave(
+             @Parameter(description = "Trading symbol, default NIFTY50")
+             @RequestParam(defaultValue = "NIFTY50") String symbol) {
+
+         log.info("Testing ATM IV calculation and save for symbol: {}", symbol);
+
+         return ivHistoryService.calculateAndSaveAtmIv(symbol)
+                 .<ResponseEntity<?>>map(ivHistory -> {
+                     log.info("ATM IV saved successfully for {}: atmIv={}%", symbol, ivHistory.getAtmIv());
+                     return ResponseEntity.ok((Object) ivHistory);
+                 })
+                 .switchIfEmpty(Mono.defer(() -> {
+                     log.warn("Could not save ATM IV for {}: already recorded today or calculation failed", symbol);
+                     Map<String, Object> errorResponse = new HashMap<>();
+                     errorResponse.put("error", "Could not save ATM IV");
+                     errorResponse.put("reason", "Already recorded today or calculation failed");
+                     return Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.NOT_FOUND).body((Object) errorResponse));
+                 }))
+                 .<ResponseEntity<?>>onErrorResume(e -> {
+                     log.error("Error saving ATM IV for {}: {}", symbol, e.getMessage(), e);
+                     Map<String, Object> errorResponse = new HashMap<>();
+                     errorResponse.put("error", "Error saving ATM IV");
+                     errorResponse.put("message", e.getMessage());
+                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
+                 });
+     }
 
      /**
       * Debug endpoint to test Iron Condor strategy evaluation without persisting to database.
