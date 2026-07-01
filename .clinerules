@@ -1,37 +1,169 @@
-## Project
-Use Spring WebFlux reactive style.
-Use R2DBC for PostgreSQL.
-Use existing Redis connection.
+## Project Stack
+- Java 21, Spring Boot 3.3.0, Spring WebFlux (fully reactive)
+- R2DBC + PostgreSQL (no JPA, no Hibernate)
+- Liquibase for all schema changes
+- Redis for caching (option chain, market intelligence, VIX)
+- Gradle build system
+- Base package: com.trademesh
 
-## Database
+## Reactive Rules — Non-Negotiable
+- No .block() anywhere in the codebase — ever
+- All methods must return Mono<T> or Flux<T>
+- Use Mono.zip() for parallel data fetching
+- Use flatMap() for dependent reactive calls
+- Use switchIfEmpty() to handle empty Mono gracefully
+- Use onErrorResume() as the single error boundary per chain
+- Wrap Optional<T> around Monos that can legitimately be empty 
+  before passing to Mono.zip() — empty Mono inside zip causes 
+  the entire zip to never emit
 
-- PostgreSQL is the source of truth.
-- All schema changes must go through Liquibase.
-- Never modify database tables manually.
-- Create a new Liquibase changeset for every schema change.
+## Database Rules
+- PostgreSQL is the source of truth
+- All schema changes must go through Liquibase — never modify 
+  tables manually
+- Create a new numbered changelog file for every schema change
+- Register every new changelog in db.changelog-master.yaml
+- Changelog naming convention: 
+  NNN-create/alter-description.yaml (e.g. 013-alter-oi-snapshots.yaml)
+- Never use @PostLoad annotation — it is a JPA annotation and 
+  does NOT work in R2DBC (silently ignored)
+
+## Entity Pattern (R2DBC)
+Every DB entity must follow this exact pattern:
+- Implement Persistable<UUID>
+- isNew field: @Transient @JsonIgnore private boolean isNew = false
+  (default FALSE — loaded entities are not new)
+- Static factory method for new records only:
+  public static EntityName createNew() {
+      EntityName e = new EntityName();
+      e.isNew = true;
+      e.id = UUID.randomUUID();
+      return e;
+  }
+- All fields must have explicit @Column("snake_case_name") annotations
+- Use @Table("table_name") on the class
+- Never use @PostLoad to set isNew — it does not work in R2DBC
+
+## JSONB Fields (R2DBC)
+For JSONB columns (e.g. List<TradeLeg> legs):
+- Create a dedicated R2DBC converter pair 
+  (ReadingConverter + WritingConverter)
+- Register converters in R2dbcConfig using 
+  R2dbcCustomConversions.of(PostgresDialect.INSTANCE, converters)
+- Never use the no-arg constructor 
+  new R2dbcCustomConversions(list) — wrong API for Spring Data R2DBC 3.x
+
+## Architecture Conventions — Core Rules
+- REST endpoints are READ-ONLY and NEVER persist to DB
+- All DB writes happen EXCLUSIVELY through schedulers
+- Service classes expose two method variants:
+  - Read method (REST-facing): fetches/calculates, no save
+  - Save method (scheduler-facing): calls read method then saves
+- Never inject repositories directly into schedulers — 
+  all persistence goes through the service layer
+- Schedulers check TokenAvailabilityTracker before any 
+  Kite API call — skip with WARN log if token unavailable
+- MarkToMarketScheduler is the SOLE writer of position P&L — 
+  no REST endpoint may call markToMarket() or write to paper_trades
+
+## Lot Size — Single Source of Truth
+- LotSizeService is the ONLY source of lot sizes
+- NIFTY50: 65 lots (verified via live Kite API June 30 2026)
+- NIFTYBANK: 30 lots (verified via live Kite API June 30 2026)
+- Never hardcode lot sizes anywhere — always use 
+  lotSizeService.getLotSize(symbol)
+- Config location: trading.lot-sizes in application.yml
+- No other lot-size config sections should exist
+
+## P&L Storage Convention
+- All P&L fields in paper_trades are stored in POINTS, not rupees
+  (entryCredit, currentValue, realizedPnl, unrealizedPnl)
+- Rupee conversion happens ONLY at display/alert time:
+  rupeeAmount = pnlPoints × lotSizeService.getLotSize(symbol)
+- Never store rupee amounts in the database
+- Per-leg P&L calculation = (entryPrice - currentLtp) × quantity
+  (quantity = lots, do NOT multiply by lotSize here)
+
+## Market Intelligence Freshness
+- generateIntelligence(symbol) — uses Redis cache (5 min TTL)
+  Use for: read-only endpoints, monitoring, display
+- generateFreshIntelligence(symbol) — bypasses cache, always fresh
+  Use for: TradingOrchestrator.runTradingCycle() ONLY
+  (any path that makes trade entry decisions)
+- Never use generateIntelligence() in the trade-execution path
+
+## Strategy Configuration
+All strategies configured in application.yml under 
+trading-strategies.items as a list.
+Each strategy has shared fields plus an extra map for 
+strategy-specific parameters.
+StrategyProperties has getExtraDouble(key, default) and 
+getExtraInt(key, default) helper methods.
+Strategy-specific extra params go in the extra map — 
+never add strategy-specific fields to StrategyProperties directly.
+
+## Strategy Package Structure
+- com.trademesh.strategy.expiryday — ExpiryDayStrategy
+- com.trademesh.strategy.ironcondor — IronCondorStrategy, 
+  IronCondorSignal
+- com.trademesh.strategy.spread — BullPutSpreadStrategy, 
+  BearCallSpreadStrategy
+
+## Strike Rounding
+Always round strikes to valid exchange steps:
+- NIFTY50: step = 50 points
+- NIFTYBANK: step = 100 points
+Use roundUpToStep() / roundDownToStep() helpers 
+(available in ExpiryDayStrategy, reuse don't duplicate)
+
+## Expiry Date Detection
+findNearestWeeklyExpiry() uses !date.isBefore(LocalDate.now())
+NOT date.isAfter(LocalDate.now())
+This ensures today's expiry is included on expiry day.
+Do not change this back to isAfter() — it was a confirmed 
+production bug.
 
 ## Logging
+- Use structured logging (SLF4J + Lombok @Slf4j)
+- Never use System.out.println
+- Business events: INFO
+- Intermediate calculations: DEBUG
+- Skipped operations: INFO with reason
+- Unexpected states: WARN
+- Exceptions: ERROR with full stack trace
 
-- Use structured logging.
-- Avoid System.out.println.
-- Log business events at INFO/DEBUG.
-- Log exceptions at ERROR.
+## Javadoc Style
+Concise multi-line format:
+/**
+ * One-line description.
+ *
+ * @param name description
+ * @return description
+ */
+No HTML tags in Javadoc.
+
+## Code Generation Rules
+- Generate production-ready code only
+- No placeholder implementations — implement fully or not at all
+- No TODO comments unless explicitly requested
+- All BigDecimal arithmetic uses BigDecimal methods or converts 
+  to double for Math functions then back to BigDecimal
+- Use RoundingMode.HALF_UP for all BigDecimal rounding
+- Use ZoneId.of("Asia/Kolkata") for all IST time operations
 
 ## Testing
+- Unit tests required for business logic
+- Integration tests for controllers and repositories
+- Never skip tests to make build pass — fix the actual issue
 
-- Unit tests required for business logic.
-- Integration tests for controllers and repositories.
-- Maintain high coverage for trading logic.
-
-## Architecture Conventions
-
-- REST endpoints are read/display only and never persist to DB.
-- All DB writes happen exclusively through schedulers.
-- Service classes must expose two method variants for data that needs persistence:
-  - A read method (REST-facing): fetches/calculates, no save
-  - A save method (scheduler-facing): calls read method then saves
-- Never inject repositories directly into schedulers for writes — all persistence goes through the service layer.
-
-## When Generating Code
-
-- Generate production-ready code.
+## What NOT to do (confirmed production bugs — never repeat)
+- Never use @PostLoad in R2DBC entities
+- Never call markToMarket() from a REST endpoint
+- Never store rupee amounts in paper_trades fields
+- Never hardcode lot sizes
+- Never use isAfter(today) for expiry date detection
+- Never use new R2dbcCustomConversions(list) — use .of() factory
+- Never use Mono.defaultIfEmpty(null) — throws NPE in reactor
+- Never add a fixed-offset widening to OI-wall strikes — 
+  use ATR-scaled boundary with principled fallback (Option C)
+- Never cache trade-decision intelligence — use generateFreshIntelligence()

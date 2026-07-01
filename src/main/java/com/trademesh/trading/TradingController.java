@@ -4,6 +4,7 @@ import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
+import com.trademesh.strategy.StrategyResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -70,6 +71,10 @@ public class TradingController {
         log.info("Manual request to run trading cycle for symbol: {}", symbol);
 
         return tradingOrchestrator.runTradingCycle(symbol)
+                .switchIfEmpty(Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason("Trade execution was skipped — check logs for details")
+                        .build()))
                 .map(result -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("symbol", symbol);
