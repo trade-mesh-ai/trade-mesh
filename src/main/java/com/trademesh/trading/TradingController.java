@@ -1,6 +1,5 @@
 package com.trademesh.trading;
 
-import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
@@ -45,7 +44,6 @@ public class TradingController {
     private final DailyReportService dailyReportService;
     private final PaperTradeRepository paperTradeRepository;
     private final TradingScheduler tradingScheduler;
-    private final LotSizeService lotSizeService;
 
     @Operation(summary = "Manually trigger expiry day entry")
     @PostMapping("/expiry-day/trigger")
@@ -235,85 +233,42 @@ public class TradingController {
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
-        return paperTradeRepository.findByStatus(TradeStatus.CLOSED)
-                .filter(trade -> trade.getTradeDate().equals(today))
-                .collectList()
-                .map(trades -> {
+        return dailyReportService.getMetricsForDate(today)
+                .map(metrics -> {
                     Map<String, Object> response = new HashMap<>();
+                    response.put("date", today);
 
-                    if (trades.isEmpty()) {
-                        response.put("date", today);
+                    if (metrics.totalTrades == 0) {
                         response.put("totalTrades", 0);
                         response.put("message", "No trades executed today");
                         log.info("No trades found for today");
                         return ResponseEntity.ok(response);
                     }
 
-                    // Calculate metrics
-                    int totalTrades = trades.size();
-                    long winningTrades = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
-                            .count();
-                    long losingTrades = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
-                            .count();
+                    response.put("totalTrades", metrics.totalTrades);
+                    response.put("winningTrades", metrics.winningTrades);
+                    response.put("losingTrades", metrics.losingTrades);
+                    response.put("winRate", String.format("%.1f%%", metrics.winRate));
+                    response.put("totalPnl", String.format("%.2f pts", metrics.totalPnl));
+                    response.put("totalPnlAmount", String.format("₹ %.2f", metrics.totalPnlAmount));
 
-                    double totalPnl = trades.stream()
-                            .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
-                            .sum();
-
-                    PaperTrade bestTrade = trades.stream()
-                            .max((t1, t2) -> Double.compare(
-                                    t1.getRealizedPnl() != null ? t1.getRealizedPnl() : 0,
-                                    t2.getRealizedPnl() != null ? t2.getRealizedPnl() : 0
-                            ))
-                            .orElse(null);
-
-                    PaperTrade worstTrade = trades.stream()
-                            .min((t1, t2) -> Double.compare(
-                                    t1.getRealizedPnl() != null ? t1.getRealizedPnl() : 0,
-                                    t2.getRealizedPnl() != null ? t2.getRealizedPnl() : 0
-                            ))
-                            .orElse(null);
-
-                    double winRate = totalTrades > 0 ? (winningTrades * 100.0) / totalTrades : 0;
-
-                    // Build response
-                    response.put("date", today);
-                    response.put("totalTrades", totalTrades);
-                    response.put("winningTrades", winningTrades);
-                    response.put("losingTrades", losingTrades);
-                    response.put("winRate", String.format("%.1f%%", winRate));
-                    response.put("totalPnl", String.format("%.2f pts", totalPnl));
-                    
-                    // Calculate total P&L amount using per-trade lot sizes
-                    double totalPnlAmount = trades.stream()
-                            .mapToDouble(t -> {
-                                int lotSize = lotSizeService.getLotSize(t.getSymbol());
-                                return (t.getRealizedPnl() != null ? t.getRealizedPnl() : 0) * lotSize;
-                            })
-                            .sum();
-                    response.put("totalPnlAmount", String.format("₹ %.2f", totalPnlAmount));
-
-                    if (bestTrade != null) {
+                    if (metrics.bestTrade != null) {
                         Map<String, Object> bestInfo = new HashMap<>();
-                        bestInfo.put("strategy", bestTrade.getStrategyName());
-                        bestInfo.put("pnl", String.format("%.2f pts", bestTrade.getRealizedPnl()));
-                        int bestLotSize = lotSizeService.getLotSize(bestTrade.getSymbol());
-                        bestInfo.put("pnlAmount", String.format("₹ %.2f", bestTrade.getRealizedPnl() * bestLotSize));
+                        bestInfo.put("strategy", metrics.bestTrade.getStrategyName());
+                        bestInfo.put("pnl", String.format("%.2f pts", metrics.bestTrade.getRealizedPnl()));
+                        bestInfo.put("pnlAmount", String.format("₹ %.2f", metrics.bestPnlAmount));
                         response.put("bestTrade", bestInfo);
                     }
 
-                    if (worstTrade != null) {
+                    if (metrics.worstTrade != null) {
                         Map<String, Object> worstInfo = new HashMap<>();
-                        worstInfo.put("strategy", worstTrade.getStrategyName());
-                        worstInfo.put("pnl", String.format("%.2f pts", worstTrade.getRealizedPnl()));
-                        int worstLotSize = lotSizeService.getLotSize(worstTrade.getSymbol());
-                        worstInfo.put("pnlAmount", String.format("₹ %.2f", worstTrade.getRealizedPnl() * worstLotSize));
+                        worstInfo.put("strategy", metrics.worstTrade.getStrategyName());
+                        worstInfo.put("pnl", String.format("%.2f pts", metrics.worstTrade.getRealizedPnl()));
+                        worstInfo.put("pnlAmount", String.format("₹ %.2f", metrics.worstPnlAmount));
                         response.put("worstTrade", worstInfo);
                     }
 
-                    log.info("Today's report: {} trades, {} wins, {} losses, P&L: {}", totalTrades, winningTrades, losingTrades, totalPnl);
+                    log.info("Today's report: {} trades, {} wins, {} losses, P&L: {}", metrics.totalTrades, metrics.winningTrades, metrics.losingTrades, metrics.totalPnl);
                     return ResponseEntity.ok(response);
                 })
                 .onErrorResume(e -> {

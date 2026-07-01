@@ -71,6 +71,15 @@ public interface PaperTradeRepository extends ReactiveCrudRepository<PaperTrade,
     Flux<PaperTrade> findByStrategyName(String strategyName);
 
     /**
+     * Finds all paper trades with a specific status and trade date.
+     *
+     * @param status the trade status to filter by (OPEN, CLOSED, CANCELLED)
+     * @param tradeDate the date to filter by
+     * @return Flux of matching paper trades
+     */
+    Flux<PaperTrade> findByStatusAndTradeDate(TradeStatus status, LocalDate tradeDate);
+
+    /**
      * Finds a single paper trade by ID.
      *
      * @param id the UUID of the paper trade
