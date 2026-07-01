@@ -108,7 +108,7 @@ public class DailyReportService {
          // Best trade: highest realizedPnl, with exitTime ascending as tie-breaker
          metrics.bestTrade = trades.stream()
                  .max(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
-                         .thenComparing(PaperTrade::getExitTime))
+                         .thenComparing(PaperTrade::getExitTime, Comparator.reverseOrder()))
                  .orElse(null);
 
          // Worst trade: lowest realizedPnl, with exitTime ascending as tie-breaker
