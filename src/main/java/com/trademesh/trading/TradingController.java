@@ -99,24 +99,26 @@ public class TradingController {
     }
 
     /**
-     * Retrieves all currently open positions with live P&L refresh.
+     * Retrieves all currently open positions with live P&L calculation.
      * <p>
      * Returns a list of all paper trades with OPEN status, including:
      * - Trade ID, symbol, strategy name
-     * - Entry credit and current value (refreshed from market data)
-     * - Unrealized P&L (recalculated based on current market prices)
+     * - Entry credit and current value (stored DB values, scheduler-managed)
+     * - Unrealized P&L (stored DB value, scheduler-managed)
+     * - Live unrealized P&L (calculated at read time from Redis)
+     * - isPnlLive flag (true if calculated from Redis, false if using stored value)
      * - Entry time and current status
-     * - Last refresh timestamp
      * <p>
-     * Note: This endpoint refreshes P&L for each position by fetching current
-     * market prices from Redis. This ensures users always see live P&L values.
+     * This endpoint is READ-ONLY and does NOT write to the database.
+     * Live P&L is calculated from current Redis option chain data without persistence.
+     * If Redis has no data, gracefully falls back to stored DB value with isPnlLive=false.
      *
      * @return Mono emitting ResponseEntity with list of open positions with live P&L
      */
-    @Operation(summary = "Get all currently open positions with live P&L refresh")
+    @Operation(summary = "Get all currently open positions with live P&L calculation")
     @GetMapping(value = "/positions/open", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Object>>> getOpenPositions() {
-        log.info("Fetching all open positions with live P&L refresh");
+        log.info("Fetching all open positions with live P&L calculation");
 
         return paperTradeRepository.findByStatus(TradeStatus.OPEN)
                 .collectList()
@@ -125,19 +127,27 @@ public class TradingController {
                         Map<String, Object> response = new HashMap<>();
                         response.put("count", 0);
                         response.put("positions", List.of());
-                        response.put("refreshedAt", LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
                         log.info("No open positions found");
                         return Mono.just(ResponseEntity.ok(response));
                     }
 
-                    // Refresh P&L for each position by calling markToMarket
+                    // Calculate live P&L for each position (read-only, no DB writes)
                     return reactor.core.publisher.Flux.fromIterable(positions)
-                            .flatMap(tradingOrchestrator::refreshPositionPnl)
+                            .flatMap(position -> {
+                                // Get live P&L data from Redis
+                                return tradingOrchestrator.getPaperTradingEngine()
+                                        .calculateLiveUnrealizedPnl(position)
+                                        .map(livePnlData -> new Object[]{position, livePnlData});
+                            })
                             .collectList()
-                            .map(refreshedPositions -> {
+                            .map(positionPnlPairs -> {
                                 Map<String, Object> response = new HashMap<>();
-                                response.put("count", refreshedPositions.size());
-                                response.put("positions", refreshedPositions.stream().map(trade -> {
+                                response.put("count", positionPnlPairs.size());
+                                response.put("positions", positionPnlPairs.stream().map(pair -> {
+                                    PaperTrade trade = (PaperTrade) pair[0];
+                                    com.trademesh.execution.LivePnlData livePnlData = 
+                                            (com.trademesh.execution.LivePnlData) pair[1];
+
                                     Map<String, Object> tradeInfo = new HashMap<>();
                                     tradeInfo.put("id", trade.getId());
                                     tradeInfo.put("symbol", trade.getSymbol());
@@ -145,13 +155,15 @@ public class TradingController {
                                     tradeInfo.put("entryCredit", trade.getEntryCredit());
                                     tradeInfo.put("currentValue", trade.getCurrentValue());
                                     tradeInfo.put("unrealizedPnl", Math.round(trade.getUnrealizedPnl() * 100.0) / 100.0);
+                                    tradeInfo.put("liveUnrealizedPnl", 
+                                            Math.round(livePnlData.getLiveUnrealizedPnl() * 100.0) / 100.0);
+                                    tradeInfo.put("isPnlLive", livePnlData.getIsPnlLive());
                                     tradeInfo.put("entryTime", trade.getEntryTime());
                                     tradeInfo.put("status", trade.getStatus());
                                     return tradeInfo;
                                 }).toList());
-                                response.put("refreshedAt", LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
 
-                                log.info("Found {} open positions with live P&L refresh", refreshedPositions.size());
+                                log.info("Found {} open positions with live P&L calculation", positionPnlPairs.size());
                                 return ResponseEntity.ok(response);
                             });
                 })

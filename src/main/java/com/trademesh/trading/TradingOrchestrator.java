@@ -47,6 +47,16 @@ public class TradingOrchestrator {
     private final StrategyExecutionLogRepository executionLogRepository;
 
     /**
+     * Getter for PaperTradingEngine to allow REST controllers to access live P&L calculation.
+     * Used by TradingController to calculate live unrealized P&L without DB writes.
+     *
+     * @return the PaperTradingEngine instance
+     */
+    public PaperTradingEngine getPaperTradingEngine() {
+        return paperTradingEngine;
+    }
+
+    /**
      * Runs a complete trading cycle for a given symbol.
      * <p>
      * Process:
@@ -244,20 +254,6 @@ public class TradingOrchestrator {
         return telegramNotificationBot.sendAlert(alert);
     }
 
-    /**
-     * Refreshes P&L for a single position by calling markToMarket.
-     * Used by REST endpoints to ensure live P&L values.
-     *
-     * @param position the paper trade position to refresh
-     * @return Mono emitting the refreshed PaperTrade
-     */
-    public Mono<com.trademesh.execution.PaperTrade> refreshPositionPnl(com.trademesh.execution.PaperTrade position) {
-        log.debug("Refreshing P&L for position: {}", position.getId());
-        return paperTradingEngine.markToMarket(position)
-                .doOnSuccess(refreshed -> log.debug("P&L refreshed for position {}: unrealizedPnl={}",
-                        refreshed.getId(), refreshed.getUnrealizedPnl()))
-                .doOnError(error -> log.error("Error refreshing P&L for position: {}", position.getId(), error));
-    }
 
     /**
      * Sends an end-of-day alert when positions are forcefully exited.

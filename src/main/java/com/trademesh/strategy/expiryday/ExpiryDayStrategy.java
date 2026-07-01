@@ -203,8 +203,12 @@ public class ExpiryDayStrategy implements TradingStrategy {
             return null;
         }
 
-        BigDecimal callStrike = intelligence.getOiAnalysis().getMaxCallOIStrike();
-        BigDecimal putStrike = intelligence.getOiAnalysis().getMaxPutOIStrike();
+        // Store original OI walls before any correction
+        BigDecimal oiCallWall = intelligence.getOiAnalysis().getMaxCallOIStrike();
+        BigDecimal oiPutWall = intelligence.getOiAnalysis().getMaxPutOIStrike();
+
+        BigDecimal callStrike = oiCallWall;
+        BigDecimal putStrike = oiPutWall;
 
         // This check is missing entirely:
         if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
@@ -230,11 +234,15 @@ public class ExpiryDayStrategy implements TradingStrategy {
         BigDecimal boundaryPut = roundDownToStep(spotPrice.subtract(minDistance), strikeStep);
 
         // --- Apply principled fallback (Option C) — no arbitrary widening ---
+        boolean callFallbackUsed = false;
+        boolean putFallbackUsed = false;
+
         if (callStrike.compareTo(boundaryCall) < 0) {
             log.info("Call OI wall {} inside ATR-scaled safety boundary {} " +
                     "(ATR14={}, multiplier={}) — falling back to boundary strike",
                     callStrike, boundaryCall, atr14, atrMultiplier);
             callStrike = boundaryCall;
+            callFallbackUsed = true;
         }
 
         if (putStrike.compareTo(boundaryPut) > 0) {
@@ -242,6 +250,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
                     "(ATR14={}, multiplier={}) — falling back to boundary strike",
                     putStrike, boundaryPut, atr14, atrMultiplier);
             putStrike = boundaryPut;
+            putFallbackUsed = true;
         }
 
         // --- Final invariant assertion (regression guard, not expected to fire) ---
@@ -252,7 +261,8 @@ public class ExpiryDayStrategy implements TradingStrategy {
             return null;
         }
 
-        return new StrikeSelection(callStrike, putStrike);
+        return new StrikeSelection(callStrike, putStrike, oiCallWall, oiPutWall,
+                callFallbackUsed, putFallbackUsed, atr14, atrMultiplier);
     }
 
     /**
@@ -345,14 +355,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
     private TradeSignal buildTradeSignal(MarketIntelligence intelligence,
                                          StrikeSelection strikeSelection,
                                          TradeLegsResult legsResult) {
-        String reason = String.format(
-                "Expiry day strangle: Sell %dCE + %dPE. Expected credit: %.1f points. OI support: %d. OI resistance: %d",
-                strikeSelection.getCallStrike().intValue(),
-                strikeSelection.getPutStrike().intValue(),
-                legsResult.getTotalCredit(),
-                strikeSelection.getPutStrike().intValue(),
-                strikeSelection.getCallStrike().intValue()
-        );
+        String reason = buildReasonString(strikeSelection, legsResult);
 
         // Calculate stop loss amount for strangle
         Double stopLossAmount = legsResult.getTotalCredit() * strategyConfig().getStopLossPercent() / 100;
@@ -373,6 +376,61 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .confidence(confidence)
                 .reason(reason)
                 .build();
+    }
+
+    /**
+     * Builds the reason string for the trade signal, accurately reflecting
+     * whether strikes were selected from OI walls or ATR boundaries.
+     *
+     * @param strikeSelection selected strikes with fallback tracking
+     * @param legsResult trade legs and credit
+     * @return formatted reason string for Telegram alert
+     */
+    private String buildReasonString(StrikeSelection strikeSelection, TradeLegsResult legsResult) {
+        int callStrike = strikeSelection.getCallStrike().intValue();
+        int putStrike = strikeSelection.getPutStrike().intValue();
+        double credit = legsResult.getTotalCredit();
+        boolean callFallback = strikeSelection.isCallFallbackUsed();
+        boolean putFallback = strikeSelection.isPutFallbackUsed();
+
+        if (!callFallback && !putFallback) {
+            // Neither fallback used — both from OI walls
+            return String.format(
+                    "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. OI resistance: %d. OI support: %d",
+                    callStrike, putStrike, credit, callStrike, putStrike
+            );
+        } else if (callFallback && !putFallback) {
+            // Call fallback used, put from OI wall
+            int oiCall = strikeSelection.getOiCallWall().intValue();
+            double atr14 = strikeSelection.getAtr14();
+            double mult = strikeSelection.getAtrMultiplier();
+            return String.format(
+                    "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. " +
+                    "CE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f). OI support: %d",
+                    callStrike, putStrike, credit, callStrike, oiCall, atr14, mult, putStrike
+            );
+        } else if (!callFallback && putFallback) {
+            // Put fallback used, call from OI wall
+            int oiPut = strikeSelection.getOiPutWall().intValue();
+            double atr14 = strikeSelection.getAtr14();
+            double mult = strikeSelection.getAtrMultiplier();
+            return String.format(
+                    "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. " +
+                    "OI resistance: %d. PE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f)",
+                    callStrike, putStrike, credit, callStrike, putStrike, oiPut, atr14, mult
+            );
+        } else {
+            // Both fallbacks used
+            int oiCall = strikeSelection.getOiCallWall().intValue();
+            int oiPut = strikeSelection.getOiPutWall().intValue();
+            double atr14 = strikeSelection.getAtr14();
+            double mult = strikeSelection.getAtrMultiplier();
+            return String.format(
+                    "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. " +
+                    "Both strikes at ATR boundary (OI walls: %dCE / %dPE, ATR14: %.2f, mult: %.2f)",
+                    callStrike, putStrike, credit, oiCall, oiPut, atr14, mult
+            );
+        }
     }
 
     /**
@@ -427,15 +485,32 @@ public class ExpiryDayStrategy implements TradingStrategy {
     }
 
     /**
-     * Helper class to hold selected strikes.
+     * Helper class to hold selected strikes and fallback tracking.
+     * Tracks both the final selected strikes and the original OI walls,
+     * plus whether ATR boundary fallback was used for each leg.
      */
     private static class StrikeSelection {
-        private final BigDecimal callStrike;
-        private final BigDecimal putStrike;
+        private final BigDecimal callStrike;      // final selected strike
+        private final BigDecimal putStrike;       // final selected strike
+        private final BigDecimal oiCallWall;      // original maxCallOIStrike
+        private final BigDecimal oiPutWall;       // original maxPutOIStrike
+        private final boolean callFallbackUsed;   // true if ATR boundary was used
+        private final boolean putFallbackUsed;    // true if ATR boundary was used
+        private final double atr14;               // ATR14 value used for boundary calculation
+        private final double atrMultiplier;       // multiplier used for boundary calculation
 
-        StrikeSelection(BigDecimal callStrike, BigDecimal putStrike) {
+        StrikeSelection(BigDecimal callStrike, BigDecimal putStrike,
+                        BigDecimal oiCallWall, BigDecimal oiPutWall,
+                        boolean callFallbackUsed, boolean putFallbackUsed,
+                        double atr14, double atrMultiplier) {
             this.callStrike = callStrike;
             this.putStrike = putStrike;
+            this.oiCallWall = oiCallWall;
+            this.oiPutWall = oiPutWall;
+            this.callFallbackUsed = callFallbackUsed;
+            this.putFallbackUsed = putFallbackUsed;
+            this.atr14 = atr14;
+            this.atrMultiplier = atrMultiplier;
         }
 
         BigDecimal getCallStrike() {
@@ -444,6 +519,30 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
         BigDecimal getPutStrike() {
             return putStrike;
+        }
+
+        BigDecimal getOiCallWall() {
+            return oiCallWall;
+        }
+
+        BigDecimal getOiPutWall() {
+            return oiPutWall;
+        }
+
+        boolean isCallFallbackUsed() {
+            return callFallbackUsed;
+        }
+
+        boolean isPutFallbackUsed() {
+            return putFallbackUsed;
+        }
+
+        double getAtr14() {
+            return atr14;
+        }
+
+        double getAtrMultiplier() {
+            return atrMultiplier;
         }
     }
 

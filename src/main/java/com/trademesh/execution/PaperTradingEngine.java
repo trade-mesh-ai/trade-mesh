@@ -518,7 +518,7 @@ public class PaperTradingEngine {
      * @param leg       the trade leg to extract LTP for
      * @return the LTP value, or the leg's limit price if strike not found
      */
-    private double extractLTP(OptionChain chainData, TradeLeg leg) {
+    public double extractLTP(OptionChain chainData, TradeLeg leg) {
         if (chainData == null || chainData.getStrikes() == null || chainData.getStrikes().isEmpty()) {
             log.warn("Option chain data is empty, using limit price for leg with strike {}", leg.getStrikePrice());
             return leg.getLimitPrice();
@@ -942,5 +942,159 @@ public class PaperTradingEngine {
                 .message(message)
                 .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();
+    }
+
+    /**
+     * Calculates live unrealized P&L for a position at read time from Redis.
+     * This is a read-only operation that does NOT write to the database.
+     * Used by REST endpoints to provide fresh P&L values without persisting.
+     *
+     * Process:
+     * 1. Fetch current option chain from Redis using key optionchain:{symbol}
+     * 2. Calculate current value by summing LTPs of all legs
+     * 3. Calculate unrealized P&L as: entryCredit - currentValue
+     * 4. If Redis has no data, gracefully fall back to stored DB value with isPnlLive=false
+     *
+     * @param trade the paper trade to calculate live P&L for
+     * @return Mono emitting LivePnlData with liveUnrealizedPnl and isPnlLive flag
+     */
+    public Mono<LivePnlData> calculateLiveUnrealizedPnl(PaperTrade trade) {
+        if (trade.getStatus() != TradeStatus.OPEN) {
+            log.debug("Trade {} is not open, returning stored P&L", trade.getId());
+            return Mono.just(LivePnlData.builder()
+                    .liveUnrealizedPnl(trade.getUnrealizedPnl())
+                    .isPnlLive(false)
+                    .build());
+        }
+
+        try {
+            List<TradeLeg> legs = trade.getLegs();
+            if (legs == null || legs.isEmpty()) {
+                log.debug("No legs found for trade {}, returning stored P&L", trade.getId());
+                return Mono.just(LivePnlData.builder()
+                        .liveUnrealizedPnl(trade.getUnrealizedPnl())
+                        .isPnlLive(false)
+                        .build());
+            }
+
+            String redisKey = "optionchain:" + trade.getSymbol();
+            final Double entryCredit = trade.getEntryCredit();
+            final Double storedUnrealizedPnl = trade.getUnrealizedPnl();
+
+            return redisTemplate.opsForValue().get(redisKey)
+                    .flatMap(chainJson -> {
+                        try {
+                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
+                            log.debug("Retrieved option chain for {} with {} strikes for live P&L calculation",
+                                    trade.getSymbol(), chainData.getStrikes().size());
+
+                            // Calculate current value based on strategy type
+                            Mono<Double> currentValueMono;
+                            if ("IRON_CONDOR".equals(trade.getStrategyName())) {
+                                currentValueMono = calculateIronCondorCurrentValue(chainData, legs);
+                            } else if ("BULL_PUT_SPREAD".equals(trade.getStrategyName()) ||
+                                    "BEAR_CALL_SPREAD".equals(trade.getStrategyName())) {
+                                currentValueMono = calculateSpreadCurrentValue(chainData, legs);
+                            } else {
+                                currentValueMono = calculateDefaultCurrentValue(chainData, legs);
+                            }
+
+                            return currentValueMono.map(currentValue -> {
+                                double liveUnrealizedPnl = entryCredit - currentValue;
+                                log.debug("Calculated live P&L for trade {}: currentValue={}, liveUnrealizedPnl={}",
+                                        trade.getId(), currentValue, liveUnrealizedPnl);
+                                return LivePnlData.builder()
+                                        .liveUnrealizedPnl(liveUnrealizedPnl)
+                                        .isPnlLive(true)
+                                        .build();
+                            });
+                        } catch (Exception e) {
+                            log.warn("Error deserializing option chain for live P&L calculation, using stored value: {}",
+                                    e.getMessage());
+                            return Mono.just(LivePnlData.builder()
+                                    .liveUnrealizedPnl(storedUnrealizedPnl)
+                                    .isPnlLive(false)
+                                    .build());
+                        }
+                    })
+                    .switchIfEmpty(Mono.defer(() -> {
+                        log.debug("Redis key missing for live P&L: {}, using stored value", redisKey);
+                        return Mono.just(LivePnlData.builder()
+                                .liveUnrealizedPnl(storedUnrealizedPnl)
+                                .isPnlLive(false)
+                                .build());
+                    }));
+        } catch (Exception e) {
+            log.error("Error calculating live P&L for trade: {}", trade.getId(), e);
+            return Mono.just(LivePnlData.builder()
+                    .liveUnrealizedPnl(trade.getUnrealizedPnl())
+                    .isPnlLive(false)
+                    .build());
+        }
+    }
+
+    /**
+     * Calculates current value for Iron Condor by summing leg P&Ls.
+     * SELL legs: profit when premium decays (entry > current)
+     * BUY legs: profit when premium appreciates (current > entry)
+     *
+     * @param chainData the option chain data
+     * @param legs the trade legs
+     * @return Mono emitting the current value
+     */
+    private Mono<Double> calculateIronCondorCurrentValue(OptionChain chainData, List<TradeLeg> legs) {
+        try {
+            double totalCurrentValue = 0.0;
+            for (TradeLeg leg : legs) {
+                double currentLtp = extractLTP(chainData, leg);
+                totalCurrentValue += currentLtp;
+            }
+            return Mono.just(totalCurrentValue);
+        } catch (Exception e) {
+            log.error("Error calculating Iron Condor current value: {}", e.getMessage());
+            return Mono.just(0.0);
+        }
+    }
+
+    /**
+     * Calculates current value for spreads (Bull Put, Bear Call) by summing leg LTPs.
+     *
+     * @param chainData the option chain data
+     * @param legs the trade legs
+     * @return Mono emitting the current value
+     */
+    private Mono<Double> calculateSpreadCurrentValue(OptionChain chainData, List<TradeLeg> legs) {
+        try {
+            double totalCurrentValue = 0.0;
+            for (TradeLeg leg : legs) {
+                double currentLtp = extractLTP(chainData, leg);
+                totalCurrentValue += currentLtp;
+            }
+            return Mono.just(totalCurrentValue);
+        } catch (Exception e) {
+            log.error("Error calculating spread current value: {}", e.getMessage());
+            return Mono.just(0.0);
+        }
+    }
+
+    /**
+     * Calculates current value for default strategies by summing leg LTPs.
+     *
+     * @param chainData the option chain data
+     * @param legs the trade legs
+     * @return Mono emitting the current value
+     */
+    private Mono<Double> calculateDefaultCurrentValue(OptionChain chainData, List<TradeLeg> legs) {
+        try {
+            double totalCurrentValue = 0.0;
+            for (TradeLeg leg : legs) {
+                double currentLtp = extractLTP(chainData, leg);
+                totalCurrentValue += currentLtp;
+            }
+            return Mono.just(totalCurrentValue);
+        } catch (Exception e) {
+            log.error("Error calculating default current value: {}", e.getMessage());
+            return Mono.just(0.0);
+        }
     }
 }
