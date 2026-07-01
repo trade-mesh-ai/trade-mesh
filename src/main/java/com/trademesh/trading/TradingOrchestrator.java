@@ -116,13 +116,24 @@ public class TradingOrchestrator {
      * @param symbol trading symbol (e.g., "NIFTY", "BANKNIFTY")
      * @return Mono emitting the count of monitored positions
      */
-    public Mono<Integer> monitorOpenPositions(String symbol) {
-        log.debug("Monitoring open positions for symbol: {}", symbol);
+     public Mono<Integer> monitorOpenPositions(String symbol) {
+         log.debug("Monitoring open positions for symbol: {}", symbol);
 
-        return executionLogRepository.findOpenPositionsBySymbol(symbol)
-                .flatMap(position -> {
-                    // Get fresh intelligence
-                    return marketIntelligenceService.generateIntelligence(symbol)
+         return executionLogRepository.findOpenPositionsBySymbol(symbol)
+                 .flatMap(position -> {
+                     // TODO: Architectural Decision - Market Intelligence Freshness for Position Monitoring
+                     // CURRENT STATE: Uses cached generateIntelligence() because current exit logic
+                     // (mark-to-market only) does not depend on fresh VIX, Market Regime, or Open Interest.
+                     //
+                     // FUTURE RE-EVALUATION REQUIRED IF:
+                     // - VIX-based exit conditions are implemented
+                     // - Market Regime-based exits are added
+                     // - Open Interest-based exits are implemented
+                     // - Any other Market Intelligence-derived exit conditions are introduced
+                     //
+                     // When any of these conditions are met, evaluate whether fresh intelligence should
+                     // be fetched for each position monitoring cycle (similar to trade entry in runTradingCycle).
+                     return marketIntelligenceService.generateIntelligence(symbol)
                             .flatMap(intelligence -> {
                                 // Mark to market to update current value and P&L
                                 return paperTradingEngine.markToMarket(position)

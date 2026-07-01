@@ -206,6 +206,13 @@ public class ExpiryDayStrategy implements TradingStrategy {
         BigDecimal callStrike = intelligence.getOiAnalysis().getMaxCallOIStrike();
         BigDecimal putStrike = intelligence.getOiAnalysis().getMaxPutOIStrike();
 
+        // This check is missing entirely:
+        if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
+            log.warn("OI walls structurally invalid relative to spot — " +
+                    "callStrike={}, putStrike={}, spot={}", callStrike, putStrike, spotPrice);
+            return null;
+        }
+
         // --- ATR-scaled minimum distance (fail fast if unavailable) ---
         double atr14 = metrics.getAtr14() != null ? metrics.getAtr14().doubleValue() : 0.0;
         double atrMultiplier = strategyConfig().getExtraDouble("min-distance-atr-multiplier", 0.4);

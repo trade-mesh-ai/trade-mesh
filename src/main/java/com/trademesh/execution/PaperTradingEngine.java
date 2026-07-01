@@ -2,6 +2,7 @@ package com.trademesh.execution;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.alert.TelegramNotificationBot;
+import com.trademesh.config.LotSizeService;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
@@ -50,6 +51,7 @@ public class PaperTradingEngine {
     private final TelegramNotificationBot telegramNotificationBot;
     private final ObjectMapper objectMapper;
     private final StrategiesConfig strategiesConfig;
+    private final LotSizeService lotSizeService;
 
     /**
      * Executes a trade from a strategy signal.
@@ -237,10 +239,10 @@ public class PaperTradingEngine {
 
                                 if (leg.getAction() == Action.SELL) {
                                     // SELL legs: profit when premium decays
-                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity() * lotSize);
+                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
                                 } else {
                                     // BUY legs: profit when premium appreciates
-                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity() * lotSize);
+                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity());
                                 }
 
                                 totalPnl = totalPnl.add(legPnl);
@@ -381,8 +383,7 @@ public class PaperTradingEngine {
      * @return formatted alert message
      */
     private String formatIronCondorExitAlert(PaperTrade trade) {
-        Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
-        Double pnlAmount = trade.getRealizedPnl() * lotSize;
+        Double pnlAmount = trade.getRealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
 
         long durationMinutes = java.time.temporal.ChronoUnit.MINUTES.between(trade.getEntryTime(), trade.getExitTime());
         String duration = formatDuration(durationMinutes);
@@ -721,8 +722,7 @@ public class PaperTradingEngine {
      * @return formatted alert message
      */
     private String formatExitAlert(PaperTrade trade) {
-        Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 1);
-        Double pnlAmount = trade.getRealizedPnl() * lotSize;
+        Double pnlAmount = trade.getRealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
 
         long durationMinutes = java.time.temporal.ChronoUnit.MINUTES.between(trade.getEntryTime(), trade.getExitTime());
         String duration = formatDuration(durationMinutes);
@@ -821,10 +821,10 @@ public class PaperTradingEngine {
 
                                 if (leg.getAction() == Action.SELL) {
                                     // SELL legs: profit when premium decays
-                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity() * lotSize);
+                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
                                 } else {
                                     // BUY legs: profit when premium appreciates
-                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity() * lotSize);
+                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity());
                                 }
 
                                 totalPnl = totalPnl.add(legPnl);
