@@ -4,9 +4,6 @@ import com.trademesh.common.resilience.CircuitBreaker;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.time.Clock;
-import java.time.ZoneId;
-
 /**
  * Configures application-wide resilience components.
  */

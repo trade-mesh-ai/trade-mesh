@@ -19,11 +19,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -87,16 +83,16 @@ public class PaperTradingEngine {
             return Mono.empty();
         }
 
-         // Check if an OPEN trade already exists for this strategy (regardless of date)
-         // This prevents duplicate entries across multiple days once positions can survive overnight
-         return paperTradeRepository.existsByStrategyNameAndStatus(
-                 signal.getStrategyName(),
-                 TradeStatus.OPEN)
-                 .flatMap(hasOpenTrade -> {
-                     if (hasOpenTrade) {
-                         log.info("Open trade already exists for {}, skipping entry", signal.getStrategyName());
-                         return Mono.empty();
-                     }
+        // Check if an OPEN trade already exists for this strategy (regardless of date)
+        // This prevents duplicate entries across multiple days once positions can survive overnight
+        return paperTradeRepository.existsByStrategyNameAndStatus(
+                        signal.getStrategyName(),
+                        TradeStatus.OPEN)
+                .flatMap(hasOpenTrade -> {
+                    if (hasOpenTrade) {
+                        log.info("Open trade already exists for {}, skipping entry", signal.getStrategyName());
+                        return Mono.empty();
+                    }
 
                     // Create PaperTrade entity using factory method
                     LocalDateTime now = LocalDateTime.now(this.clock);
@@ -197,11 +193,11 @@ public class PaperTradingEngine {
      */
     private Mono<PaperTrade> markToMarketIronCondor(PaperTrade trade) {
         return Mono.zip(
-                calculateIronCondorPnl(trade),
-                vixMonitorService.fetchCurrentVix()
-                        .map(vixData -> vixData.getCurrentVix())
-                        .defaultIfEmpty(-1.0)
-        )
+                        calculateIronCondorPnl(trade),
+                        vixMonitorService.fetchCurrentVix()
+                                .map(vixData -> vixData.getCurrentVix())
+                                .defaultIfEmpty(-1.0)
+                )
                 .flatMap(tuple -> {
                     BigDecimal pnl = tuple.getT1();
                     double currentVix = tuple.getT2();
@@ -283,20 +279,20 @@ public class PaperTradingEngine {
         }
     }
 
-      /**
-       * Checks if Iron Condor position should be exited based on multiple conditions.
-       * Exit priority: VIX panic → leg breach → stop loss → profit target → force close time.
-       *
-       * @param trade         the Iron Condor paper trade
-       * @param unrealizedPnl the current unrealized P&L
-       * @param cfg           the Iron Condor strategy configuration
-       * @param currentVix    the current VIX value (or -1.0 if unavailable)
-       * @param currentTime   the current time for force-close-time check
-       * @return true if any exit condition is met, false otherwise
-       */
-      boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
-                                   com.trademesh.strategy.config.StrategyProperties cfg,
-                                   double currentVix, LocalTime currentTime) {
+    /**
+     * Checks if Iron Condor position should be exited based on multiple conditions.
+     * Exit priority: VIX panic → leg breach → stop loss → profit target → force close time.
+     *
+     * @param trade         the Iron Condor paper trade
+     * @param unrealizedPnl the current unrealized P&L
+     * @param cfg           the Iron Condor strategy configuration
+     * @param currentVix    the current VIX value (or -1.0 if unavailable)
+     * @param currentTime   the current time for force-close-time check
+     * @return true if any exit condition is met, false otherwise
+     */
+    boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                 com.trademesh.strategy.config.StrategyProperties cfg,
+                                 double currentVix, LocalTime currentTime) {
         // Check 0: VIX panic exit (highest priority)
         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
         if (currentVix > 0 && currentVix > vixPanicThreshold) {
@@ -308,46 +304,13 @@ public class PaperTradingEngine {
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
         // Check 1: DTE exit (scheduled wind-down)
-        List<TradeLeg> legs = trade.getLegs();
-        if (legs != null && !legs.isEmpty()) {
-            LocalDate expiryDate = legs.get(0).getExpiryDate();
-            if (expiryDate != null) {
-                int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", 2);
-                int tradingDaysRemaining = marketCalendarService.countTradingDays(
-                        LocalDate.now(this.clock), expiryDate);
-                if (tradingDaysRemaining <= dteExitThreshold) {
-                    log.info("DTE exit triggered for {} trade {}: {} trading days remaining (threshold: {})",
-                            cfg.getName(), trade.getId(), tradingDaysRemaining, dteExitThreshold);
-                    trade.setExitReason("DTE_EXIT");
-                    return true;
-                }
-            } else {
-                log.warn("Expiry date is null for Iron Condor trade {}, skipping DTE exit check", trade.getId());
-            }
-        } else {
-            log.warn("No legs found for Iron Condor trade {}, skipping DTE exit check", trade.getId());
+        if (isDteExitDue(trade, cfg, 2)) {
+            trade.setExitReason("DTE_EXIT");
+            return true;
         }
 
         // Check 2: Leg breach (spot crosses short strike)
-        if (legs != null && !legs.isEmpty()) {
-            // Find short strikes (SELL legs)
-            Double shortCallStrike = null;
-            Double shortPutStrike = null;
-
-            for (TradeLeg leg : legs) {
-                if (leg.getAction() == Action.SELL) {
-                    if (leg.getOptionType() == OptionType.CE) {
-                        shortCallStrike = leg.getStrikePrice();
-                    } else if (leg.getOptionType() == OptionType.PE) {
-                        shortPutStrike = leg.getStrikePrice();
-                    }
-                }
-            }
-
-            // Get current spot price from Redis (simplified: use first strike as reference)
-            // In production, fetch actual spot from market data
-            // For now, we'll skip spot check and rely on other conditions
-        }
+        // (Skipped for now — would require live spot price from market data)
 
         // Check 3: Stop loss
         BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
@@ -479,7 +442,7 @@ public class PaperTradingEngine {
                     // Guard: check if trade is still OPEN
                     if (freshTrade.getStatus() != TradeStatus.OPEN) {
                         log.warn("closeTrade() called on trade {} with status {} "
-                                + "(expected OPEN) — skipping duplicate close attempt",
+                                        + "(expected OPEN) — skipping duplicate close attempt",
                                 freshTrade.getId(), freshTrade.getStatus());
                         return Mono.just(freshTrade);
                     }
@@ -832,11 +795,11 @@ public class PaperTradingEngine {
      */
     private Mono<PaperTrade> markToMarketSpread(PaperTrade trade) {
         return Mono.zip(
-                calculateSpreadPnl(trade),
-                vixMonitorService.fetchCurrentVix()
-                        .map(vixData -> vixData.getCurrentVix())
-                        .defaultIfEmpty(-1.0)
-        )
+                        calculateSpreadPnl(trade),
+                        vixMonitorService.fetchCurrentVix()
+                                .map(vixData -> vixData.getCurrentVix())
+                                .defaultIfEmpty(-1.0)
+                )
                 .flatMap(tuple -> {
                     BigDecimal pnl = tuple.getT1();
                     double currentVix = tuple.getT2();
@@ -918,20 +881,61 @@ public class PaperTradingEngine {
         }
     }
 
-     /**
-      * Checks if spread position should be exited based on multiple conditions.
-      * Exit priority: VIX panic → stop loss → profit target → force close time.
-      *
-      * @param trade         the spread paper trade
-      * @param unrealizedPnl the current unrealized P&L
-      * @param cfg           the strategy configuration
-      * @param currentVix    the current VIX value (or -1.0 if unavailable)
-      * @param currentTime   the current time for force-close-time check
-      * @return true if any exit condition is met, false otherwise
-      */
-     boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
-                              com.trademesh.strategy.config.StrategyProperties cfg,
-                              double currentVix, LocalTime currentTime) {
+    /**
+     * Checks if a trade should be exited based on DTE (Days To Expiry).
+     *
+     * @param trade            the paper trade
+     * @param cfg              the strategy configuration
+     * @param defaultThreshold the default DTE threshold if config key is missing
+     * @return true if DTE exit condition is met, false otherwise
+     */
+    public boolean isDteExitDue(PaperTrade trade,
+                                com.trademesh.strategy.config.StrategyProperties cfg,
+                                int defaultThreshold) {
+        List<TradeLeg> legs = trade.getLegs();
+
+        // Guard: no legs
+        if (legs == null || legs.isEmpty()) {
+            log.warn("No legs found for trade {}, skipping DTE exit check", trade.getId());
+            return false;
+        }
+
+        LocalDate expiryDate = legs.get(0).getExpiryDate();
+
+        // Guard: no expiry date
+        if (expiryDate == null) {
+            log.warn("Expiry date is null for trade {}, skipping DTE exit check", trade.getId());
+            return false;
+        }
+
+        // Read threshold from config with explicit default (never hardcode)
+        int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", defaultThreshold);
+        int tradingDaysRemaining = marketCalendarService.countTradingDays(
+                LocalDate.now(this.clock), expiryDate);
+
+        if (tradingDaysRemaining <= dteExitThreshold) {
+            log.info("DTE exit due for trade {}: {} trading days remaining (threshold: {})",
+                    trade.getId(), tradingDaysRemaining, dteExitThreshold);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks if spread position should be exited based on multiple conditions.
+     * Exit priority: VIX panic → stop loss → profit target → force close time.
+     *
+     * @param trade         the spread paper trade
+     * @param unrealizedPnl the current unrealized P&L
+     * @param cfg           the strategy configuration
+     * @param currentVix    the current VIX value (or -1.0 if unavailable)
+     * @param currentTime   the current time for force-close-time check
+     * @return true if any exit condition is met, false otherwise
+     */
+    boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
+                             com.trademesh.strategy.config.StrategyProperties cfg,
+                             double currentVix, LocalTime currentTime) {
         // Check 0: VIX panic exit (highest priority)
         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
         if (currentVix > 0 && currentVix > vixPanicThreshold) {
@@ -943,24 +947,9 @@ public class PaperTradingEngine {
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
         // Check 1: DTE exit (scheduled wind-down)
-        List<TradeLeg> legs = trade.getLegs();
-        if (legs != null && !legs.isEmpty()) {
-            LocalDate expiryDate = legs.get(0).getExpiryDate();
-            if (expiryDate != null) {
-                int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", 1);
-                int tradingDaysRemaining = marketCalendarService.countTradingDays(
-                        LocalDate.now(this.clock), expiryDate);
-                if (tradingDaysRemaining <= dteExitThreshold) {
-                    log.info("DTE exit triggered for {} trade {}: {} trading days remaining (threshold: {})",
-                            cfg.getName(), trade.getId(), tradingDaysRemaining, dteExitThreshold);
-                    trade.setExitReason("DTE_EXIT");
-                    return true;
-                }
-            } else {
-                log.warn("Expiry date is null for spread trade {}, skipping DTE exit check", trade.getId());
-            }
-        } else {
-            log.warn("No legs found for spread trade {}, skipping DTE exit check", trade.getId());
+        if (isDteExitDue(trade, cfg, 1)) {
+            trade.setExitReason("DTE_EXIT");
+            return true;
         }
 
         // Check 2: Profit target
@@ -1049,7 +1038,7 @@ public class PaperTradingEngine {
      * Calculates live unrealized P&L for a position at read time from Redis.
      * This is a read-only operation that does NOT write to the database.
      * Used by REST endpoints to provide fresh P&L values without persisting.
-     *
+     * <p>
      * Process:
      * 1. Fetch current option chain from Redis using key optionchain:{symbol}
      * 2. Calculate current value by summing LTPs of all legs
@@ -1140,7 +1129,7 @@ public class PaperTradingEngine {
      * BUY legs: profit when premium appreciates (current > entry)
      *
      * @param chainData the option chain data
-     * @param legs the trade legs
+     * @param legs      the trade legs
      * @return Mono emitting the current value
      */
     private Mono<Double> calculateIronCondorCurrentValue(OptionChain chainData, List<TradeLeg> legs) {
@@ -1161,7 +1150,7 @@ public class PaperTradingEngine {
      * Calculates current value for spreads (Bull Put, Bear Call) by summing leg LTPs.
      *
      * @param chainData the option chain data
-     * @param legs the trade legs
+     * @param legs      the trade legs
      * @return Mono emitting the current value
      */
     private Mono<Double> calculateSpreadCurrentValue(OptionChain chainData, List<TradeLeg> legs) {
@@ -1182,7 +1171,7 @@ public class PaperTradingEngine {
      * Calculates current value for default strategies by summing leg LTPs.
      *
      * @param chainData the option chain data
-     * @param legs the trade legs
+     * @param legs      the trade legs
      * @return Mono emitting the current value
      */
     private Mono<Double> calculateDefaultCurrentValue(OptionChain chainData, List<TradeLeg> legs) {

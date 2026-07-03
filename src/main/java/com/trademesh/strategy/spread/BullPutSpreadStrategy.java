@@ -213,19 +213,19 @@ public class BullPutSpreadStrategy implements TradingStrategy {
         metadata.put("dte", String.valueOf(dte));
         metadata.put("currentVix", String.valueOf(currentVix));
 
-         return Mono.just(StrategyResult.builder()
-                 .signal(com.trademesh.strategy.TradeSignal.builder()
-                         .symbol("NIFTY50")
-                         .strategyName(getName())
-                         .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
-                         .legs(legs)
-                         .expectedCredit(netCredit.doubleValue())
-                         .maxLoss(maxLoss.doubleValue())
-                         .reason("Bull Put Spread: " + shortPutStrikePrice + "PE / " +
-                                 longPutStrikePrice + "PE | Credit: " + netCredit)
-                         .confidence(Confidence.MEDIUM)
-                         .metadata(metadata)
-                         .build())
+        return Mono.just(StrategyResult.builder()
+                .signal(com.trademesh.strategy.TradeSignal.builder()
+                        .symbol("NIFTY50")
+                        .strategyName(getName())
+                        .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
+                        .legs(legs)
+                        .expectedCredit(netCredit.doubleValue())
+                        .maxLoss(maxLoss.doubleValue())
+                        .reason("Bull Put Spread: " + shortPutStrikePrice + "PE / " +
+                                longPutStrikePrice + "PE | Credit: " + netCredit)
+                        .confidence(Confidence.MEDIUM)
+                        .metadata(metadata)
+                        .build())
                 .isExecutable(true)
                 .build());
     }

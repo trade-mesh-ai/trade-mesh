@@ -10,7 +10,7 @@ import java.util.Map;
 /**
  * Centralized service for managing lot sizes per trading symbol.
  * Provides a single source of truth for lot size configuration.
- *
+ * <p>
  * Lot sizes are fetched from trading.lot-sizes configuration with fallback to 1.
  * This ensures all components use consistent lot size values.
  */

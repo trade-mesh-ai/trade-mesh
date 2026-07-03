@@ -47,6 +47,28 @@ public class ExpiryDayStrategy implements TradingStrategy {
     }
 
     /**
+     * Rounds a value up to the nearest strike step.
+     *
+     * @param value the value to round
+     * @param step  the strike step (e.g., 50 for NIFTY)
+     * @return the rounded-up value
+     */
+    private static BigDecimal roundUpToStep(BigDecimal value, int step) {
+        return BigDecimal.valueOf(Math.ceil(value.doubleValue() / step) * step);
+    }
+
+    /**
+     * Rounds a value down to the nearest strike step.
+     *
+     * @param value the value to round
+     * @param step  the strike step (e.g., 50 for NIFTY)
+     * @return the rounded-down value
+     */
+    private static BigDecimal roundDownToStep(BigDecimal value, int step) {
+        return BigDecimal.valueOf(Math.floor(value.doubleValue() / step) * step);
+    }
+
+    /**
      * Retrieves this strategy's configuration from the unified strategies config.
      *
      * @return the StrategyProperties for EXPIRY_DAY_STRANGLE
@@ -190,7 +212,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
      * Returns StrikeSelection with validated strikes, or null if invalid.
      *
      * @param intelligence market intelligence data
-     * @param metrics market metrics including ATR14
+     * @param metrics      market metrics including ATR14
      * @return StrikeSelection or null
      */
     private StrikeSelection selectStrikes(MarketIntelligence intelligence, MarketMetrics metrics) {
@@ -239,7 +261,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
         if (callStrike.compareTo(boundaryCall) < 0) {
             log.info("Call OI wall {} inside ATR-scaled safety boundary {} " +
-                    "(ATR14={}, multiplier={}) — falling back to boundary strike",
+                            "(ATR14={}, multiplier={}) — falling back to boundary strike",
                     callStrike, boundaryCall, atr14, atrMultiplier);
             callStrike = boundaryCall;
             callFallbackUsed = true;
@@ -247,7 +269,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
         if (putStrike.compareTo(boundaryPut) > 0) {
             log.info("Put OI wall {} inside ATR-scaled safety boundary {} " +
-                    "(ATR14={}, multiplier={}) — falling back to boundary strike",
+                            "(ATR14={}, multiplier={}) — falling back to boundary strike",
                     putStrike, boundaryPut, atr14, atrMultiplier);
             putStrike = boundaryPut;
             putFallbackUsed = true;
@@ -383,7 +405,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
      * whether strikes were selected from OI walls or ATR boundaries.
      *
      * @param strikeSelection selected strikes with fallback tracking
-     * @param legsResult trade legs and credit
+     * @param legsResult      trade legs and credit
      * @return formatted reason string for Telegram alert
      */
     private String buildReasonString(StrikeSelection strikeSelection, TradeLegsResult legsResult) {
@@ -406,7 +428,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
             double mult = strikeSelection.getAtrMultiplier();
             return String.format(
                     "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. " +
-                    "CE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f). OI support: %d",
+                            "CE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f). OI support: %d",
                     callStrike, putStrike, credit, callStrike, oiCall, atr14, mult, putStrike
             );
         } else if (!callFallback && putFallback) {
@@ -416,7 +438,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
             double mult = strikeSelection.getAtrMultiplier();
             return String.format(
                     "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. " +
-                    "OI resistance: %d. PE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f)",
+                            "OI resistance: %d. PE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f)",
                     callStrike, putStrike, credit, callStrike, putStrike, oiPut, atr14, mult
             );
         } else {
@@ -427,7 +449,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
             double mult = strikeSelection.getAtrMultiplier();
             return String.format(
                     "Expiry day strangle: Sell %dCE + %dPE. Credit: %.1f pts. " +
-                    "Both strikes at ATR boundary (OI walls: %dCE / %dPE, ATR14: %.2f, mult: %.2f)",
+                            "Both strikes at ATR boundary (OI walls: %dCE / %dPE, ATR14: %.2f, mult: %.2f)",
                     callStrike, putStrike, credit, oiCall, oiPut, atr14, mult
             );
         }
@@ -460,28 +482,6 @@ public class ExpiryDayStrategy implements TradingStrategy {
             case "NIFTY50" -> "NIFTY";
             default -> symbol;
         };
-    }
-
-    /**
-     * Rounds a value up to the nearest strike step.
-     *
-     * @param value the value to round
-     * @param step the strike step (e.g., 50 for NIFTY)
-     * @return the rounded-up value
-     */
-    private static BigDecimal roundUpToStep(BigDecimal value, int step) {
-        return BigDecimal.valueOf(Math.ceil(value.doubleValue() / step) * step);
-    }
-
-    /**
-     * Rounds a value down to the nearest strike step.
-     *
-     * @param value the value to round
-     * @param step the strike step (e.g., 50 for NIFTY)
-     * @return the rounded-down value
-     */
-    private static BigDecimal roundDownToStep(BigDecimal value, int step) {
-        return BigDecimal.valueOf(Math.floor(value.doubleValue() / step) * step);
     }
 
     /**

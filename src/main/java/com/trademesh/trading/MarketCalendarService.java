@@ -77,12 +77,12 @@ public class MarketCalendarService {
 
     /**
      * Counts the number of trading days strictly after 'from' up to and including 'to'.
-     *
+     * <p>
      * If from == to, returns 0 (no trading days strictly after from).
      * If to is before from, returns 0 (no valid range).
      *
      * @param from the start date (exclusive)
-     * @param to the end date (inclusive)
+     * @param to   the end date (inclusive)
      * @return the count of trading days in the range (from, to]
      */
     public int countTradingDays(LocalDate from, LocalDate to) {

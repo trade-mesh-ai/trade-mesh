@@ -1,9 +1,10 @@
 package com.trademesh.trading;
 
-import com.trademesh.execution.PaperTradingEngine;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.execution.PaperTrade;
-import com.trademesh.execution.TradeStatus;
 import com.trademesh.execution.PaperTradeRepository;
+import com.trademesh.execution.PaperTradingEngine;
+import com.trademesh.execution.TradeStatus;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.intelligence.vix.VixData;
@@ -11,25 +12,20 @@ import com.trademesh.risk.RiskManager;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.StrategySelector;
 import com.trademesh.strategy.TradeSignal;
+import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.enums.Confidence;
 import com.trademesh.strategy.enums.SignalType;
-import com.trademesh.alert.TelegramNotificationBot;
-import com.trademesh.trading.StrategyExecutionLog;
-import com.trademesh.trading.StrategyExecutionLogRepository;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -65,6 +61,9 @@ class TradingOrchestratorConcurrentPositionLimitTest {
     @Mock
     private PaperTradeRepository paperTradeRepository;
 
+    @Mock
+    private StrategiesConfig strategiesConfig;
+
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
@@ -72,6 +71,8 @@ class TradingOrchestratorConcurrentPositionLimitTest {
                 marketIntelligenceService,
                 strategySelector,
                 paperTradingEngine,
+                paperTradeRepository,
+                strategiesConfig,
                 telegramNotificationBot,
                 executionLogRepository,
                 riskManager

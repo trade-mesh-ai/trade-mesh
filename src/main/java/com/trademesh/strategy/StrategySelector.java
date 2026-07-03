@@ -129,45 +129,45 @@ public class StrategySelector {
                 });
     }
 
-     /**
-      * Selects a strategy from applicable ones based on priority for the given condition.
-      *
-      * <p>Priority logic:
-      * <ul>
-      *   <li>EXPIRY_DAY → ExpiryDayStrategy first</li>
-      *   <li>SIDEWAYS → ThetaSpreadStrategy first</li>
-      *   <li>TRENDING_BULLISH → BullPutSpreadStrategy first</li>
-      *   <li>TRENDING_BEARISH → BearCallSpreadStrategy first</li>
-      * </ul>
-      *
-      * @param applicableStrategies list of strategies applicable to the condition
-      * @param condition            market condition
-      * @return selected strategy or null if none match priority
-      */
-     private TradingStrategy selectByPriority(List<TradingStrategy> applicableStrategies,
-                                              MarketCondition condition) {
-         return switch (condition) {
-             case EXPIRY_DAY -> applicableStrategies.stream()
-                     .filter(s -> s.getName().equals("EXPIRY_DAY_STRANGLE"))
-                     .findFirst()
-                     .orElse(null);
+    /**
+     * Selects a strategy from applicable ones based on priority for the given condition.
+     *
+     * <p>Priority logic:
+     * <ul>
+     *   <li>EXPIRY_DAY → ExpiryDayStrategy first</li>
+     *   <li>SIDEWAYS → ThetaSpreadStrategy first</li>
+     *   <li>TRENDING_BULLISH → BullPutSpreadStrategy first</li>
+     *   <li>TRENDING_BEARISH → BearCallSpreadStrategy first</li>
+     * </ul>
+     *
+     * @param applicableStrategies list of strategies applicable to the condition
+     * @param condition            market condition
+     * @return selected strategy or null if none match priority
+     */
+    private TradingStrategy selectByPriority(List<TradingStrategy> applicableStrategies,
+                                             MarketCondition condition) {
+        return switch (condition) {
+            case EXPIRY_DAY -> applicableStrategies.stream()
+                    .filter(s -> s.getName().equals("EXPIRY_DAY_STRANGLE"))
+                    .findFirst()
+                    .orElse(null);
 
-             case SIDEWAYS -> applicableStrategies.stream()
-                     .filter(s -> s.getName().equals("IRON_CONDOR"))
-                     .findFirst()
-                     .orElse(null);
+            case SIDEWAYS -> applicableStrategies.stream()
+                    .filter(s -> s.getName().equals("IRON_CONDOR"))
+                    .findFirst()
+                    .orElse(null);
 
-             case TRENDING_BULLISH -> applicableStrategies.stream()
-                     .filter(s -> s.getName().equals("BULL_PUT_SPREAD"))
-                     .findFirst()
-                     .orElse(null);
+            case TRENDING_BULLISH -> applicableStrategies.stream()
+                    .filter(s -> s.getName().equals("BULL_PUT_SPREAD"))
+                    .findFirst()
+                    .orElse(null);
 
-             case TRENDING_BEARISH -> applicableStrategies.stream()
-                     .filter(s -> s.getName().equals("BEAR_CALL_SPREAD"))
-                     .findFirst()
-                     .orElse(null);
+            case TRENDING_BEARISH -> applicableStrategies.stream()
+                    .filter(s -> s.getName().equals("BEAR_CALL_SPREAD"))
+                    .findFirst()
+                    .orElse(null);
 
-             default -> null;
-         };
-     }
+            default -> null;
+        };
+    }
 }

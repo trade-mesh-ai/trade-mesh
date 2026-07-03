@@ -171,13 +171,13 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
-         double tte = dte / 365.0;
-         double atmIv = metrics.getCurrentAtmIv() != null ?
-                 metrics.getCurrentAtmIv().doubleValue() : 15.0;
-         double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
-         int wingWidth = cfg.getExtraInt("wing-width", 200);
-         int lotSize = lotSizeService.getLotSize("NIFTY50");
-         int lots = cfg.getMaxLots();
+        double tte = dte / 365.0;
+        double atmIv = metrics.getCurrentAtmIv() != null ?
+                metrics.getCurrentAtmIv().doubleValue() : 15.0;
+        double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
+        int wingWidth = cfg.getExtraInt("wing-width", 200);
+        int lotSize = lotSizeService.getLotSize("NIFTY50");
+        int lots = cfg.getMaxLots();
 
         // Find short CALL strike (first strike with delta <= targetDelta, above spot)
         OptionStrike callStrike = chain.getStrikes().stream()
@@ -451,8 +451,8 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         metadata.put("currentAtmIv", signal.getCurrentAtmIv() != null ? signal.getCurrentAtmIv().toString() : "0");
 
                                                         Confidence confidence = score >= 70 ? Confidence.HIGH
-                                                                              : score >= 50 ? Confidence.MEDIUM
-                                                                              : Confidence.LOW;
+                                                                : score >= 50 ? Confidence.MEDIUM
+                                                                  : Confidence.LOW;
                                                         return StrategyResult.builder()
                                                                 .signal(com.trademesh.strategy.TradeSignal.builder()
                                                                         .symbol("NIFTY50")

@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
@@ -148,7 +147,7 @@ public class TradingController {
                                 response.put("count", positionPnlPairs.size());
                                 response.put("positions", positionPnlPairs.stream().map(pair -> {
                                     PaperTrade trade = (PaperTrade) pair[0];
-                                    com.trademesh.execution.LivePnlData livePnlData = 
+                                    com.trademesh.execution.LivePnlData livePnlData =
                                             (com.trademesh.execution.LivePnlData) pair[1];
 
                                     Map<String, Object> tradeInfo = new HashMap<>();
@@ -158,7 +157,7 @@ public class TradingController {
                                     tradeInfo.put("entryCredit", trade.getEntryCredit());
                                     tradeInfo.put("currentValue", trade.getCurrentValue());
                                     tradeInfo.put("unrealizedPnl", Math.round(trade.getUnrealizedPnl() * 100.0) / 100.0);
-                                    tradeInfo.put("liveUnrealizedPnl", 
+                                    tradeInfo.put("liveUnrealizedPnl",
                                             Math.round(livePnlData.getLiveUnrealizedPnl() * 100.0) / 100.0);
                                     tradeInfo.put("isPnlLive", livePnlData.getIsPnlLive());
                                     tradeInfo.put("entryTime", trade.getEntryTime());

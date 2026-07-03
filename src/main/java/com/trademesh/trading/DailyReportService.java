@@ -39,41 +39,6 @@ public class DailyReportService {
     private final LotSizeService lotSizeService;
 
     /**
-     * Package-private nested class holding aggregated daily trading metrics.
-     * <p>
-     * Contains all calculated metrics for a single trading day:
-     * - Trade counts (total, winning, losing)
-     * - P&L values (total, best, worst) in both points and rupees
-     * - Win rate percentage
-     * - Best and worst trade references
-     */
-    static class DailyReportMetrics {
-        public int totalTrades;
-        public long winningTrades;
-        public long losingTrades;
-        public double totalPnl;
-        public PaperTrade bestTrade;
-        public PaperTrade worstTrade;
-        public double winRate;
-        public double totalPnlAmount;
-        public double bestPnlAmount;
-        public double worstPnlAmount;
-
-        DailyReportMetrics() {
-            this.totalTrades = 0;
-            this.winningTrades = 0;
-            this.losingTrades = 0;
-            this.totalPnl = 0;
-            this.bestTrade = null;
-            this.worstTrade = null;
-            this.winRate = 0;
-            this.totalPnlAmount = 0;
-            this.bestPnlAmount = 0;
-            this.worstPnlAmount = 0;
-        }
-    }
-
-    /**
      * Computes aggregated daily trading metrics from a list of trades.
      * <p>
      * Calculates all metrics including trade counts, P&L values (in points and rupees),
@@ -105,17 +70,17 @@ public class DailyReportService {
                 .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
                 .sum();
 
-         // Best trade: highest realizedPnl, with exitTime ascending as tie-breaker
-         metrics.bestTrade = trades.stream()
-                 .max(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
-                         .thenComparing(PaperTrade::getExitTime, Comparator.reverseOrder()))
-                 .orElse(null);
+        // Best trade: highest realizedPnl, with exitTime ascending as tie-breaker
+        metrics.bestTrade = trades.stream()
+                .max(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                        .thenComparing(PaperTrade::getExitTime, Comparator.reverseOrder()))
+                .orElse(null);
 
-         // Worst trade: lowest realizedPnl, with exitTime ascending as tie-breaker
-         metrics.worstTrade = trades.stream()
-                 .min(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
-                         .thenComparing(PaperTrade::getExitTime))
-                 .orElse(null);
+        // Worst trade: lowest realizedPnl, with exitTime ascending as tie-breaker
+        metrics.worstTrade = trades.stream()
+                .min(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                        .thenComparing(PaperTrade::getExitTime))
+                .orElse(null);
 
         metrics.winRate = metrics.totalTrades > 0 ? (metrics.winningTrades * 100.0) / metrics.totalTrades : 0;
 
@@ -250,6 +215,41 @@ public class DailyReportService {
         return telegramNotificationBot.sendAlert(alert)
                 .doOnSuccess(v -> log.info("No trades alert sent"))
                 .doOnError(e -> log.error("Error sending no trades alert: {}", e.getMessage(), e));
+    }
+
+    /**
+     * Package-private nested class holding aggregated daily trading metrics.
+     * <p>
+     * Contains all calculated metrics for a single trading day:
+     * - Trade counts (total, winning, losing)
+     * - P&L values (total, best, worst) in both points and rupees
+     * - Win rate percentage
+     * - Best and worst trade references
+     */
+    static class DailyReportMetrics {
+        public int totalTrades;
+        public long winningTrades;
+        public long losingTrades;
+        public double totalPnl;
+        public PaperTrade bestTrade;
+        public PaperTrade worstTrade;
+        public double winRate;
+        public double totalPnlAmount;
+        public double bestPnlAmount;
+        public double worstPnlAmount;
+
+        DailyReportMetrics() {
+            this.totalTrades = 0;
+            this.winningTrades = 0;
+            this.losingTrades = 0;
+            this.totalPnl = 0;
+            this.bestTrade = null;
+            this.worstTrade = null;
+            this.winRate = 0;
+            this.totalPnlAmount = 0;
+            this.bestPnlAmount = 0;
+            this.worstPnlAmount = 0;
+        }
     }
 
 }

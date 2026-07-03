@@ -83,7 +83,7 @@ public class MarketIntelligenceService {
      * Always performs a fresh fetch of all components (option chain, VIX, OI analysis).
      * The result is written to Redis cache after generation, refreshing the cache for
      * read-only callers.
-     *
+     * <p>
      * This method is intended for trade-execution paths where decision freshness is critical.
      * Read-only endpoints should use generateIntelligence() to benefit from caching.
      *
@@ -105,7 +105,7 @@ public class MarketIntelligenceService {
     /**
      * Caches the given intelligence in Redis with the configured TTL.
      *
-     * @param symbol trading symbol
+     * @param symbol       trading symbol
      * @param intelligence the market intelligence to cache
      * @return Mono emitting the cached intelligence
      */

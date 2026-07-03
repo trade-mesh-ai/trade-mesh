@@ -14,14 +14,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -249,7 +245,7 @@ class PaperTradingEngineDteExitTest {
         // Arrange
         LocalDate firstLegExpiry = LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(4); // 2 trading days
         LocalDate secondLegExpiry = LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(11); // 5 trading days
-        
+
         when(ironCondorConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
         when(ironCondorConfig.getExtraInt("dte-exit-threshold", 2)).thenReturn(2);
         when(marketCalendarService.countTradingDays(any(LocalDate.class), eq(firstLegExpiry))).thenReturn(2);
