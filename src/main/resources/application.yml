@@ -181,6 +181,7 @@ trading-strategies:
       wing-width: 100
       strike-step: 50
       min-credit-pct: 0.10
+      vix-panic-threshold: 25.0
 
   - name: BEAR_CALL_SPREAD
     enabled: true
@@ -200,6 +201,7 @@ trading-strategies:
       wing-width: 100
       strike-step: 50
       min-credit-pct: 0.10
+      vix-panic-threshold: 25.0
 
   - name: IRON_CONDOR
     enabled: true

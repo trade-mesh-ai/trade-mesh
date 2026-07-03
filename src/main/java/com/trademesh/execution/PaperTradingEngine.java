@@ -3,6 +3,7 @@ package com.trademesh.execution;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.config.LotSizeService;
+import com.trademesh.intelligence.vix.VixMonitorService;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.TradeSignal;
@@ -52,6 +53,7 @@ public class PaperTradingEngine {
     private final ObjectMapper objectMapper;
     private final StrategiesConfig strategiesConfig;
     private final LotSizeService lotSizeService;
+    private final VixMonitorService vixMonitorService;
 
     /**
      * Executes a trade from a strategy signal.
@@ -190,15 +192,23 @@ public class PaperTradingEngine {
      * @return Mono emitting the updated or closed PaperTrade
      */
     private Mono<PaperTrade> markToMarketIronCondor(PaperTrade trade) {
-        return calculateIronCondorPnl(trade)
-                .flatMap(pnl -> {
+        return Mono.zip(
+                calculateIronCondorPnl(trade),
+                vixMonitorService.fetchCurrentVix()
+                        .map(vixData -> vixData.getCurrentVix())
+                        .defaultIfEmpty(-1.0)
+        )
+                .flatMap(tuple -> {
+                    BigDecimal pnl = tuple.getT1();
+                    double currentVix = tuple.getT2();
+
                     trade.setUnrealizedPnl(pnl.doubleValue());
                     trade.setCurrentValue(trade.getEntryCredit() - pnl.doubleValue());
                     trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
 
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy("IRON_CONDOR");
 
-                    if (shouldExitIronCondor(trade, pnl, cfg)) {
+                    if (shouldExitIronCondor(trade, pnl, cfg, currentVix)) {
                         return closeIronCondorTrade(trade);
                     }
 
@@ -268,23 +278,28 @@ public class PaperTradingEngine {
         }
     }
 
-    /**
-     * Checks if Iron Condor position should be exited based on multiple conditions.
-     * Exit priority: leg breach → stop loss → profit target → force close time.
-     *
-     * @param trade         the Iron Condor paper trade
-     * @param unrealizedPnl the current unrealized P&L
-     * @param cfg           the Iron Condor strategy configuration
-     * @return true if any exit condition is met, false otherwise
-     */
-    private boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
-                                         com.trademesh.strategy.config.StrategyProperties cfg) {
-        // TODO: VIX panic check (requires VixMonitorService injection)
-        // if (vixMonitor.getCurrentVix() > cfg.getExtraDouble("vix-panic-threshold", 25.0)) {
-        //     log.warn("VIX panic detected for Iron Condor trade {}", trade.getId());
-        //     trade.setExitReason("VIX_PANIC");
-        //     return true;
-        // }
+     /**
+      * Checks if Iron Condor position should be exited based on multiple conditions.
+      * Exit priority: VIX panic → leg breach → stop loss → profit target → force close time.
+      *
+      * @param trade         the Iron Condor paper trade
+      * @param unrealizedPnl the current unrealized P&L
+      * @param cfg           the Iron Condor strategy configuration
+      * @param currentVix    the current VIX value (or -1.0 if unavailable)
+      * @return true if any exit condition is met, false otherwise
+      */
+     boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                  com.trademesh.strategy.config.StrategyProperties cfg,
+                                  double currentVix) {
+        // Check 0: VIX panic exit (highest priority)
+        double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
+        if (currentVix > 0 && currentVix > vixPanicThreshold) {
+            log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
+                    cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
+            trade.setExitReason("VIX_PANIC");
+            return true;
+        }
+        // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
         // Check 1: Leg breach (spot crosses short strike)
         List<TradeLeg> legs = trade.getLegs();
@@ -791,8 +806,16 @@ public class PaperTradingEngine {
      * @return Mono emitting the updated or closed PaperTrade
      */
     private Mono<PaperTrade> markToMarketSpread(PaperTrade trade) {
-        return calculateSpreadPnl(trade)
-                .flatMap(pnl -> {
+        return Mono.zip(
+                calculateSpreadPnl(trade),
+                vixMonitorService.fetchCurrentVix()
+                        .map(vixData -> vixData.getCurrentVix())
+                        .defaultIfEmpty(-1.0)
+        )
+                .flatMap(tuple -> {
+                    BigDecimal pnl = tuple.getT1();
+                    double currentVix = tuple.getT2();
+
                     trade.setUnrealizedPnl(pnl.doubleValue());
                     trade.setCurrentValue(trade.getEntryCredit() - pnl.doubleValue());
                     trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
@@ -800,7 +823,7 @@ public class PaperTradingEngine {
                     String strategyName = trade.getStrategyName();
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
 
-                    if (shouldExitSpread(trade, pnl, cfg)) {
+                    if (shouldExitSpread(trade, pnl, cfg, currentVix)) {
                         return closeSpreadTrade(trade);
                     }
 
@@ -870,17 +893,29 @@ public class PaperTradingEngine {
         }
     }
 
-    /**
-     * Checks if spread position should be exited based on multiple conditions.
-     * Exit priority: stop loss → profit target → force close time.
-     *
-     * @param trade         the spread paper trade
-     * @param unrealizedPnl the current unrealized P&L
-     * @param cfg           the strategy configuration
-     * @return true if any exit condition is met, false otherwise
-     */
-    private boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
-                                     com.trademesh.strategy.config.StrategyProperties cfg) {
+     /**
+      * Checks if spread position should be exited based on multiple conditions.
+      * Exit priority: VIX panic → stop loss → profit target → force close time.
+      *
+      * @param trade         the spread paper trade
+      * @param unrealizedPnl the current unrealized P&L
+      * @param cfg           the strategy configuration
+      * @param currentVix    the current VIX value (or -1.0 if unavailable)
+      * @return true if any exit condition is met, false otherwise
+      */
+     boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
+                              com.trademesh.strategy.config.StrategyProperties cfg,
+                              double currentVix) {
+        // Check 0: VIX panic exit (highest priority)
+        double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
+        if (currentVix > 0 && currentVix > vixPanicThreshold) {
+            log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
+                    cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
+            trade.setExitReason("VIX_PANIC");
+            return true;
+        }
+        // currentVix <= 0 means VIX data was unavailable — skip this check silently
+
         // Check 1: Profit target
         BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
         double targetPct = cfg.getTargetProfitPercent() / 100.0;

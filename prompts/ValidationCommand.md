@@ -11,11 +11,12 @@ OUTPUT for each:
 
 1. ./gradlew test --tests "com.trademesh.trading.DailyReportServiceTest" --info
    All 4 tests individually, tie-break test must show PASSED.
+2. ./gradlew test --tests "com.trademesh.execution.PaperTradingEngineVixPanicTest" --info
 
 2. ./gradlew test (full suite)
    Confirm 127 tests completed, 0 failed.
 
-3. git diff -- src/main/java/com/trademesh/trading/DailyReportService.java
+3. git diff -- src/main/java/com/trademesh/trading/PaperTradingEngine.java
    Must show ONLY bestTrade's comparator changed.
 
 4. grep -rn "reverseOrder\|getExitTime" src/main/java/com/trademesh/trading/
