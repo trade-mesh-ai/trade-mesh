@@ -10,6 +10,7 @@ import com.trademesh.strategy.TradeSignal;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.trading.MarketCalendarService;
 import com.trademesh.zerodha.options.OptionChain;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,7 @@ public class PaperTradingEngine {
     private final StrategiesConfig strategiesConfig;
     private final LotSizeService lotSizeService;
     private final VixMonitorService vixMonitorService;
+    private final MarketCalendarService marketCalendarService;
 
     /**
      * Executes a trade from a strategy signal.
@@ -301,8 +303,28 @@ public class PaperTradingEngine {
         }
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
-        // Check 1: Leg breach (spot crosses short strike)
+        // Check 1: DTE exit (scheduled wind-down)
         List<TradeLeg> legs = trade.getLegs();
+        if (legs != null && !legs.isEmpty()) {
+            LocalDate expiryDate = legs.get(0).getExpiryDate();
+            if (expiryDate != null) {
+                int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", 2);
+                int tradingDaysRemaining = marketCalendarService.countTradingDays(
+                        LocalDate.now(ZoneId.of("Asia/Kolkata")), expiryDate);
+                if (tradingDaysRemaining <= dteExitThreshold) {
+                    log.info("DTE exit triggered for {} trade {}: {} trading days remaining (threshold: {})",
+                            cfg.getName(), trade.getId(), tradingDaysRemaining, dteExitThreshold);
+                    trade.setExitReason("DTE_EXIT");
+                    return true;
+                }
+            } else {
+                log.warn("Expiry date is null for Iron Condor trade {}, skipping DTE exit check", trade.getId());
+            }
+        } else {
+            log.warn("No legs found for Iron Condor trade {}, skipping DTE exit check", trade.getId());
+        }
+
+        // Check 2: Leg breach (spot crosses short strike)
         if (legs != null && !legs.isEmpty()) {
             // Find short strikes (SELL legs)
             Double shortCallStrike = null;
@@ -323,7 +345,7 @@ public class PaperTradingEngine {
             // For now, we'll skip spot check and rely on other conditions
         }
 
-        // Check 2: Stop loss
+        // Check 3: Stop loss
         BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
         double slPct = cfg.getStopLossPercent() / 100.0;
         BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
@@ -335,7 +357,7 @@ public class PaperTradingEngine {
             return true;
         }
 
-        // Check 3: Profit target
+        // Check 4: Profit target
         double targetPct = cfg.getTargetProfitPercent() / 100.0;
         BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
 
@@ -346,7 +368,7 @@ public class PaperTradingEngine {
             return true;
         }
 
-        // Check 4: Force close time
+        // Check 5: Force close time
         String forceCloseTimeStr = cfg.getExtraDouble("force-close-time", 0) > 0 ?
                 "15:15" : null;
         if (forceCloseTimeStr != null) {
@@ -916,7 +938,28 @@ public class PaperTradingEngine {
         }
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
-        // Check 1: Profit target
+        // Check 1: DTE exit (scheduled wind-down)
+        List<TradeLeg> legs = trade.getLegs();
+        if (legs != null && !legs.isEmpty()) {
+            LocalDate expiryDate = legs.get(0).getExpiryDate();
+            if (expiryDate != null) {
+                int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", 1);
+                int tradingDaysRemaining = marketCalendarService.countTradingDays(
+                        LocalDate.now(ZoneId.of("Asia/Kolkata")), expiryDate);
+                if (tradingDaysRemaining <= dteExitThreshold) {
+                    log.info("DTE exit triggered for {} trade {}: {} trading days remaining (threshold: {})",
+                            cfg.getName(), trade.getId(), tradingDaysRemaining, dteExitThreshold);
+                    trade.setExitReason("DTE_EXIT");
+                    return true;
+                }
+            } else {
+                log.warn("Expiry date is null for spread trade {}, skipping DTE exit check", trade.getId());
+            }
+        } else {
+            log.warn("No legs found for spread trade {}, skipping DTE exit check", trade.getId());
+        }
+
+        // Check 3: Profit target
         BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
         double targetPct = cfg.getTargetProfitPercent() / 100.0;
         BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
@@ -928,7 +971,7 @@ public class PaperTradingEngine {
             return true;
         }
 
-        // Check 2: Stop loss (based on wing width and max loss)
+        // Check 4: Stop loss (based on wing width and max loss)
         int wingWidth = cfg.getExtraInt("wing-width", 100);
         Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
         BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize);
@@ -942,7 +985,7 @@ public class PaperTradingEngine {
             return true;
         }
 
-        // Check 3: Force close time
+        // Check 5: Force close time
         try {
             LocalTime forceCloseTime = LocalTime.parse("15:15", DateTimeFormatter.ofPattern("HH:mm"));
             LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));

@@ -51,7 +51,7 @@ class PaperTradingEngineVixPanicTest {
     void setUp() {
         // Create a minimal PaperTradingEngine instance with null dependencies
         // (we only test the shouldExitIronCondor/shouldExitSpread methods which don't use other fields)
-        engine = new PaperTradingEngine(null, null, null, null, null, null, null);
+        engine = new PaperTradingEngine(null, null, null, null, null, null, null, null);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

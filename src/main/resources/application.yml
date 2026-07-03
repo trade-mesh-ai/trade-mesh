@@ -177,6 +177,7 @@ trading-strategies:
     extra:
       dte-min: 1
       dte-max: 4
+      dte-exit-threshold: 1
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -197,6 +198,7 @@ trading-strategies:
     extra:
       dte-min: 1
       dte-max: 4
+      dte-exit-threshold: 1
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -226,6 +228,7 @@ trading-strategies:
       atr-pct-max: 1.0
       dte-min: 1
       dte-max: 4
+      dte-exit-threshold: 2
       atr-calm-threshold: 0.7
       atr-high-threshold: 1.0
       calm-target-multiplier: 0.9
