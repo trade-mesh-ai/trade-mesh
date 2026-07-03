@@ -4,6 +4,9 @@ import com.trademesh.common.resilience.CircuitBreaker;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Clock;
+import java.time.ZoneId;
+
 /**
  * Configures application-wide resilience components.
  */
@@ -14,4 +17,5 @@ public class ResilienceConfig {
     public CircuitBreaker orderCircuitBreaker() {
         return new CircuitBreaker("orders", 5, 2, 30);
     }
+
 }

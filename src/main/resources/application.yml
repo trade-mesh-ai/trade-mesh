@@ -244,6 +244,7 @@ risk:
   daily-loss-limit-percent: 2.0
   max-sector-exposure: 50000
   min-margin-buffer-percent: 10
+  max-concurrent-open-positions: 3
   position-sizing:
     risk-percent: 1.0
     max-quantity: 10

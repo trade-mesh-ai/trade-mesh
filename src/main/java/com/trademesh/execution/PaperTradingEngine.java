@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -56,6 +57,7 @@ public class PaperTradingEngine {
     private final LotSizeService lotSizeService;
     private final VixMonitorService vixMonitorService;
     private final MarketCalendarService marketCalendarService;
+    private final Clock clock = Clock.system(ZoneId.of("Asia/Kolkata"));
 
     /**
      * Executes a trade from a strategy signal.
@@ -85,20 +87,20 @@ public class PaperTradingEngine {
             return Mono.empty();
         }
 
-        // Check if an OPEN trade already exists for this strategy today
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        return paperTradeRepository.existsByStrategyNameAndTradeDateAndStatus(
-                signal.getStrategyName(),
-                today,
-                TradeStatus.OPEN)
-                .flatMap(hasOpenTrade -> {
-                    if (hasOpenTrade) {
-                        log.info("Open trade already exists for {} today, skipping entry", signal.getStrategyName());
-                        return Mono.empty();
-                    }
+         // Check if an OPEN trade already exists for this strategy (regardless of date)
+         // This prevents duplicate entries across multiple days once positions can survive overnight
+         return paperTradeRepository.existsByStrategyNameAndStatus(
+                 signal.getStrategyName(),
+                 TradeStatus.OPEN)
+                 .flatMap(hasOpenTrade -> {
+                     if (hasOpenTrade) {
+                         log.info("Open trade already exists for {}, skipping entry", signal.getStrategyName());
+                         return Mono.empty();
+                     }
 
                     // Create PaperTrade entity using factory method
-                    LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+                    LocalDateTime now = LocalDateTime.now(this.clock);
+                    LocalDate today = LocalDate.now(this.clock);
                     PaperTrade trade = PaperTrade.createNew();
                     trade.setTradeDate(today);
                     trade.setSymbol(signal.getSymbol());
@@ -164,7 +166,7 @@ public class PaperTradingEngine {
                 .flatMap(currentValue -> {
                     trade.setCurrentValue(currentValue);
                     trade.setUnrealizedPnl(trade.getEntryCredit() - currentValue);
-                    trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
                     // Check stop loss: if currentValue > entryCredit × 2
                     if (currentValue > trade.getEntryCredit() * 2) {
@@ -206,11 +208,12 @@ public class PaperTradingEngine {
 
                     trade.setUnrealizedPnl(pnl.doubleValue());
                     trade.setCurrentValue(trade.getEntryCredit() - pnl.doubleValue());
-                    trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy("IRON_CONDOR");
+                    LocalTime currentTime = LocalTime.now(this.clock);
 
-                    if (shouldExitIronCondor(trade, pnl, cfg, currentVix)) {
+                    if (shouldExitIronCondor(trade, pnl, cfg, currentVix, currentTime)) {
                         return closeIronCondorTrade(trade);
                     }
 
@@ -280,19 +283,20 @@ public class PaperTradingEngine {
         }
     }
 
-     /**
-      * Checks if Iron Condor position should be exited based on multiple conditions.
-      * Exit priority: VIX panic → leg breach → stop loss → profit target → force close time.
-      *
-      * @param trade         the Iron Condor paper trade
-      * @param unrealizedPnl the current unrealized P&L
-      * @param cfg           the Iron Condor strategy configuration
-      * @param currentVix    the current VIX value (or -1.0 if unavailable)
-      * @return true if any exit condition is met, false otherwise
-      */
-     boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
-                                  com.trademesh.strategy.config.StrategyProperties cfg,
-                                  double currentVix) {
+      /**
+       * Checks if Iron Condor position should be exited based on multiple conditions.
+       * Exit priority: VIX panic → leg breach → stop loss → profit target → force close time.
+       *
+       * @param trade         the Iron Condor paper trade
+       * @param unrealizedPnl the current unrealized P&L
+       * @param cfg           the Iron Condor strategy configuration
+       * @param currentVix    the current VIX value (or -1.0 if unavailable)
+       * @param currentTime   the current time for force-close-time check
+       * @return true if any exit condition is met, false otherwise
+       */
+      boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                   com.trademesh.strategy.config.StrategyProperties cfg,
+                                   double currentVix, LocalTime currentTime) {
         // Check 0: VIX panic exit (highest priority)
         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
         if (currentVix > 0 && currentVix > vixPanicThreshold) {
@@ -310,7 +314,7 @@ public class PaperTradingEngine {
             if (expiryDate != null) {
                 int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", 2);
                 int tradingDaysRemaining = marketCalendarService.countTradingDays(
-                        LocalDate.now(ZoneId.of("Asia/Kolkata")), expiryDate);
+                        LocalDate.now(this.clock), expiryDate);
                 if (tradingDaysRemaining <= dteExitThreshold) {
                     log.info("DTE exit triggered for {} trade {}: {} trading days remaining (threshold: {})",
                             cfg.getName(), trade.getId(), tradingDaysRemaining, dteExitThreshold);
@@ -374,7 +378,6 @@ public class PaperTradingEngine {
         if (forceCloseTimeStr != null) {
             try {
                 LocalTime forceCloseTime = LocalTime.parse(forceCloseTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
-                LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
                 if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
                     log.info("Force close time reached for Iron Condor trade {}: current={}, forceClose={}",
                             trade.getId(), currentTime, forceCloseTime);
@@ -397,10 +400,10 @@ public class PaperTradingEngine {
      */
     private Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
         trade.setStatus(TradeStatus.CLOSED);
-        trade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        trade.setExitTime(LocalDateTime.now(this.clock));
         trade.setRealizedPnl(trade.getUnrealizedPnl());
         trade.setUnrealizedPnl(0.0);
-        trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
         return paperTradeRepository.save(trade)
                 .flatMap(closedTrade -> {
@@ -487,9 +490,9 @@ public class PaperTradingEngine {
                                 freshTrade.setCurrentValue(finalValue);
                                 freshTrade.setRealizedPnl(freshTrade.getEntryCredit() - finalValue);
                                 freshTrade.setStatus(TradeStatus.CLOSED);
-                                freshTrade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                                freshTrade.setExitTime(LocalDateTime.now(this.clock));
                                 freshTrade.setExitReason(reason);
-                                freshTrade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                                freshTrade.setUpdatedAt(LocalDateTime.now(this.clock));
 
                                 // Save to PostgreSQL
                                 return paperTradeRepository.save(freshTrade);
@@ -840,12 +843,12 @@ public class PaperTradingEngine {
 
                     trade.setUnrealizedPnl(pnl.doubleValue());
                     trade.setCurrentValue(trade.getEntryCredit() - pnl.doubleValue());
-                    trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
                     String strategyName = trade.getStrategyName();
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
 
-                    if (shouldExitSpread(trade, pnl, cfg, currentVix)) {
+                    if (shouldExitSpread(trade, pnl, cfg, currentVix, LocalTime.now(this.clock))) {
                         return closeSpreadTrade(trade);
                     }
 
@@ -923,11 +926,12 @@ public class PaperTradingEngine {
       * @param unrealizedPnl the current unrealized P&L
       * @param cfg           the strategy configuration
       * @param currentVix    the current VIX value (or -1.0 if unavailable)
+      * @param currentTime   the current time for force-close-time check
       * @return true if any exit condition is met, false otherwise
       */
      boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
                               com.trademesh.strategy.config.StrategyProperties cfg,
-                              double currentVix) {
+                              double currentVix, LocalTime currentTime) {
         // Check 0: VIX panic exit (highest priority)
         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
         if (currentVix > 0 && currentVix > vixPanicThreshold) {
@@ -945,7 +949,7 @@ public class PaperTradingEngine {
             if (expiryDate != null) {
                 int dteExitThreshold = cfg.getExtraInt("dte-exit-threshold", 1);
                 int tradingDaysRemaining = marketCalendarService.countTradingDays(
-                        LocalDate.now(ZoneId.of("Asia/Kolkata")), expiryDate);
+                        LocalDate.now(this.clock), expiryDate);
                 if (tradingDaysRemaining <= dteExitThreshold) {
                     log.info("DTE exit triggered for {} trade {}: {} trading days remaining (threshold: {})",
                             cfg.getName(), trade.getId(), tradingDaysRemaining, dteExitThreshold);
@@ -959,7 +963,7 @@ public class PaperTradingEngine {
             log.warn("No legs found for spread trade {}, skipping DTE exit check", trade.getId());
         }
 
-        // Check 3: Profit target
+        // Check 2: Profit target
         BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
         double targetPct = cfg.getTargetProfitPercent() / 100.0;
         BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
@@ -971,7 +975,7 @@ public class PaperTradingEngine {
             return true;
         }
 
-        // Check 4: Stop loss (based on wing width and max loss)
+        // Check 3: Stop loss (based on wing width and max loss)
         int wingWidth = cfg.getExtraInt("wing-width", 100);
         Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
         BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize);
@@ -985,10 +989,9 @@ public class PaperTradingEngine {
             return true;
         }
 
-        // Check 5: Force close time
+        // Check 4: Force close time
         try {
             LocalTime forceCloseTime = LocalTime.parse("15:15", DateTimeFormatter.ofPattern("HH:mm"));
-            LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
             if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
                 log.info("Force close time reached for spread trade {}: current={}, forceClose={}",
                         trade.getId(), currentTime, forceCloseTime);
@@ -1010,10 +1013,10 @@ public class PaperTradingEngine {
      */
     private Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
         trade.setStatus(TradeStatus.CLOSED);
-        trade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        trade.setExitTime(LocalDateTime.now(this.clock));
         trade.setRealizedPnl(trade.getUnrealizedPnl());
         trade.setUnrealizedPnl(0.0);
-        trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
         return paperTradeRepository.save(trade)
                 .flatMap(closedTrade -> {
@@ -1038,7 +1041,7 @@ public class PaperTradingEngine {
                 .type(com.trademesh.alert.AlertType.PAPER_TRADE)
                 .tradingSymbol(trade.getSymbol())
                 .message(message)
-                .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
+                .triggeredAt(LocalDateTime.now(this.clock))
                 .build();
     }
 

@@ -12,6 +12,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -50,6 +52,7 @@ class PaperTradingEngineVixPanicTest {
     @BeforeEach
     void setUp() {
         // Create a minimal PaperTradingEngine instance with null dependencies
+        // Constructor: (paperTradeRepository, redisTemplate, telegramNotificationBot, objectMapper, strategiesConfig, lotSizeService, vixMonitorService, marketCalendarService)
         // (we only test the shouldExitIronCondor/shouldExitSpread methods which don't use other fields)
         engine = new PaperTradingEngine(null, null, null, null, null, null, null, null);
     }
@@ -76,7 +79,7 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 30.0; // Above threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix);
+        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
 
         // Assert
         assertTrue(shouldExit, "shouldExitIronCondor should return true when VIX > threshold");
@@ -103,68 +106,97 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 15.0; // Below threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix);
+        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
 
         // Assert
         assertFalse(shouldExit, "shouldExitIronCondor should return false when VIX < threshold and no other conditions met");
         assertNull(trade.getExitReason(), "exitReason should not be set when no exit condition is triggered");
     }
 
-    /**
-     * Test 3: Iron Condor - Sentinel value (-1.0) handled safely.
+     /**
+      * Test 3: Iron Condor - Sentinel value (-1.0) handled safely.
+      * <p>
+      * Verifies that when currentVix is -1.0 (sentinel for unavailable data),
+      * no exception is thrown and the panic exit is not triggered.
+      * The method should fall through to evaluate other conditions normally.
+      */
+     @Test
+     @DisplayName("Iron Condor: Sentinel value (-1.0) handled safely")
+     void ironCondor_sentinelValue_handledSafely() {
+         // Arrange
+         when(ironCondorConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(ironCondorConfig.getStopLossPercent()).thenReturn(100.0);
+         when(ironCondorConfig.getTargetProfitPercent()).thenReturn(200.0); // Target = 100 * 2.0 = 200.0
+
+         PaperTrade trade = createIronCondorTrade();
+         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Below profit target (200.0), above stop loss (-100.0)
+         double currentVix = -1.0; // Sentinel value for unavailable VIX
+
+         // Act & Assert: No exception should be thrown
+         assertDoesNotThrow(() -> {
+             boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+             assertFalse(shouldExit, "shouldExitIronCondor should return false when VIX is sentinel value and no other conditions met");
+         }, "shouldExitIronCondor should not throw exception for sentinel VIX value");
+
+         assertNull(trade.getExitReason(), "exitReason should not be set when VIX is unavailable");
+     }
+
+     /**
+      * Test 4: Iron Condor - Exit priority: VIX panic fires even when stop-loss also true.
+      * <p>
+      * Verifies that VIX panic is checked FIRST and takes priority over stop-loss.
+      * When both VIX panic and stop-loss conditions are true, exitReason should be "VIX_PANIC".
+      */
+     @Test
+     @DisplayName("Iron Condor: Exit priority - VIX panic fires even when stop-loss also true")
+     void ironCondor_exitPriority_vixPanicBeforeStopLoss() {
+         // Arrange
+         when(ironCondorConfig.getName()).thenReturn("IRON_CONDOR");
+         when(ironCondorConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+
+         PaperTrade trade = createIronCondorTrade();
+         double entryCredit = trade.getEntryCredit();
+         // Stop loss threshold: entryCredit * (stopLossPercent / 100) = 100 * 1.0 = 100
+         // Set unrealizedPnl to -150 (worse than stop loss threshold of -100)
+         BigDecimal unrealizedPnl = BigDecimal.valueOf(-150.0);
+         double currentVix = 30.0; // Above threshold, triggers VIX panic
+
+         // Act
+         boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+
+         // Assert
+         assertTrue(shouldExit, "shouldExitIronCondor should return true");
+         assertEquals("VIX_PANIC", trade.getExitReason(),
+                 "exitReason should be VIX_PANIC (not STOPLOSS_HIT), confirming VIX panic is checked first");
+     }
+
+     /**
+      * Test 5b: Spread - Exit priority: VIX panic fires even when profit target also true.
      * <p>
-     * Verifies that when currentVix is -1.0 (sentinel for unavailable data),
-     * no exception is thrown and the panic exit is not triggered.
-     * The method should fall through to evaluate other conditions normally.
+     * Verifies that VIX panic is checked FIRST and takes priority over profit target.
+     * When both VIX panic and profit target conditions are true, exitReason should be "VIX_PANIC".
      */
     @Test
-    @DisplayName("Iron Condor: Sentinel value (-1.0) handled safely")
-    void ironCondor_sentinelValue_handledSafely() {
+    @DisplayName("Spread: Exit priority - VIX panic fires even when profit target also true")
+    void spread_exitPriority_vixPanicBeforeProfitTarget() {
         // Arrange
-        when(ironCondorConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(ironCondorConfig.getStopLossPercent()).thenReturn(100.0);
-        when(ironCondorConfig.getTargetProfitPercent()).thenReturn(200.0); // Target = 100 * 2.0 = 200.0
+        when(spreadConfig.getName()).thenReturn("BULL_PUT_SPREAD");
+        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
 
-        PaperTrade trade = createIronCondorTrade();
-        BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Below profit target (200.0), above stop loss (-100.0)
-        double currentVix = -1.0; // Sentinel value for unavailable VIX
-
-        // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix);
-            assertFalse(shouldExit, "shouldExitIronCondor should return false when VIX is sentinel value and no other conditions met");
-        }, "shouldExitIronCondor should not throw exception for sentinel VIX value");
-
-        assertNull(trade.getExitReason(), "exitReason should not be set when VIX is unavailable");
-    }
-
-    /**
-     * Test 5: Iron Condor - Exit priority: VIX panic fires even when stop-loss also true.
-     * <p>
-     * Verifies that VIX panic is checked FIRST and takes priority over stop-loss.
-     * When both VIX panic and stop-loss conditions are true, exitReason should be "VIX_PANIC".
-     */
-    @Test
-    @DisplayName("Iron Condor: Exit priority - VIX panic fires even when stop-loss also true")
-    void ironCondor_exitPriority_vixPanicBeforeStopLoss() {
-        // Arrange
-        when(ironCondorConfig.getName()).thenReturn("IRON_CONDOR");
-        when(ironCondorConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-
-        PaperTrade trade = createIronCondorTrade();
+        PaperTrade trade = createSpreadTrade();
         double entryCredit = trade.getEntryCredit();
-        // Stop loss threshold: entryCredit * (stopLossPercent / 100) = 100 * 1.0 = 100
-        // Set unrealizedPnl to -150 (worse than stop loss threshold of -100)
-        BigDecimal unrealizedPnl = BigDecimal.valueOf(-150.0);
+        // Profit target threshold: entryCredit * (targetProfitPercent / 100) = 100 * 0.5 = 50
+        // Set unrealizedPnl to 75 (exceeds profit target of 50)
+        BigDecimal unrealizedPnl = BigDecimal.valueOf(75.0);
         double currentVix = 30.0; // Above threshold, triggers VIX panic
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix);
+        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should return true");
+        assertTrue(shouldExit, "shouldExitSpread should return true");
         assertEquals("VIX_PANIC", trade.getExitReason(),
-                "exitReason should be VIX_PANIC (not STOPLOSS_HIT), confirming VIX panic is checked first");
+                "exitReason should be VIX_PANIC (not TARGET_HIT), confirming VIX panic is checked first");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -189,7 +221,7 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 30.0; // Above threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix);
+        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
 
         // Assert
         assertTrue(shouldExit, "shouldExitSpread should return true when VIX > threshold");
@@ -217,7 +249,7 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 15.0; // Below threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix);
+        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
 
         // Assert
         assertFalse(shouldExit, "shouldExitSpread should return false when VIX < threshold and no other conditions met");
@@ -245,40 +277,11 @@ class PaperTradingEngineVixPanicTest {
 
         // Act & Assert: No exception should be thrown
         assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix);
+            boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
             assertFalse(shouldExit, "shouldExitSpread should return false when VIX is sentinel value and no other conditions met");
         }, "shouldExitSpread should not throw exception for sentinel VIX value");
 
         assertNull(trade.getExitReason(), "exitReason should not be set when VIX is unavailable");
-    }
-
-    /**
-     * Test 5b: Spread - Exit priority: VIX panic fires even when profit target also true.
-     * <p>
-     * Verifies that VIX panic is checked FIRST and takes priority over profit target.
-     * When both VIX panic and profit target conditions are true, exitReason should be "VIX_PANIC".
-     */
-    @Test
-    @DisplayName("Spread: Exit priority - VIX panic fires even when profit target also true")
-    void spread_exitPriority_vixPanicBeforeProfitTarget() {
-        // Arrange
-        when(spreadConfig.getName()).thenReturn("BULL_PUT_SPREAD");
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-
-        PaperTrade trade = createSpreadTrade();
-        double entryCredit = trade.getEntryCredit();
-        // Profit target threshold: entryCredit * (targetProfitPercent / 100) = 100 * 0.5 = 50
-        // Set unrealizedPnl to 75 (exceeds profit target of 50)
-        BigDecimal unrealizedPnl = BigDecimal.valueOf(75.0);
-        double currentVix = 30.0; // Above threshold, triggers VIX panic
-
-        // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix);
-
-        // Assert
-        assertTrue(shouldExit, "shouldExitSpread should return true");
-        assertEquals("VIX_PANIC", trade.getExitReason(),
-                "exitReason should be VIX_PANIC (not TARGET_HIT), confirming VIX panic is checked first");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

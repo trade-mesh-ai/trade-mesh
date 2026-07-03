@@ -6,6 +6,7 @@ import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.execution.PaperTradingEngine;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketIntelligenceService;
+import com.trademesh.risk.RiskManager;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.StrategySelector;
 import com.trademesh.strategy.TradeSignal;
@@ -45,6 +46,7 @@ public class TradingOrchestrator {
     private final PaperTradingEngine paperTradingEngine;
     private final TelegramNotificationBot telegramNotificationBot;
     private final StrategyExecutionLogRepository executionLogRepository;
+    private final RiskManager riskManager;
 
     /**
      * Getter for PaperTradingEngine to allow REST controllers to access live P&L calculation.
@@ -90,17 +92,29 @@ public class TradingOrchestrator {
                             .flatMap(result -> {
                                 // Step 4: If signal is executable, execute the trade
                                 if (result.getIsExecutable() && result.getSignal() != null) {
-                                    TradeSignal signal = result.getSignal();
-                                    return paperTradingEngine.executeTrade(result)
-                                            .flatMap(trade -> {
-                                                // Step 5: Log execution
-                                                return logExecution(symbol, signal, intelligence)
-                                                        .then(Mono.just(result));
-                                            })
-                                            .flatMap(result2 -> {
-                                                // Step 6: Send summary alert
-                                                return sendTradingCycleSummary(symbol, result2.getSignal(), intelligence)
-                                                        .then(Mono.just(result2));
+                                    return riskManager.isWithinConcurrentPositionLimit()
+                                            .flatMap(withinLimit -> {
+                                                if (!withinLimit) {
+                                                    int maxAllowed = riskManager.getMaxConcurrentOpenPositions();
+                                                    log.info("Max concurrent open positions ({}) reached, skipping entry", maxAllowed);
+                                                    return Mono.just(StrategyResult.builder()
+                                                            .isExecutable(false)
+                                                            .skipReason("Max concurrent open positions (" + maxAllowed + ") reached")
+                                                            .build());
+                                                }
+
+                                                TradeSignal signal = result.getSignal();
+                                                return paperTradingEngine.executeTrade(result)
+                                                        .flatMap(trade -> {
+                                                            // Step 5: Log execution
+                                                            return logExecution(symbol, signal, intelligence)
+                                                                    .then(Mono.just(result));
+                                                        })
+                                                        .flatMap(result2 -> {
+                                                            // Step 6: Send summary alert
+                                                            return sendTradingCycleSummary(symbol, result2.getSignal(), intelligence)
+                                                                    .then(Mono.just(result2));
+                                                        });
                                             });
                                 } else {
                                     // Signal not executable, just log and return
