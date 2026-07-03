@@ -415,12 +415,14 @@ public class PaperTradingEngine {
      * Closes a paper trade and realizes P&L.
      * <p>
      * Process:
-     * 1. Fetch final prices from Redis
-     * 2. Calculate realized P&L
-     * 3. Update status to CLOSED
-     * 4. Set exit time and reason
-     * 5. Save to PostgreSQL
-     * 6. Send Telegram alert
+     * 1. Re-fetch trade from DB to ensure current status (guard against concurrent closes)
+     * 2. Check if trade is still OPEN (skip if already closed)
+     * 3. Fetch final prices from Redis
+     * 4. Calculate realized P&L
+     * 5. Update status to CLOSED
+     * 6. Set exit time and reason
+     * 7. Save to PostgreSQL
+     * 8. Send Telegram alert
      *
      * @param trade  the paper trade to close
      * @param reason the reason for closing (e.g., "STOP_LOSS", "TARGET_HIT", "MANUAL_EXIT")
@@ -429,28 +431,46 @@ public class PaperTradingEngine {
     public Mono<PaperTrade> closeTrade(PaperTrade trade, String reason) {
         log.info("Closing paper trade: {} with reason: {}", trade.getId(), reason);
 
-        // Fetch final prices and calculate realized P&L
-        return fetchCurrentPrices(trade)
-                .flatMap(finalValue -> {
-                    trade.setCurrentValue(finalValue);
-                    trade.setRealizedPnl(trade.getEntryCredit() - finalValue);
-                    trade.setStatus(TradeStatus.CLOSED);
-                    trade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
-                    trade.setExitReason(reason);
-                    trade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
+        // This guards against race condition where two concurrent chains (MTM cycle + scheduled exit)
+        // both read the same trade as OPEN and attempt to close it simultaneously
+        return paperTradeRepository.findById(trade.getId())
+                .flatMap(freshTrade -> {
+                    // Guard: check if trade is still OPEN
+                    if (freshTrade.getStatus() != TradeStatus.OPEN) {
+                        log.warn("closeTrade() called on trade {} with status {} "
+                                + "(expected OPEN) — skipping duplicate close attempt",
+                                freshTrade.getId(), freshTrade.getStatus());
+                        return Mono.just(freshTrade);
+                    }
 
-                    // Save to PostgreSQL
-                    return paperTradeRepository.save(trade);
+                    // Fetch final prices and calculate realized P&L
+                    return fetchCurrentPrices(freshTrade)
+                            .flatMap(finalValue -> {
+                                freshTrade.setCurrentValue(finalValue);
+                                freshTrade.setRealizedPnl(freshTrade.getEntryCredit() - finalValue);
+                                freshTrade.setStatus(TradeStatus.CLOSED);
+                                freshTrade.setExitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+                                freshTrade.setExitReason(reason);
+                                freshTrade.setUpdatedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+
+                                // Save to PostgreSQL
+                                return paperTradeRepository.save(freshTrade);
+                            })
+                            .flatMap(closedTrade -> {
+                                // Send Telegram alert
+                                String alert = formatExitAlert(closedTrade);
+                                return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
+                                        .then(Mono.just(closedTrade));
+                            })
+                            .doOnSuccess(closedTrade -> log.info("Paper trade closed: {} with P&L: {}",
+                                    closedTrade.getId(), closedTrade.getRealizedPnl()))
+                            .doOnError(error -> log.error("Error closing paper trade: {}", freshTrade.getId(), error));
                 })
-                .flatMap(closedTrade -> {
-                    // Send Telegram alert
-                    String alert = formatExitAlert(closedTrade);
-                    return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
-                            .then(Mono.just(closedTrade));
-                })
-                .doOnSuccess(closedTrade -> log.info("Paper trade closed: {} with P&L: {}",
-                        closedTrade.getId(), closedTrade.getRealizedPnl()))
-                .doOnError(error -> log.error("Error closing paper trade: {}", trade.getId(), error));
+                .onErrorResume(e -> {
+                    log.error("Error re-fetching trade {} for close operation: {}", trade.getId(), e.getMessage());
+                    return Mono.just(trade);
+                });
     }
 
     /**
