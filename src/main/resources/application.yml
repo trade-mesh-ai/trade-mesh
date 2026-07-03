@@ -175,8 +175,8 @@ trading-strategies:
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
-      dte-min: 3
-      dte-max: 15
+      dte-min: 1
+      dte-max: 4
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -194,8 +194,8 @@ trading-strategies:
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
-      dte-min: 3
-      dte-max: 15
+      dte-min: 1
+      dte-max: 4
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -222,8 +222,8 @@ trading-strategies:
       ivr-max: 80.0
       iv-hv-ratio-min: 1.1
       atr-pct-max: 1.0
-      dte-min: 3
-      dte-max: 15
+      dte-min: 1
+      dte-max: 4
       atr-calm-threshold: 0.7
       atr-high-threshold: 1.0
       calm-target-multiplier: 0.9

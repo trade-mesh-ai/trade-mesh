@@ -51,26 +51,64 @@ public class MarketCalendarService {
         NSE_HOLIDAYS.put(2026, holidays2026);
     }
 
-    public Mono<Boolean> isMarketOpen() {
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        DayOfWeek dayOfWeek = today.getDayOfWeek();
+    /**
+     * Determines if a given date is a trading day (not a weekend or NSE holiday).
+     *
+     * @param date the date to check
+     * @return true if the date is a trading day, false if it's a weekend or holiday
+     */
+    public boolean isTradingDay(LocalDate date) {
+        DayOfWeek dayOfWeek = date.getDayOfWeek();
 
         // Check if weekend
         if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) {
-            return Mono.just(false);
+            return false;
         }
 
         // Check if holiday
-        Set<LocalDate> yearHolidays = NSE_HOLIDAYS.get(today.getYear());
+        Set<LocalDate> yearHolidays = NSE_HOLIDAYS.get(date.getYear());
         if (yearHolidays == null) {
-            log.warn("NSE holidays not configured for year {}, assuming market is open", today.getYear());
-            return Mono.just(true);
+            log.warn("NSE holidays not configured for year {}, assuming {} is a trading day", date.getYear(), date);
+            return true;
         }
 
-        if (yearHolidays.contains(today)) {
-            return Mono.just(false);
+        return !yearHolidays.contains(date);
+    }
+
+    /**
+     * Counts the number of trading days strictly after 'from' up to and including 'to'.
+     *
+     * If from == to, returns 0 (no trading days strictly after from).
+     * If to is before from, returns 0 (no valid range).
+     *
+     * @param from the start date (exclusive)
+     * @param to the end date (inclusive)
+     * @return the count of trading days in the range (from, to]
+     */
+    public int countTradingDays(LocalDate from, LocalDate to) {
+        // If to is before or equal to from, return 0
+        if (!to.isAfter(from)) {
+            return 0;
         }
 
-        return Mono.just(true);
+        int count = 0;
+        LocalDate current = from.plusDays(1);
+        while (!current.isAfter(to)) {
+            if (isTradingDay(current)) {
+                count++;
+            }
+            current = current.plusDays(1);
+        }
+        return count;
+    }
+
+    /**
+     * Determines if the NSE market is open today based on weekends and holidays.
+     *
+     * @return Mono<Boolean> true if market is open, false otherwise
+     */
+    public Mono<Boolean> isMarketOpen() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        return Mono.just(isTradingDay(today));
     }
 }

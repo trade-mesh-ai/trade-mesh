@@ -18,6 +18,7 @@ import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.Confidence;
 import com.trademesh.strategy.enums.LegType;
 import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.trading.MarketCalendarService;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionChainService;
 import com.trademesh.zerodha.options.OptionStrike;
@@ -49,6 +50,7 @@ public class IronCondorStrategy implements TradingStrategy {
     private final OptionChainService optionChainService;
     private final VixMonitorService vixMonitorService;
     private final LotSizeService lotSizeService;
+    private final MarketCalendarService marketCalendarService;
 
     @Override
     public String getName() {
@@ -408,11 +410,11 @@ public class IronCondorStrategy implements TradingStrategy {
                                 // Strike selection
                                 return optionChainService.fetchOptionChain("NIFTY50")
                                         .flatMap(chain -> {
-                                            int dte = (int) ChronoUnit.DAYS.between(
+                                            int dte = marketCalendarService.countTradingDays(
                                                     LocalDate.now(), chain.getExpiryDate());
 
-                                            int dteMin = cfg.getExtraInt("dte-min", 3);
-                                            int dteMax = cfg.getExtraInt("dte-max", 15);
+                                            int dteMin = cfg.getExtraInt("dte-min", 1);
+                                            int dteMax = cfg.getExtraInt("dte-max", 4);
 
                                             if (dte < dteMin || dte > dteMax) {
                                                 return Mono.just(StrategyResult.builder()
