@@ -29,3 +29,6 @@ One number remains outstanding — the aggregate test count across the entire su
 cat build/test-results/test/*.xml | grep -oP 'tests="\d+"|failures="\d+"'
 summed, or simpler:
 grep -h "testsuite name" build/test-results/test/*.xml | grep -oP 'tests="\d+"'
+
+./gradlew test --tests "com.trademesh.trading.TradingSchedulerTest" --rerun-tasks --info
+./gradlew test --tests "*TradingSchedulerTest*"

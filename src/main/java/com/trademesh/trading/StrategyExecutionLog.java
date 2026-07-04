@@ -1,6 +1,6 @@
 package com.trademesh.trading;
 
-import jakarta.persistence.PostLoad;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -37,9 +37,9 @@ public class StrategyExecutionLog implements Persistable<UUID> {
      * Flag to indicate if this entity is new (not yet persisted).
      * Used by Spring Data R2DBC to determine INSERT vs UPDATE.
      */
-    @Builder.Default
     @Transient
-    private boolean isNew = true;
+    @JsonIgnore
+    private boolean isNew = false;
 
     /**
      * Trading symbol (e.g., "NIFTY", "BANKNIFTY").
@@ -101,11 +101,15 @@ public class StrategyExecutionLog implements Persistable<UUID> {
     }
 
     /**
-     * Called by Spring after loading entity from database.
-     * Marks the entity as no longer new to ensure subsequent saves use UPDATE.
+     * Factory method to create a new StrategyExecutionLog entity.
+     * Sets isNew=true to indicate this is a new record not yet persisted.
+     *
+     * @return a new StrategyExecutionLog instance with isNew=true
      */
-    @PostLoad
-    void markNotNew() {
-        this.isNew = false;
+    public static StrategyExecutionLog createNew() {
+        StrategyExecutionLog log = new StrategyExecutionLog();
+        log.isNew = true;
+        log.id = UUID.randomUUID();
+        return log;
     }
 }

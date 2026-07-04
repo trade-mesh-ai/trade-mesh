@@ -115,17 +115,15 @@ public class KiteHistoricalService {
             BigDecimal close = new BigDecimal(candle.get(4).toString());
             Long volume = ((Number) candle.get(5)).longValue();
 
-            return NiftyDailyPrice.builder()
-                    .id(UUID.randomUUID())
-                    .tradeDate(tradeDate)
-                    .open(open)
-                    .high(high)
-                    .low(low)
-                    .close(close)
-                    .volume(volume)
-                    .createdAt(LocalDateTime.now())
-                    .isNew(true)
-                    .build();
+            NiftyDailyPrice price = NiftyDailyPrice.createNew();
+            price.setTradeDate(tradeDate);
+            price.setOpen(open);
+            price.setHigh(high);
+            price.setLow(low);
+            price.setClose(close);
+            price.setVolume(volume);
+            price.setCreatedAt(LocalDateTime.now());
+            return price;
         } catch (Exception e) {
             log.error("Error parsing candle: {}", e.getMessage(), e);
             return null;

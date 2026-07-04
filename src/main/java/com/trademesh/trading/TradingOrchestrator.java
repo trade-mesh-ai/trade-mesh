@@ -248,16 +248,14 @@ public class TradingOrchestrator {
      * @return Mono emitting the saved log entry
      */
     private Mono<StrategyExecutionLog> logExecution(String symbol, TradeSignal signal, MarketIntelligence intelligence) {
-        StrategyExecutionLog logger = StrategyExecutionLog.builder()
-                .id(java.util.UUID.randomUUID())
-                .symbol(symbol)
-                .strategyName(signal.getStrategyName())
-                .marketCondition(intelligence.getMarketCondition().name())
-                .action(signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name())
-                .reason(signal.getReason())
-                .vixLevel(intelligence.getVixData().getCurrentVix())
-                .executedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
-                .build();
+        StrategyExecutionLog logger = StrategyExecutionLog.createNew();
+        logger.setSymbol(symbol);
+        logger.setStrategyName(signal.getStrategyName());
+        logger.setMarketCondition(intelligence.getMarketCondition().name());
+        logger.setAction(signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name());
+        logger.setReason(signal.getReason());
+        logger.setVixLevel(intelligence.getVixData().getCurrentVix());
+        logger.setExecutedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
 
         return executionLogRepository.save(logger)
                 .doOnSuccess(saved -> log.info("Logged execution: {} | {} | {}", symbol, signal.getStrategyName(), signal.getReason()));

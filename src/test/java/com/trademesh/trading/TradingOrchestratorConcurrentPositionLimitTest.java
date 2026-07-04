@@ -183,11 +183,9 @@ class TradingOrchestratorConcurrentPositionLimitTest {
                 .thenReturn(Mono.just(executedTrade));
 
         // Mock execution logging
-        StrategyExecutionLog executionLog = StrategyExecutionLog.builder()
-                .id(UUID.randomUUID())
-                .symbol("NIFTY50")
-                .strategyName("BULL_PUT_SPREAD")
-                .build();
+        StrategyExecutionLog executionLog = StrategyExecutionLog.createNew();
+        executionLog.setSymbol("NIFTY50");
+        executionLog.setStrategyName("BULL_PUT_SPREAD");
         when(executionLogRepository.save(any()))
                 .thenReturn(Mono.just(executionLog));
 
