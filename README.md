@@ -1121,9 +1121,11 @@ POST /trading/run/{symbol} confirmed to return JSON response even when trade is 
 
 ---
 
-## Live Validation Results
+## Paper-Tested Results (June 30 - July 3, 2026)
 
-### June 30, 2026: EXPIRY_DAY_STRANGLE Live Validated
+**Note:** These results are from paper trading simulation with real market data (prices, strikes, option chains from Zerodha Kite API during trading hours) and mocked clocks for testing multi-day scenarios. They validate the trading logic and mark-to-market calculations but do NOT represent live order execution. Real multi-day observation (Stage 4c) is pending — awaiting actual elapsed-day evidence on Monday July 8, 2026.
+
+### June 30, 2026: EXPIRY_DAY_STRANGLE Paper-Tested
 
 **Entry:** 11:25 AM IST
 - Strikes: 24050CE / 23850PE (today's expiry, correctly selected)
@@ -1144,7 +1146,7 @@ POST /trading/run/{symbol} confirmed to return JSON response even when trade is 
 
 ---
 
-### July 1, 2026: BULL_PUT_SPREAD Live Validated
+### July 1, 2026: BULL_PUT_SPREAD Paper-Tested
 
 **Entry:** 13:15 PM IST
 - Strikes: 23800PE (short) / 23700PE (long)
@@ -1204,7 +1206,7 @@ All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE 
 - **IVR:** Started collecting June 30 2026, needs 30 days before Iron Condor confidence scoring becomes meaningful.
 - **BANKNIFTY:** Intelligence gathered for both symbols but Iron Condor and spread strategies hardcoded to NIFTY50. BANKNIFTY strategy support deferred.
 - **Option A for skip reason propagation:** Currently uses generic "check logs for details" message. Should propagate actual reason through reactive chain when convenient.
-- **Iron Condor mark-to-market exit logic:** Built but not yet validated on a real trading day. First opportunity: Wednesday July 2 2026 (DTE=6 to July 8 expiry).
+- **Iron Condor mark-to-market exit logic:** Built but not yet validated on a real trading day. First opportunity: Monday July 8 2026 (DTE=6 to July 15 expiry).
 
 ---
 
@@ -1212,8 +1214,8 @@ All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE 
 
 ### Phase 1 — Immediate (before next expiry day)
 
-- **Iron Condor mark-to-market exit validation** (July 2)
-  - First live validation opportunity: Wednesday July 2, 2026 (DTE=6 to July 8 expiry)
+- **Iron Condor mark-to-market exit validation** (Monday July 8)
+  - First live validation opportunity: Monday July 8, 2026 (DTE=6 to July 15 expiry)
   - Verify leg breach detection and forced exit logic
   - Confirm P&L calculations match expected values
 
@@ -1343,7 +1345,7 @@ Document these as conscious decisions, not oversights:
 
 - **BANKNIFTY Iron Condor deferred until NIFTY50 validated**
   - Minimum 4 weeks of live paper trading required
-  - Validation period: July 2 - August 1, 2026
+  - Validation period: July 8 - August 8, 2026
 
 ---
 
