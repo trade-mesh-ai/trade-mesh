@@ -121,37 +121,39 @@ public class TradingScheduler {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
 
-    /**
-     * Forces exit of all open positions every weekday at 3:15 PM IST.
-     * <p>
-     * Closes all open NIFTY50 positions regardless of P&L status.
-     * <p>
-     * Cron: "0 15 15 * * MON-FRI"
-     * - 0: second (0)
-     * - 15: minute (15)
-     * - 15: hour (3 PM, 15:15 = 3:15 PM)
-     * - *: day of month (any)
-     * - *: month (any)
-     * - MON-FRI: day of week (Monday to Friday)
-     */
-    @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scheduledDailyExit() {
-        marketCalendarService.isMarketOpen()
-                .filter(Boolean::booleanValue)
-                .flatMap(ignored -> Mono.fromRunnable(() -> {
-                    log.info("Forcing exit of all open positions at 3:15 PM");
+     /**
+      * Forces exit of EXPIRY_DAY_STRANGLE positions every weekday at 3:15 PM IST.
+      * <p>
+      * Closes all open EXPIRY_DAY_STRANGLE positions for NIFTY50 regardless of P&L status.
+      * Other strategies (IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD) are left untouched
+      * and managed by their own DTE-based exit logic.
+      * <p>
+      * Cron: "0 15 15 * * MON-FRI"
+      * - 0: second (0)
+      * - 15: minute (15)
+      * - 15: hour (3 PM, 15:15 = 3:15 PM)
+      * - *: day of month (any)
+      * - *: month (any)
+      * - MON-FRI: day of week (Monday to Friday)
+      */
+     @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
+     public void scheduledDailyExit() {
+         marketCalendarService.isMarketOpen()
+                 .filter(Boolean::booleanValue)
+                 .flatMap(ignored -> Mono.fromRunnable(() -> {
+                     log.info("Forcing exit of EXPIRY_DAY_STRANGLE positions at 3:15 PM");
 
-                    tradingOrchestrator.exitAllPositions("NIFTY50")
-                            .doOnSuccess(count -> {
-                                log.info("Closed {} NIFTY positions at daily exit", count);
-                            })
-                            .doOnError(e -> log.error("Error closing NIFTY positions: {}", e.getMessage(), e))
-                            .subscribe(ignored2 -> {
-                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-                }))
-                .subscribe(ignored -> {
-                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-    }
+                     tradingOrchestrator.exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE")
+                             .doOnSuccess(count -> {
+                                 log.info("Closed {} EXPIRY_DAY_STRANGLE positions at daily exit", count);
+                             })
+                             .doOnError(e -> log.error("Error closing EXPIRY_DAY_STRANGLE positions: {}", e.getMessage(), e))
+                             .subscribe(ignored2 -> {
+                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                 }))
+                 .subscribe(ignored -> {
+                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+     }
 
     /**
      * Generates and sends daily P&L report every weekday at 3:45 PM IST.

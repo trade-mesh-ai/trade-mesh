@@ -181,32 +181,63 @@ public class TradingOrchestrator {
                 });
     }
 
-    /**
-     * Exits all open positions for a given symbol.
-     *
-     * @param symbol trading symbol
-     * @return Mono emitting the count of closed positions
-     */
-    public Mono<Integer> exitAllPositions(String symbol) {
-        log.info("Exiting all open positions for symbol: {}", symbol);
+     /**
+      * Exits all open positions for a given symbol.
+      *
+      * @param symbol trading symbol
+      * @return Mono emitting the count of closed positions
+      */
+     public Mono<Integer> exitAllPositions(String symbol) {
+         log.info("Exiting all open positions for symbol: {}", symbol);
 
-        return executionLogRepository.findOpenPositionsBySymbol(symbol)
-                .flatMap(position -> {
-                    return paperTradingEngine.closeTrade(position, "FORCED_EXIT_END_OF_DAY");
-                })
-                .count()
-                .map(Math::toIntExact)
-                .doOnSuccess(count -> {
-                    log.info("Closed {} positions for {} at end of day", count, symbol);
-                    if (count > 0) {
-                        sendEndOfDayAlert(symbol, count).subscribe();
-                    }
-                })
-                .onErrorResume(e -> {
-                    log.error("Error exiting positions for {}: {}", symbol, e.getMessage(), e);
-                    return Mono.just(0);
-                });
-    }
+         return executionLogRepository.findOpenPositionsBySymbol(symbol)
+                 .flatMap(position -> {
+                     return paperTradingEngine.closeTrade(position, "FORCED_EXIT_END_OF_DAY");
+                 })
+                 .count()
+                 .map(Math::toIntExact)
+                 .doOnSuccess(count -> {
+                     log.info("Closed {} positions for {} at end of day", count, symbol);
+                     if (count > 0) {
+                         sendEndOfDayAlert(symbol, count).subscribe();
+                     }
+                 })
+                 .onErrorResume(e -> {
+                     log.error("Error exiting positions for {}: {}", symbol, e.getMessage(), e);
+                     return Mono.just(0);
+                 });
+     }
+
+     /**
+      * Exits open positions for a specific strategy and symbol.
+      * <p>
+      * Closes only positions matching the given strategy name, leaving other strategies untouched.
+      * Used for strategy-specific end-of-day exits (e.g., EXPIRY_DAY_STRANGLE at 3:15 PM).
+      *
+      * @param symbol trading symbol
+      * @param strategyName strategy name to filter by
+      * @return Mono emitting the count of closed positions
+      */
+     public Mono<Integer> exitPositionsForStrategy(String symbol, String strategyName) {
+         log.info("Exiting open positions for strategy {} and symbol: {}", strategyName, symbol);
+
+         return paperTradeRepository.findByStrategyNameAndStatus(strategyName, TradeStatus.OPEN)
+                 .flatMap(position -> {
+                     return paperTradingEngine.closeTrade(position, "FORCED_EXIT_END_OF_DAY");
+                 })
+                 .count()
+                 .map(Math::toIntExact)
+                 .doOnSuccess(count -> {
+                     log.info("Closed {} {} positions for {} at end of day", count, strategyName, symbol);
+                     if (count > 0) {
+                         sendEndOfDayAlert(symbol, count).subscribe();
+                     }
+                 })
+                 .onErrorResume(e -> {
+                     log.error("Error exiting {} positions for {}: {}", strategyName, symbol, e.getMessage(), e);
+                     return Mono.just(0);
+                 });
+     }
 
     /**
      * Logs strategy execution to the database.

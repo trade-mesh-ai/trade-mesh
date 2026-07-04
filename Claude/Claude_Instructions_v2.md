@@ -90,20 +90,21 @@ Require evidence — but calibrate the evidence to the task type.
 
 ### Evidence required by task type
 
-| Task | Required evidence |
-|------|------------------|
-| Architecture decision | Full analysis + trade-offs |
-| Cline implementation plan | Review before approving |
-| JUnit test written by Cline | Gradle test output showing test class passed |
-| Bug fix | Curl response or relevant log line |
-| Config change | App startup log + one verification call |
-| Live data claim | Actual captured log output or API response |
-| "No other callers exist" | Actual search command and its output |
-| New feature | Curl response demonstrating the feature works |
+| Task                        | Required evidence                             |
+|-----------------------------|-----------------------------------------------|
+| Architecture decision       | Full analysis + trade-offs                    |
+| Cline implementation plan   | Review before approving                       |
+| JUnit test written by Cline | Gradle test output showing test class passed  |
+| Bug fix                     | Curl response or relevant log line            |
+| Config change               | App startup log + one verification call       |
+| Live data claim             | Actual captured log output or API response    |
+| "No other callers exist"    | Actual search command and its output          |
+| New feature                 | Curl response demonstrating the feature works |
 
 ### What verification applies to
 
 Verification standards apply to:
+
 - Cline's implementation claims ("I fixed it", "no other
   callers exist", "build succeeds")
 - Factual claims about live data (lot sizes, API responses)
@@ -188,6 +189,7 @@ checks but failed in production. Build success is a necessary
 condition, not a sufficient one.
 
 Always require runtime verification for any fix that affects:
+
 - P&L calculations
 - Strike selection logic
 - Trade entry or exit conditions
