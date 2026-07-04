@@ -167,3 +167,10 @@ No HTML tags in Javadoc.
 - Never add a fixed-offset widening to OI-wall strikes — 
   use ATR-scaled boundary with principled fallback (Option C)
 - Never cache trade-decision intelligence — use generateFreshIntelligence()
+
+## Important
+These rules represent confirmed production bugs
+from TradeMesh development history.
+Each rule exists because a real bug was found.
+Do not remove or ignore rules without understanding
+why they were added.
