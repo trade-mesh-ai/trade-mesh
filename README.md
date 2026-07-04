@@ -1121,47 +1121,62 @@ POST /trading/run/{symbol} confirmed to return JSON response even when trade is 
 
 ---
 
-## Paper-Tested Results (June 30 - July 3, 2026)
+## Paper-Tested Results (June 30 – July 3, 2026)
 
-**Note:** These results are from paper trading simulation with real market data (prices, strikes, option chains from Zerodha Kite API during trading hours) and mocked clocks for testing multi-day scenarios. They validate the trading logic and mark-to-market calculations but do NOT represent live order execution. Real multi-day observation (Stage 4c) is pending — awaiting actual elapsed-day evidence on Monday July 8, 2026.
+**Note:** These are paper-trading simulation results using real market
+data (prices, strikes, option chains from Zerodha Kite API during
+trading hours). They validate trading logic and mark-to-market
+calculations — they are **not** live order executions, and Stage 4c's
+real multi-day overnight-holding behavior has **not yet been observed**
+(no cloud deployment exists; the app runs locally and is restarted
+daily). Real validation begins whenever a DTE-governed strategy
+(IRON_CONDOR / BULL_PUT_SPREAD / BEAR_CALL_SPREAD) next opens a
+position and survives at least one trading-day boundary — see
+CURRENT_STATE.md for the current status of that observation.
 
-### June 30, 2026: EXPIRY_DAY_STRANGLE Paper-Tested
+### June 30, 2026: EXPIRY_DAY_STRANGLE — Paper-Tested
 
 **Entry:** 11:25 AM IST
 - Strikes: 24050CE / 23850PE (today's expiry, correctly selected)
-- Entry Credit: 31.5 points
+- Entry Credit: 30.9 points
 - Strategy: EXPIRY_DAY_STRANGLE
 
-**Exit:** 13:38 PM IST
+**Exit:** 1:38 PM IST
 - Exit Reason: TARGET_HIT
-- Realized P&L: +16.05 points (51% of credit collected)
+- Realized P&L: +16.05 points (52% of credit collected)
 - Duration: 2h 13m
 
-**Full Lifecycle Confirmed:**
-- Entry → Mark-to-market (every 60 sec) → TARGET_HIT exit
-- Correct expiry date selected (today's, not next week's)
-- ATR-scaled strike selection working correctly
-- P&L stored in points (not rupees)
-- Telegram alerts sent at entry and exit
+**Confirmed directly against `paper_trades` table (row `79661506-...`):**
+- Entry/exit timestamps, strikes, exit reason, and realized P&L match
+  the database record exactly.
+- Correct expiry date selected (today's, not next week's).
+- P&L stored in points (not rupees).
+
+*(Entry credit corrected from an earlier draft's 31.5 to the verified
+value of 30.9 — confirmed against the `paper_trades` row directly.)*
 
 ---
 
-### July 1, 2026: BULL_PUT_SPREAD Paper-Tested
+### July 1, 2026: BULL_PUT_SPREAD — Paper-Tested
 
-**Entry:** 13:15 PM IST
+**Entry:** 1:15 PM IST
 - Strikes: 23800PE (short) / 23700PE (long)
 - Entry Credit: 21.3 points
 - Strategy: BULL_PUT_SPREAD
 
-**Duplicate Prevention Confirmed:**
-- Second entry attempt at 13:45 PM blocked
-- System correctly detected open trade for same strategy
-- Response: executable=false, skipReason="Open trade already exists"
+**Confirmed directly against `paper_trades` table (row `8d81333b-...`):**
+- Entry timestamp, strikes, and entry credit match the database
+  record exactly. Exit reason: FORCE_CLOSE_EOD (this predates
+  Stage 4c's removal of daily force-close for this strategy).
 
-**Live P&L Endpoint Confirmed:**
-- GET /trading/positions/open returned liveUnrealizedPnl and isPnlLive flag
-- isPnlLive=true (data from Redis)
-- liveUnrealizedPnl calculated without DB write
+**Not independently verified:**
+- The duplicate-entry-blocked-at-13:45 behavior and the
+  `liveUnrealizedPnl`/`isPnlLive` endpoint response are plausible and
+  consistent with the architecture (rejected duplicate attempts are
+  not expected to persist in `paper_trades`, so this table cannot
+  confirm or deny them), but no log line or API response has been
+  captured to confirm these specific sub-claims. Treat as unverified
+  until such evidence is captured.
 
 ---
 
@@ -1206,7 +1221,13 @@ All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE 
 - **IVR:** Started collecting June 30 2026, needs 30 days before Iron Condor confidence scoring becomes meaningful.
 - **BANKNIFTY:** Intelligence gathered for both symbols but Iron Condor and spread strategies hardcoded to NIFTY50. BANKNIFTY strategy support deferred.
 - **Option A for skip reason propagation:** Currently uses generic "check logs for details" message. Should propagate actual reason through reactive chain when convenient.
-- **Iron Condor mark-to-market exit logic:** Built but not yet validated on a real trading day. First opportunity: Monday July 8 2026 (DTE=6 to July 15 expiry).
+- **Iron Condor / spread mark-to-market exit validation** — Stage 4c
+  (overnight holding, DTE-based exit) is unit-tested (171 tests,
+  0 failures) but has **not yet been observed against a real elapsed
+  multi-day cycle**. No cloud deployment exists; validation depends on
+  a DTE-governed strategy opening a position that survives at least
+  one trading-day boundary. See CURRENT_STATE.md for live status —
+  this is an ongoing open item, not scheduled to a specific date.
 
 ---
 
@@ -1214,10 +1235,13 @@ All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE 
 
 ### Phase 1 — Immediate (before next expiry day)
 
-- **Iron Condor mark-to-market exit validation** (Monday July 8)
-  - First live validation opportunity: Monday July 8, 2026 (DTE=6 to July 15 expiry)
-  - Verify leg breach detection and forced exit logic
-  - Confirm P&L calculations match expected values
+- **Iron Condor / spread mark-to-market exit validation** — Stage 4c
+  (overnight holding, DTE-based exit) is unit-tested (171 tests,
+  0 failures) but has **not yet been observed against a real elapsed
+  multi-day cycle**. No cloud deployment exists; validation depends on
+  a DTE-governed strategy opening a position that survives at least
+  one trading-day boundary. See CURRENT_STATE.md for live status —
+  this is an ongoing open item, not scheduled to a specific date.
 
 - **monitorOpenPositions() staleness formal verification**
   - Currently classified as acceptable cached but not formally verified
