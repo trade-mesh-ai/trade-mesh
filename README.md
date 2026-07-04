@@ -508,7 +508,7 @@ BEAR_CALL_SPREAD:
 
 | Job | Cron | Time (IST) | Frequency | Action |
 |-----|------|-----------|-----------|--------|
-| **refreshMarketIntelligence** | `0 */5 9-15 ? * MON-FRI` | Every 5 min | Market hours | Refreshes market intelligence for NIFTY50 and NIFTYBANK; detects condition changes; sends Telegram alerts |
+| **refreshMarketIntelligence** | `0 */5 9-15 ? * MON-FRI` (configurable) | Every 5 min | Market hours | Refreshes market intelligence for NIFTY50 and NIFTYBANK; detects condition changes; sends Telegram alerts |
 
 ### MarkToMarketScheduler
 
@@ -520,7 +520,7 @@ BEAR_CALL_SPREAD:
 
 | Job | Cron | Time (IST) | Frequency | Action |
 |-----|------|-----------|-----------|--------|
-| **persistVix** | `0 */15 9-15 ? * MON-FRI` | Every 15 min | Market hours | Persists VIX snapshot to database |
+| **persistVix** | `0 */15 9-15 ? * MON-FRI` (configurable) | Every 15 min | Market hours | Persists VIX snapshot to database |
 
 ---
 
