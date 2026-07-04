@@ -1,6 +1,6 @@
 # TradeMesh — Automated Options Trading Platform
 
-**Version:** 0.0.1-SNAPSHOT | **Last Updated:** July 1, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
+**Version:** 0.0.1-SNAPSHOT | **Last Updated:** July 4, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
 
 TradeMesh is a production-ready, reactive options trading platform for NSE that executes multi-leg options strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day Strangle) based on real-time market intelligence and risk management rules.
 
@@ -351,6 +351,8 @@ EXPIRY_DAY_STRANGLE:
 - Sells both call and put spreads in sideways markets
 - Strike selection: Delta-based (target delta 0.18) via Black-Scholes engine
 - Wing width: 200 points
+- Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
+  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
 - Confidence scoring:
   - IVR (20-80 range): 15-30 points
   - IV/HV ratio (≥1.1): 10-20 points
@@ -358,14 +360,13 @@ EXPIRY_DAY_STRANGLE:
   - VIX (12-20 range): 5-15 points
   - PCR (0.8-1.2 balanced): 15 points
   - **Minimum score: 60/100** to execute
-- DTE range: 3-15 days
 - Minimum credit: 30 points (15% of wing width)
 
-**Exit Conditions:**
-- **TARGET_HIT:** 50% of credit collected
-- **STOPLOSS_HIT:** 100% of credit collected
-- **LEG_BREACH:** Any leg breaches its strike
-- **FORCE_CLOSE_EOD:** 3:15 PM IST
+**Exit Conditions (Priority Order):**
+1. **VIX_PANIC_EXIT:** VIX exceeds `vix-panic-threshold: 25.0` — highest priority, checked before all other exits
+2. **DTE_EXIT:** Trading days remaining to expiry drops to or below `dte-exit-threshold: 2` — uses shared `PaperTradingEngine.isDteExitDue()` (single source of truth)
+3. **LEG_BREACH / STOPLOSS_HIT / TARGET_HIT:** Leg breach, 100% credit loss, or 50% credit collected (existing logic, unchanged priority)
+4. **FORCE_CLOSE_EOD:** NO LONGER APPLIES to IRON_CONDOR (see Scheduled Jobs section)
 
 **Dynamic Exit Adjustment:**
 - Calm market (ATR% < 0.7): Tighter targets (90% of base)
@@ -388,8 +389,10 @@ IRON_CONDOR:
     wing-width: 200
     min-credit-pct: 0.15
     min-score: 60
-    dte-min: 3
-    dte-max: 15
+    dte-min: 1
+    dte-max: 4
+    dte-exit-threshold: 2
+    vix-panic-threshold: 25.0
     atr-calm-threshold: 0.7
     atr-high-threshold: 1.0
     calm-target-multiplier: 0.9
@@ -411,13 +414,15 @@ IRON_CONDOR:
 - Strike selection: Delta-based (target delta 0.30)
 - Wing width: 100 points
 - Profits when market stays above short put strike
-- DTE range: 3-15 days
+- Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
+  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
 - Minimum credit: 10 points (10% of wing width)
 
-**Exit Conditions:**
-- **TARGET_HIT:** 50% of credit collected
-- **STOPLOSS_HIT:** 100% of credit collected
-- **FORCE_CLOSE_EOD:** 3:15 PM IST
+**Exit Conditions (Priority Order):**
+1. **VIX_PANIC_EXIT:** VIX exceeds `vix-panic-threshold: 25.0` — highest priority, checked before all other exits
+2. **DTE_EXIT:** Trading days remaining to expiry drops to or below `dte-exit-threshold: 1` — uses shared `PaperTradingEngine.isDteExitDue()` (single source of truth)
+3. **LEG_BREACH / STOPLOSS_HIT / TARGET_HIT:** Leg breach, 100% credit loss, or 50% credit collected (existing logic, unchanged priority)
+4. **FORCE_CLOSE_EOD:** NO LONGER APPLIES to BULL_PUT_SPREAD (see Scheduled Jobs section)
 
 **Configuration:**
 ```yaml
@@ -432,8 +437,10 @@ BULL_PUT_SPREAD:
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
-    dte-min: 3
-    dte-max: 15
+    dte-min: 1
+    dte-max: 4
+    dte-exit-threshold: 1
+    vix-panic-threshold: 25.0
     target-delta: 0.30
     wing-width: 100
     min-credit-pct: 0.10
@@ -452,13 +459,15 @@ BULL_PUT_SPREAD:
 - Strike selection: Delta-based (target delta 0.30)
 - Wing width: 100 points
 - Profits when market stays below short call strike
-- DTE range: 3-15 days
+- Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
+  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
 - Minimum credit: 10 points (10% of wing width)
 
-**Exit Conditions:**
-- **TARGET_HIT:** 50% of credit collected
-- **STOPLOSS_HIT:** 100% of credit collected
-- **FORCE_CLOSE_EOD:** 3:15 PM IST
+**Exit Conditions (Priority Order):**
+1. **VIX_PANIC_EXIT:** VIX exceeds `vix-panic-threshold: 25.0` — highest priority, checked before all other exits
+2. **DTE_EXIT:** Trading days remaining to expiry drops to or below `dte-exit-threshold: 1` — uses shared `PaperTradingEngine.isDteExitDue()` (single source of truth)
+3. **LEG_BREACH / STOPLOSS_HIT / TARGET_HIT:** Leg breach, 100% credit loss, or 50% credit collected (existing logic, unchanged priority)
+4. **FORCE_CLOSE_EOD:** NO LONGER APPLIES to BEAR_CALL_SPREAD (see Scheduled Jobs section)
 
 **Configuration:**
 ```yaml
@@ -473,8 +482,10 @@ BEAR_CALL_SPREAD:
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
-    dte-min: 3
-    dte-max: 15
+    dte-min: 1
+    dte-max: 4
+    dte-exit-threshold: 1
+    vix-panic-threshold: 25.0
     target-delta: 0.30
     wing-width: 100
     min-credit-pct: 0.10
@@ -489,7 +500,8 @@ BEAR_CALL_SPREAD:
 | Job | Cron | Time (IST) | Frequency | Action |
 |-----|------|-----------|-----------|--------|
 | **scheduledDailyEntry** | `0 30 9 * * MON-FRI` | 9:30 AM | Weekdays | Runs trading cycle entry for NIFTY50; StrategySelector picks strategy based on market condition |
-| **scheduledDailyExit** | `0 15 15 * * MON-FRI` | 3:15 PM | Weekdays | Forces exit of all open positions |
+| **scheduledDailyExit** | `0 15 15 * * MON-FRI` | 3:15 PM | Weekdays | Closes ONLY EXPIRY_DAY_STRANGLE positions via TradingOrchestrator.exitPositionsForStrategy(). IRON_CONDOR, BULL_PUT_SPREAD, and BEAR_CALL_SPREAD are NO LONGER force-closed daily — they can now hold positions overnight and across weekends, governed entirely by DTE-exit logic in the 60-second markToMarket() cycle |
+| **dailySafetyNetCheck** | `0 0 9 * * MON-FRI` | 9:00 AM | Weekdays | Re-checks DTE-exit condition for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD positions as a redundant backstop (calls TradingOrchestrator.runDteExitSafetyNetCheck()). Closes any position that should have exited via the primary 60-second mechanism but remains open, using exit reason "DTE_EXIT_SAFETY_NET" (distinct from normal "DTE_EXIT"). EXPIRY_DAY_STRANGLE is explicitly excluded from this check |
 | **scheduledDailyReport** | `0 45 15 * * MON-FRI` | 3:45 PM | Weekdays | Generates daily P&L report and sends via Telegram |
 
 ### IntelligenceScheduler
@@ -1160,6 +1172,29 @@ POST /trading/run/{symbol} confirmed to return JSON response even when trade is 
 ### Added
 - `trading.lot-sizes` (NIFTY50: 65, NIFTYBANK: 30) — single source of truth
 - `EXPIRY_DAY_STRANGLE.extra.min-distance-atr-multiplier: 0.4` — ATR-scaled safety boundary
+
+---
+
+## Risk Management
+
+### Aggregate Position Limits
+
+- **max-concurrent-open-positions:** 3 (configurable) — aggregate cap across ALL strategies combined, enforced in `TradingOrchestrator.runTradingCycle()` via `RiskManager.isWithinConcurrentPositionLimit()`, checked as the final gate immediately before trade execution. This is SEPARATE from and ADDITIONAL to the existing per-strategy duplicate-entry check (one open position per strategy at a time) — both gates must pass for a new trade to execute.
+
+- **Per-strategy duplicate check (fixed):** Previously scoped to "today" only (`existsByStrategyNameAndTradeDateAndStatus`), which would have failed to detect a still-open position from a prior day once overnight holding was enabled. Now uses `existsByStrategyNameAndStatus()` (date-independent).
+
+---
+
+## Known Gaps / Future Work
+
+### Known Gap: Exit Logic Has No Live Order-Placement Path
+
+All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE exit safety net) call `PaperTradingEngine.closeTrade()`, which only updates the database — it does NOT place any order with Zerodha/Kite. This is fine for paper trading (current mode) but MUST be addressed before live trading is enabled: a live position would show as "closed" in TradeMesh's database while remaining open and exposed at the broker.
+
+**Before live trading:**
+- Every exit path needs a real Kite order-placement call, with confirmation/retry/failure handling and alerting if a live exit does not actually execute.
+- `dailySafetyNetCheck()`'s 9:00 AM cron timing (currently before NSE market open at 9:15 AM) will need reconsideration for live mode, since an order cannot execute against the exchange before it opens.
+- This requires its own dedicated design cycle before implementation, given it touches order execution, confirmation handling, and timing across every exit path simultaneously.
 
 ---
 
