@@ -2,7 +2,7 @@
 
 **Version:** 0.0.1-SNAPSHOT | **Last Updated:** July 4, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
 
-TradeMesh is a production-ready, reactive options trading platform for NSE that executes multi-leg options strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day Strangle) based on real-time market intelligence and risk management rules.
+TradeMesh is a reactive options trading platform for NSE that executes multi-leg options strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day Strangle) based on real-time market intelligence and risk management rules.
 
 ---
 
@@ -1222,7 +1222,7 @@ All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE 
 - **BANKNIFTY:** Intelligence gathered for both symbols but Iron Condor and spread strategies hardcoded to NIFTY50. BANKNIFTY strategy support deferred.
 - **Option A for skip reason propagation:** Currently uses generic "check logs for details" message. Should propagate actual reason through reactive chain when convenient.
 - **Iron Condor / spread mark-to-market exit validation** — Stage 4c
-  (overnight holding, DTE-based exit) is unit-tested (171 tests,
+  (overnight holding, DTE-based exit) is unit-tested (185 tests,
   0 failures) but has **not yet been observed against a real elapsed
   multi-day cycle**. No cloud deployment exists; validation depends on
   a DTE-governed strategy opening a position that survives at least
@@ -1236,7 +1236,7 @@ All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE 
 ### Phase 1 — Immediate (before next expiry day)
 
 - **Iron Condor / spread mark-to-market exit validation** — Stage 4c
-  (overnight holding, DTE-based exit) is unit-tested (171 tests,
+  (overnight holding, DTE-based exit) is unit-tested (185 tests,
   0 failures) but has **not yet been observed against a real elapsed
   multi-day cycle**. No cloud deployment exists; validation depends on
   a DTE-governed strategy opening a position that survives at least
@@ -1431,7 +1431,7 @@ curl -X POST "http://localhost:8080/admin/bootstrap/historical-prices?from=2024-
 
 ## Summary
 
-TradeMesh is a **production-ready, reactive options trading platform** with:
+TradeMesh is a **reactive options trading platform** with:
 - ✅ Four fully implemented trading strategies
 - ✅ Comprehensive market intelligence pipeline
 - ✅ Paper trading simulation with mark-to-market
@@ -1443,4 +1443,4 @@ TradeMesh is a **production-ready, reactive options trading platform** with:
 - ✅ 12 critical bugs fixed (June 29-30, July 1, 2026)
 - ✅ Live validation on expiry day and spread strategies
 
-The codebase is well-structured, follows reactive patterns throughout, and is ready for live trading with minimal additional work.
+The codebase is well-structured and follows reactive patterns throughout. It is not yet validated for live trading — Stage 4c's overnight-holding behavior has not been observed in a live market cycle, and no exit path places real orders with the broker (see Known Gaps section).
