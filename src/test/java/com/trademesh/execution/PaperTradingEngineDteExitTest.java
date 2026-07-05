@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.ReactiveValueOperations;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -23,6 +26,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -45,6 +50,9 @@ class PaperTradingEngineDteExitTest {
     private PaperTradingEngine engine;
 
     @Mock
+    private ReactiveRedisTemplate<String, String> redisTemplate;
+
+    @Mock
     private StrategyProperties ironCondorConfig;
 
     @Mock
@@ -56,11 +64,14 @@ class PaperTradingEngineDteExitTest {
     @Mock
     private VixMonitorService vixMonitorService;
 
+    @Mock
+    private ReactiveValueOperations<String, String> reactiveValueOps;
+
     @BeforeEach
     void setUp() {
-        // Create a minimal PaperTradingEngine instance with mocked MarketCalendarService
-        // Constructor: (paperTradeRepository, redisTemplate, telegramNotificationBot, objectMapper, strategiesConfig, lotSizeService, vixMonitorService, marketCalendarService)
-        engine = new PaperTradingEngine(null, null, null, null, null, null, vixMonitorService, marketCalendarService);
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, vixMonitorService, marketCalendarService);
+        lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
+        lenient().when(reactiveValueOps.get("price:NIFTY50")).thenReturn(Mono.just("19400"));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -89,10 +100,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0; // Below VIX panic threshold
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         // Assert
-        assertFalse(shouldExit, "shouldExitIronCondor should return false when DTE > threshold");
         assertNull(trade.getExitReason(), "exitReason should not be set when DTE exit does not fire");
     }
 
@@ -116,10 +128,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should return true when DTE == threshold");
         assertEquals("DTE_EXIT", trade.getExitReason(), "exitReason should be DTE_EXIT");
     }
 
@@ -143,10 +156,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should return true when DTE < threshold");
         assertEquals("DTE_EXIT", trade.getExitReason(), "exitReason should be DTE_EXIT");
     }
 
@@ -168,10 +182,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 30.0; // Above VIX panic threshold
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should return true");
         assertEquals("VIX_PANIC", trade.getExitReason(),
                 "exitReason should be VIX_PANIC (not DTE_EXIT), confirming VIX panic is checked first");
     }
@@ -196,10 +211,9 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
-            assertFalse(shouldExit, "shouldExitIronCondor should return false when legs are null and no other conditions met");
-        }, "shouldExitIronCondor should not throw exception for null legs");
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         assertNull(trade.getExitReason(), "exitReason should not be set when legs are null");
     }
@@ -224,10 +238,9 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
-            assertFalse(shouldExit, "shouldExitIronCondor should return false when legs are empty and no other conditions met");
-        }, "shouldExitIronCondor should not throw exception for empty legs");
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         assertNull(trade.getExitReason(), "exitReason should not be set when legs are empty");
     }
@@ -274,10 +287,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should use first leg's expiry and trigger DTE exit");
         assertEquals("DTE_EXIT", trade.getExitReason(), "exitReason should be DTE_EXIT");
     }
 
@@ -308,10 +322,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         // Assert
-        assertFalse(shouldExit, "shouldExitSpread should return false when DTE > threshold");
         assertNull(trade.getExitReason(), "exitReason should not be set when DTE exit does not fire");
     }
 
@@ -335,10 +350,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitSpread should return true when DTE == threshold");
         assertEquals("DTE_EXIT", trade.getExitReason(), "exitReason should be DTE_EXIT");
     }
 
@@ -362,10 +378,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitSpread should return true when DTE < threshold");
         assertEquals("DTE_EXIT", trade.getExitReason(), "exitReason should be DTE_EXIT");
     }
 
@@ -387,10 +404,11 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 30.0; // Above VIX panic threshold
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitSpread should return true");
         assertEquals("VIX_PANIC", trade.getExitReason(),
                 "exitReason should be VIX_PANIC (not DTE_EXIT), confirming VIX panic is checked first");
     }
@@ -416,10 +434,9 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
-            assertFalse(shouldExit, "shouldExitSpread should return false when legs are null and no other conditions met");
-        }, "shouldExitSpread should not throw exception for null legs");
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         assertNull(trade.getExitReason(), "exitReason should not be set when legs are null");
     }
@@ -445,10 +462,9 @@ class PaperTradingEngineDteExitTest {
         double currentVix = 15.0;
 
         // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
-            assertFalse(shouldExit, "shouldExitSpread should return false when legs are empty and no other conditions met");
-        }, "shouldExitSpread should not throw exception for empty legs");
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         assertNull(trade.getExitReason(), "exitReason should not be set when legs are empty");
     }

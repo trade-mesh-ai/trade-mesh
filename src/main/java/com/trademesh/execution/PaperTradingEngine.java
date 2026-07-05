@@ -209,13 +209,18 @@ public class PaperTradingEngine {
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy("IRON_CONDOR");
                     LocalTime currentTime = LocalTime.now(this.clock);
 
-                    if (shouldExitIronCondor(trade, pnl, cfg, currentVix, currentTime)) {
-                        return closeIronCondorTrade(trade);
-                    }
-
-                    return paperTradeRepository.save(trade);
+                    return shouldExitIronCondor(trade, pnl, cfg, currentVix, currentTime)
+                            .flatMap(shouldExit -> {
+                                if (shouldExit) {
+                                    return closeIronCondorTrade(trade);
+                                }
+                                return paperTradeRepository.save(trade);
+                            });
                 })
-                .doOnError(error -> log.error("Error in Iron Condor mark-to-market for trade: {}", trade.getId(), error));
+                .onErrorResume(error -> {
+                    log.error("Error in Iron Condor mark-to-market for trade: {}", trade.getId(), error);
+                    return Mono.empty();
+                });
     }
 
     /**
@@ -281,7 +286,7 @@ public class PaperTradingEngine {
 
     /**
      * Checks if Iron Condor position should be exited based on multiple conditions.
-     * Exit priority: VIX panic → leg breach → stop loss → profit target → force close time.
+     * Exit priority: VIX panic → DTE exit → leg breach → stop loss → profit target.
      *
      * @param trade         the Iron Condor paper trade
      * @param unrealizedPnl the current unrealized P&L
@@ -290,69 +295,75 @@ public class PaperTradingEngine {
      * @param currentTime   the current time for force-close-time check
      * @return true if any exit condition is met, false otherwise
      */
-    boolean shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
-                                 com.trademesh.strategy.config.StrategyProperties cfg,
-                                 double currentVix, LocalTime currentTime) {
+    Mono<Boolean> shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                       com.trademesh.strategy.config.StrategyProperties cfg,
+                                       double currentVix, LocalTime currentTime) {
         // Check 0: VIX panic exit (highest priority)
         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
         if (currentVix > 0 && currentVix > vixPanicThreshold) {
             log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
                     cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
             trade.setExitReason("VIX_PANIC");
-            return true;
+            return Mono.just(true);
         }
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
         // Check 1: DTE exit (scheduled wind-down)
         if (isDteExitDue(trade, cfg, 2)) {
             trade.setExitReason("DTE_EXIT");
-            return true;
+            return Mono.just(true);
         }
 
-        // Check 2: Leg breach (spot crosses short strike)
-        // (Skipped for now — would require live spot price from market data)
+        // Check 2: Leg breach (spot crosses short strike) — reactive check
+        return isLegBreach(trade)
+                .flatMap(isBreach -> {
+                    if (isBreach) {
+                        trade.setExitReason("LEG_BREACH");
+                        return Mono.just(true);
+                    }
 
-        // Check 3: Stop loss
-        BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
-        double slPct = cfg.getStopLossPercent() / 100.0;
-        BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+                    // Check 3: Stop loss
+                    BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
+                    double slPct = cfg.getStopLossPercent() / 100.0;
+                    BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
 
-        if (unrealizedPnl.compareTo(stopLossThreshold) < 0) {
-            log.warn("Stop loss triggered for Iron Condor trade {}: pnl={}, threshold={}",
-                    trade.getId(), unrealizedPnl, stopLossThreshold);
-            trade.setExitReason("STOPLOSS_HIT");
-            return true;
-        }
+                    if (unrealizedPnl.compareTo(stopLossThreshold) < 0) {
+                        log.warn("Stop loss triggered for Iron Condor trade {}: pnl={}, threshold={}",
+                                trade.getId(), unrealizedPnl, stopLossThreshold);
+                        trade.setExitReason("STOPLOSS_HIT");
+                        return Mono.just(true);
+                    }
 
-        // Check 4: Profit target
-        double targetPct = cfg.getTargetProfitPercent() / 100.0;
-        BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+                    // Check 4: Profit target
+                    double targetPct = cfg.getTargetProfitPercent() / 100.0;
+                    BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
 
-        if (unrealizedPnl.compareTo(profitTarget) >= 0) {
-            log.info("Profit target hit for Iron Condor trade {}: pnl={}, target={}",
-                    trade.getId(), unrealizedPnl, profitTarget);
-            trade.setExitReason("TARGET_HIT");
-            return true;
-        }
+                    if (unrealizedPnl.compareTo(profitTarget) >= 0) {
+                        log.info("Profit target hit for Iron Condor trade {}: pnl={}, target={}",
+                                trade.getId(), unrealizedPnl, profitTarget);
+                        trade.setExitReason("TARGET_HIT");
+                        return Mono.just(true);
+                    }
 
-        // Check 5: Force close time
-        String forceCloseTimeStr = cfg.getExtraDouble("force-close-time", 0) > 0 ?
-                "15:15" : null;
-        if (forceCloseTimeStr != null) {
-            try {
-                LocalTime forceCloseTime = LocalTime.parse(forceCloseTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
-                if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
-                    log.info("Force close time reached for Iron Condor trade {}: current={}, forceClose={}",
-                            trade.getId(), currentTime, forceCloseTime);
-                    trade.setExitReason("FORCE_CLOSE_EOD");
-                    return true;
-                }
-            } catch (Exception e) {
-                log.warn("Error parsing force close time: {}", e.getMessage());
-            }
-        }
+                    // Check 5: Force close time
+                    String forceCloseTimeStr = cfg.getExtraDouble("force-close-time", 0) > 0 ?
+                            "15:15" : null;
+                    if (forceCloseTimeStr != null) {
+                        try {
+                            LocalTime forceCloseTime = LocalTime.parse(forceCloseTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
+                            if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
+                                log.info("Force close time reached for Iron Condor trade {}: current={}, forceClose={}",
+                                        trade.getId(), currentTime, forceCloseTime);
+                                trade.setExitReason("FORCE_CLOSE_EOD");
+                                return Mono.just(true);
+                            }
+                        } catch (Exception e) {
+                            log.warn("Error parsing force close time: {}", e.getMessage());
+                        }
+                    }
 
-        return false;
+                    return Mono.just(false);
+                });
     }
 
     /**
@@ -811,11 +822,13 @@ public class PaperTradingEngine {
                     String strategyName = trade.getStrategyName();
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
 
-                    if (shouldExitSpread(trade, pnl, cfg, currentVix, LocalTime.now(this.clock))) {
-                        return closeSpreadTrade(trade);
-                    }
-
-                    return paperTradeRepository.save(trade);
+                    return shouldExitSpread(trade, pnl, cfg, currentVix, LocalTime.now(this.clock))
+                            .flatMap(shouldExit -> {
+                                if (shouldExit) {
+                                    return closeSpreadTrade(trade);
+                                }
+                                return paperTradeRepository.save(trade);
+                            });
                 })
                 .doOnError(error -> log.error("Error in spread mark-to-market for trade: {}", trade.getId(), error));
     }
@@ -924,74 +937,88 @@ public class PaperTradingEngine {
 
     /**
      * Checks if spread position should be exited based on multiple conditions.
-     * Exit priority: VIX panic → stop loss → profit target → force close time.
+     * Exit priority: VIX panic → DTE exit → leg breach → stop loss → profit target.
+     * Fully reactive — returns Mono<Boolean>.
      *
      * @param trade         the spread paper trade
      * @param unrealizedPnl the current unrealized P&L
      * @param cfg           the strategy configuration
      * @param currentVix    the current VIX value (or -1.0 if unavailable)
      * @param currentTime   the current time for force-close-time check
-     * @return true if any exit condition is met, false otherwise
+     * @return Mono emitting true if any exit condition is met, false otherwise
      */
-    boolean shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
-                             com.trademesh.strategy.config.StrategyProperties cfg,
-                             double currentVix, LocalTime currentTime) {
+    Mono<Boolean> shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
+                                   com.trademesh.strategy.config.StrategyProperties cfg,
+                                   double currentVix, LocalTime currentTime) {
         // Check 0: VIX panic exit (highest priority)
         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
         if (currentVix > 0 && currentVix > vixPanicThreshold) {
             log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
                     cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
             trade.setExitReason("VIX_PANIC");
-            return true;
+            return Mono.just(true);
         }
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
         // Check 1: DTE exit (scheduled wind-down)
         if (isDteExitDue(trade, cfg, 1)) {
             trade.setExitReason("DTE_EXIT");
-            return true;
+            return Mono.just(true);
         }
 
-        // Check 2: Profit target
-        BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
-        double targetPct = cfg.getTargetProfitPercent() / 100.0;
-        BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+        // Check 2: Leg breach (spot crosses short strike) — reactive check
+        return isLegBreach(trade)
+                .flatMap(isBreach -> {
+                    if (isBreach) {
+                        trade.setExitReason("LEG_BREACH");
+                        return Mono.just(true);
+                    }
 
-        if (unrealizedPnl.compareTo(profitTarget) >= 0) {
-            log.info("Profit target hit for spread trade {}: pnl={}, target={}",
-                    trade.getId(), unrealizedPnl, profitTarget);
-            trade.setExitReason("TARGET_HIT");
-            return true;
-        }
+                    // Check 3: Stop loss (based on wing width and max loss)
+                    int wingWidth = cfg.getExtraInt("wing-width", 100);
+                    Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+                    BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize);
+                    double slPct = cfg.getStopLossPercent() / 100.0;
+                    BigDecimal stopLossThreshold = maxLoss.multiply(BigDecimal.valueOf(slPct)).negate();
 
-        // Check 3: Stop loss (based on wing width and max loss)
-        int wingWidth = cfg.getExtraInt("wing-width", 100);
-        Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
-        BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize);
-        double slPct = cfg.getStopLossPercent() / 100.0;
-        BigDecimal stopLossThreshold = maxLoss.multiply(BigDecimal.valueOf(slPct)).negate();
+                    if (unrealizedPnl.compareTo(stopLossThreshold) <= 0) {
+                        log.warn("Stop loss triggered for spread trade {}: pnl={}, threshold={}",
+                                trade.getId(), unrealizedPnl, stopLossThreshold);
+                        trade.setExitReason("STOPLOSS_HIT");
+                        return Mono.just(true);
+                    }
 
-        if (unrealizedPnl.compareTo(stopLossThreshold) <= 0) {
-            log.warn("Stop loss triggered for spread trade {}: pnl={}, threshold={}",
-                    trade.getId(), unrealizedPnl, stopLossThreshold);
-            trade.setExitReason("STOPLOSS_HIT");
-            return true;
-        }
+                    // Check 4: Profit target
+                    BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
+                    double targetPct = cfg.getTargetProfitPercent() / 100.0;
+                    BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
 
-        // Check 4: Force close time
-        try {
-            LocalTime forceCloseTime = LocalTime.parse("15:15", DateTimeFormatter.ofPattern("HH:mm"));
-            if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
-                log.info("Force close time reached for spread trade {}: current={}, forceClose={}",
-                        trade.getId(), currentTime, forceCloseTime);
-                trade.setExitReason("FORCE_CLOSE_EOD");
-                return true;
-            }
-        } catch (Exception e) {
-            log.warn("Error parsing force close time: {}", e.getMessage());
-        }
+                    if (unrealizedPnl.compareTo(profitTarget) >= 0) {
+                        log.info("Profit target hit for spread trade {}: pnl={}, target={}",
+                                trade.getId(), unrealizedPnl, profitTarget);
+                        trade.setExitReason("TARGET_HIT");
+                        return Mono.just(true);
+                    }
 
-        return false;
+                    // Check 5: Force close time
+                    try {
+                        LocalTime forceCloseTime = LocalTime.parse("15:15", DateTimeFormatter.ofPattern("HH:mm"));
+                        if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
+                            log.info("Force close time reached for spread trade {}: current={}, forceClose={}",
+                                    trade.getId(), currentTime, forceCloseTime);
+                            trade.setExitReason("FORCE_CLOSE_EOD");
+                            return Mono.just(true);
+                        }
+                    } catch (Exception e) {
+                        log.warn("Error parsing force close time: {}", e.getMessage());
+                    }
+
+                    return Mono.just(false);
+                })
+                .onErrorResume(e -> {
+                    log.error("Error in shouldExitSpread for trade {}: {}", trade.getId(), e.getMessage());
+                    return Mono.just(false);
+                });
     }
 
     /**
@@ -1186,5 +1213,129 @@ public class PaperTradingEngine {
             log.error("Error calculating default current value: {}", e.getMessage());
             return Mono.just(0.0);
         }
+    }
+
+    /**
+     * Checks if a trade has breached a short leg strike (spot crosses short strike).
+     * <p>
+     * Strategy-specific logic:
+     * - IRON_CONDOR: breach if spot < short put strike OR spot > short call strike
+     * - BULL_PUT_SPREAD: breach if spot < short put strike
+     * - BEAR_CALL_SPREAD: breach if spot > short call strike
+     * - EXPIRY_DAY_STRANGLE: NOT APPLICABLE — no short-strike breach concept
+     * <p>
+     * Spot price is fetched from Redis key "price:NIFTY50" (cached by ZerodhaTickerService).
+     * If Redis key is missing, gracefully skips check with WARN log.
+     * <p>
+     * Fully reactive — no .block() calls.
+     *
+     * @param trade the paper trade to check for leg breach
+     * @return Mono emitting true if leg breach detected, false otherwise (including if spot price unavailable)
+     */
+    private Mono<Boolean> isLegBreach(PaperTrade trade) {
+        String strategyName = trade.getStrategyName();
+
+        // EXPIRY_DAY_STRANGLE explicitly excluded — no short-strike breach concept
+        if ("EXPIRY_DAY_STRANGLE".equals(strategyName)) {
+            return Mono.just(false);
+        }
+
+        // Only check for strategies with short legs
+        if (!("IRON_CONDOR".equals(strategyName) || "BULL_PUT_SPREAD".equals(strategyName) || "BEAR_CALL_SPREAD".equals(strategyName))) {
+            return Mono.just(false);
+        }
+
+        List<TradeLeg> legs = trade.getLegs();
+        if (legs == null || legs.isEmpty()) {
+            log.warn("No legs found for trade {}, skipping leg breach check", trade.getId());
+            return Mono.just(false);
+        }
+
+        // Fetch spot price from Redis reactively
+        String spotPriceKey = "price:NIFTY50";
+        return redisTemplate.opsForValue().get(spotPriceKey)
+                .flatMap(spotPriceStr -> {
+                    if (spotPriceStr == null || spotPriceStr.isEmpty()) {
+                        log.warn("Spot price not available in Redis key {}, skipping leg breach check", spotPriceKey);
+                        return Mono.just(false);
+                    }
+
+                    double spotPrice;
+                    try {
+                        spotPrice = Double.parseDouble(spotPriceStr);
+                    } catch (NumberFormatException e) {
+                        log.warn("Invalid spot price format in Redis: {}, skipping leg breach check", spotPriceStr);
+                        return Mono.just(false);
+                    }
+
+                    // Check breach based on strategy type
+                    if ("IRON_CONDOR".equals(strategyName)) {
+                        // Find short put and short call legs
+                        Double shortPutStrike = null;
+                        Double shortCallStrike = null;
+
+                        for (TradeLeg leg : legs) {
+                            if (leg.getAction() == Action.SELL) {
+                                if (leg.getOptionType() == OptionType.PE) {
+                                    shortPutStrike = leg.getStrikePrice();
+                                } else if (leg.getOptionType() == OptionType.CE) {
+                                    shortCallStrike = leg.getStrikePrice();
+                                }
+                            }
+                        }
+
+                        // Breach if spot < short put strike OR spot > short call strike
+                        if (shortPutStrike != null && spotPrice < shortPutStrike) {
+                            log.warn("Iron Condor leg breach: spot {} < short put strike {}", spotPrice, shortPutStrike);
+                            return Mono.just(true);
+                        }
+                        if (shortCallStrike != null && spotPrice > shortCallStrike) {
+                            log.warn("Iron Condor leg breach: spot {} > short call strike {}", spotPrice, shortCallStrike);
+                            return Mono.just(true);
+                        }
+                    } else if ("BULL_PUT_SPREAD".equals(strategyName)) {
+                        // Find short put leg
+                        Double shortPutStrike = null;
+
+                        for (TradeLeg leg : legs) {
+                            if (leg.getAction() == Action.SELL && leg.getOptionType() == OptionType.PE) {
+                                shortPutStrike = leg.getStrikePrice();
+                                break;
+                            }
+                        }
+
+                        // Breach if spot < short put strike
+                        if (shortPutStrike != null && spotPrice < shortPutStrike) {
+                            log.warn("Bull Put Spread leg breach: spot {} < short put strike {}", spotPrice, shortPutStrike);
+                            return Mono.just(true);
+                        }
+                    } else if ("BEAR_CALL_SPREAD".equals(strategyName)) {
+                        // Find short call leg
+                        Double shortCallStrike = null;
+
+                        for (TradeLeg leg : legs) {
+                            if (leg.getAction() == Action.SELL && leg.getOptionType() == OptionType.CE) {
+                                shortCallStrike = leg.getStrikePrice();
+                                break;
+                            }
+                        }
+
+                        // Breach if spot > short call strike
+                        if (shortCallStrike != null && spotPrice > shortCallStrike) {
+                            log.warn("Bear Call Spread leg breach: spot {} > short call strike {}", spotPrice, shortCallStrike);
+                            return Mono.just(true);
+                        }
+                    }
+
+                    return Mono.just(false);
+                })
+                .onErrorResume(e -> {
+                    log.warn("Error fetching spot price from Redis key {}: {}, skipping leg breach check", spotPriceKey, e.getMessage());
+                    return Mono.just(false);
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.warn("Spot price not available in Redis key {}, skipping leg breach check", spotPriceKey);
+                    return Mono.just(false);
+                }));
     }
 }

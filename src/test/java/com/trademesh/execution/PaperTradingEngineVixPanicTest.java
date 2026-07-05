@@ -4,12 +4,16 @@ import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.config.StrategyProperties;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.trading.MarketCalendarService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.ReactiveValueOperations;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -19,6 +23,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -40,17 +47,31 @@ class PaperTradingEngineVixPanicTest {
     private PaperTradingEngine engine;
 
     @Mock
+    private ReactiveRedisTemplate<String, String> redisTemplate;
+
+    @Mock
     private StrategyProperties ironCondorConfig;
 
     @Mock
     private StrategyProperties spreadConfig;
 
+    @Mock
+    private MarketCalendarService marketCalendarService;
+
+    @Mock
+    private ReactiveValueOperations<String, String> reactiveValueOps;
+
     @BeforeEach
     void setUp() {
-        // Create a minimal PaperTradingEngine instance with null dependencies
+        // Create a minimal PaperTradingEngine instance with mocked Redis and MarketCalendarService
         // Constructor: (paperTradeRepository, redisTemplate, telegramNotificationBot, objectMapper, strategiesConfig, lotSizeService, vixMonitorService, marketCalendarService)
-        // (we only test the shouldExitIronCondor/shouldExitSpread methods which don't use other fields)
-        engine = new PaperTradingEngine(null, null, null, null, null, null, null, null);
+        lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
+        lenient().when(reactiveValueOps.get("price:NIFTY50")).thenReturn(Mono.just("19400"));
+        
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService);
+        
+        // Stub marketCalendarService for all tests (safe DTE value)
+        lenient().when(marketCalendarService.countTradingDays(any(), any())).thenReturn(5);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -75,10 +96,11 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 30.0; // Above threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should return true when VIX > threshold");
         assertEquals("VIX_PANIC", trade.getExitReason(),
                 "exitReason should be set to VIX_PANIC when VIX panic exit is triggered");
     }
@@ -102,10 +124,11 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 15.0; // Below threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         // Assert
-        assertFalse(shouldExit, "shouldExitIronCondor should return false when VIX < threshold and no other conditions met");
         assertNull(trade.getExitReason(), "exitReason should not be set when no exit condition is triggered");
     }
 
@@ -129,10 +152,9 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = -1.0; // Sentinel value for unavailable VIX
 
         // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
-            assertFalse(shouldExit, "shouldExitIronCondor should return false when VIX is sentinel value and no other conditions met");
-        }, "shouldExitIronCondor should not throw exception for sentinel VIX value");
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         assertNull(trade.getExitReason(), "exitReason should not be set when VIX is unavailable");
     }
@@ -158,10 +180,11 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 30.0; // Above threshold, triggers VIX panic
 
         // Act
-        boolean shouldExit = engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitIronCondor(trade, unrealizedPnl, ironCondorConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitIronCondor should return true");
         assertEquals("VIX_PANIC", trade.getExitReason(),
                 "exitReason should be VIX_PANIC (not STOPLOSS_HIT), confirming VIX panic is checked first");
     }
@@ -187,10 +210,11 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 30.0; // Above threshold, triggers VIX panic
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitSpread should return true");
         assertEquals("VIX_PANIC", trade.getExitReason(),
                 "exitReason should be VIX_PANIC (not TARGET_HIT), confirming VIX panic is checked first");
     }
@@ -217,10 +241,11 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 30.0; // Above threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(true)
+                .verifyComplete();
 
         // Assert
-        assertTrue(shouldExit, "shouldExitSpread should return true when VIX > threshold");
         assertEquals("VIX_PANIC", trade.getExitReason(),
                 "exitReason should be set to VIX_PANIC when VIX panic exit is triggered");
     }
@@ -245,10 +270,11 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = 15.0; // Below threshold of 25.0
 
         // Act
-        boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         // Assert
-        assertFalse(shouldExit, "shouldExitSpread should return false when VIX < threshold and no other conditions met");
         assertNull(trade.getExitReason(), "exitReason should not be set when no exit condition is triggered");
     }
 
@@ -272,10 +298,9 @@ class PaperTradingEngineVixPanicTest {
         double currentVix = -1.0; // Sentinel value for unavailable VIX
 
         // Act & Assert: No exception should be thrown
-        assertDoesNotThrow(() -> {
-            boolean shouldExit = engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0));
-            assertFalse(shouldExit, "shouldExitSpread should return false when VIX is sentinel value and no other conditions met");
-        }, "shouldExitSpread should not throw exception for sentinel VIX value");
+        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, unrealizedPnl, spreadConfig, currentVix, java.time.LocalTime.of(10, 0)))
+                .expectNext(false)
+                .verifyComplete();
 
         assertNull(trade.getExitReason(), "exitReason should not be set when VIX is unavailable");
     }
