@@ -22,12 +22,14 @@ import reactor.test.StepVerifier;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -108,8 +110,8 @@ class TradingOrchestratorDteExitSafetyNetTest {
         // IRON_CONDOR: 2 trades, both due for exit
         when(paperTradeRepository.findByStrategyNameAndStatus("IRON_CONDOR", TradeStatus.OPEN))
                 .thenReturn(Flux.just(trade1, trade2));
-        when(paperTradingEngine.isDteExitDue(trade1, ironCondorConfig, 2)).thenReturn(true);
-        when(paperTradingEngine.isDteExitDue(trade2, ironCondorConfig, 2)).thenReturn(true);
+        when(paperTradingEngine.isDteExitDue(eq(trade1), eq(ironCondorConfig), eq(2), any(LocalTime.class))).thenReturn(true);
+        when(paperTradingEngine.isDteExitDue(eq(trade2), eq(ironCondorConfig), eq(2), any(LocalTime.class))).thenReturn(true);
 
         // BULL_PUT_SPREAD and BEAR_CALL_SPREAD: no trades
         when(paperTradeRepository.findByStrategyNameAndStatus("BULL_PUT_SPREAD", TradeStatus.OPEN))
@@ -154,7 +156,7 @@ class TradingOrchestratorDteExitSafetyNetTest {
         // IRON_CONDOR: 1 trade, NOT due for exit
         when(paperTradeRepository.findByStrategyNameAndStatus("IRON_CONDOR", TradeStatus.OPEN))
                 .thenReturn(Flux.just(trade1));
-        when(paperTradingEngine.isDteExitDue(trade1, ironCondorConfig, 2)).thenReturn(false);
+        when(paperTradingEngine.isDteExitDue(eq(trade1), eq(ironCondorConfig), eq(2), any(LocalTime.class))).thenReturn(false);
 
         // BULL_PUT_SPREAD and BEAR_CALL_SPREAD: no trades
         when(paperTradeRepository.findByStrategyNameAndStatus("BULL_PUT_SPREAD", TradeStatus.OPEN))
@@ -235,9 +237,9 @@ class TradingOrchestratorDteExitSafetyNetTest {
         when(paperTradeRepository.findByStrategyNameAndStatus("BEAR_CALL_SPREAD", TradeStatus.OPEN))
                 .thenReturn(Flux.just(bearCallTrade));
 
-        when(paperTradingEngine.isDteExitDue(ironCondorTrade, ironCondorConfig, 2)).thenReturn(false);
-        when(paperTradingEngine.isDteExitDue(bullPutTrade, spreadConfig, 1)).thenReturn(false);
-        when(paperTradingEngine.isDteExitDue(bearCallTrade, spreadConfig, 1)).thenReturn(false);
+        when(paperTradingEngine.isDteExitDue(eq(ironCondorTrade), eq(ironCondorConfig), eq(2), any(LocalTime.class))).thenReturn(false);
+        when(paperTradingEngine.isDteExitDue(eq(bullPutTrade), eq(spreadConfig), eq(1), any(LocalTime.class))).thenReturn(false);
+        when(paperTradingEngine.isDteExitDue(eq(bearCallTrade), eq(spreadConfig), eq(1), any(LocalTime.class))).thenReturn(false);
 
         // Act
         StepVerifier.create(tradingOrchestrator.runDteExitSafetyNetCheck())
@@ -246,13 +248,13 @@ class TradingOrchestratorDteExitSafetyNetTest {
 
         // Verify correct thresholds were passed
         ArgumentCaptor<Integer> thresholdCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(paperTradingEngine).isDteExitDue(eq(ironCondorTrade), eq(ironCondorConfig), thresholdCaptor.capture());
+        verify(paperTradingEngine).isDteExitDue(eq(ironCondorTrade), eq(ironCondorConfig), thresholdCaptor.capture(), any(LocalTime.class));
         assertEquals(2, thresholdCaptor.getValue(), "IRON_CONDOR should use threshold 2");
 
-        verify(paperTradingEngine).isDteExitDue(eq(bullPutTrade), eq(spreadConfig), thresholdCaptor.capture());
+        verify(paperTradingEngine).isDteExitDue(eq(bullPutTrade), eq(spreadConfig), thresholdCaptor.capture(), any(LocalTime.class));
         assertEquals(1, thresholdCaptor.getValue(), "BULL_PUT_SPREAD should use threshold 1");
 
-        verify(paperTradingEngine).isDteExitDue(eq(bearCallTrade), eq(spreadConfig), thresholdCaptor.capture());
+        verify(paperTradingEngine).isDteExitDue(eq(bearCallTrade), eq(spreadConfig), thresholdCaptor.capture(), any(LocalTime.class));
         assertEquals(1, thresholdCaptor.getValue(), "BEAR_CALL_SPREAD should use threshold 1");
     }
 
@@ -310,13 +312,13 @@ class TradingOrchestratorDteExitSafetyNetTest {
         // IRON_CONDOR: 2 trades, 1 due for exit, 1 not
         when(paperTradeRepository.findByStrategyNameAndStatus("IRON_CONDOR", TradeStatus.OPEN))
                 .thenReturn(Flux.just(ironCondorTrade1, ironCondorTrade2));
-        when(paperTradingEngine.isDteExitDue(ironCondorTrade1, ironCondorConfig, 2)).thenReturn(true);
-        when(paperTradingEngine.isDteExitDue(ironCondorTrade2, ironCondorConfig, 2)).thenReturn(false);
+        when(paperTradingEngine.isDteExitDue(eq(ironCondorTrade1), eq(ironCondorConfig), eq(2), any(LocalTime.class))).thenReturn(true);
+        when(paperTradingEngine.isDteExitDue(eq(ironCondorTrade2), eq(ironCondorConfig), eq(2), any(LocalTime.class))).thenReturn(false);
 
         // BULL_PUT_SPREAD: 1 trade, due for exit
         when(paperTradeRepository.findByStrategyNameAndStatus("BULL_PUT_SPREAD", TradeStatus.OPEN))
                 .thenReturn(Flux.just(bullPutTrade));
-        when(paperTradingEngine.isDteExitDue(bullPutTrade, spreadConfig, 1)).thenReturn(true);
+        when(paperTradingEngine.isDteExitDue(eq(bullPutTrade), eq(spreadConfig), eq(1), any(LocalTime.class))).thenReturn(true);
 
         // BEAR_CALL_SPREAD: no trades
         when(paperTradeRepository.findByStrategyNameAndStatus("BEAR_CALL_SPREAD", TradeStatus.OPEN))

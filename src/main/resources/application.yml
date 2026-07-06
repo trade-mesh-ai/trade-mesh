@@ -175,9 +175,10 @@ trading-strategies:
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
-      dte-min: 1
+      dte-min: 2
       dte-max: 4
       dte-exit-threshold: 1
+      dte-exit-earliest-time: "15:10"
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -196,9 +197,10 @@ trading-strategies:
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
-      dte-min: 1
+      dte-min: 2
       dte-max: 4
       dte-exit-threshold: 1
+      dte-exit-earliest-time: "15:10"
       target-delta: 0.30
       wing-width: 100
       strike-step: 50
@@ -226,9 +228,10 @@ trading-strategies:
       ivr-max: 80.0
       iv-hv-ratio-min: 1.1
       atr-pct-max: 1.0
-      dte-min: 1
+      dte-min: 3
       dte-max: 4
       dte-exit-threshold: 2
+      dte-exit-earliest-time: "15:10"
       atr-calm-threshold: 0.7
       atr-high-threshold: 1.0
       calm-target-multiplier: 0.9
@@ -236,7 +239,6 @@ trading-strategies:
       high-target-multiplier: 1.1
       high-sl-multiplier: 1.2
       vix-panic-threshold: 25.0
-      force-close-time: "15:15"
 
 # ─── 8. Risk Management ──────────────────────────────────────────────────────
 risk:

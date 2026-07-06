@@ -284,35 +284,35 @@ public class PaperTradingEngine {
         }
     }
 
-    /**
-     * Checks if Iron Condor position should be exited based on multiple conditions.
-     * Exit priority: VIX panic → DTE exit → leg breach → stop loss → profit target.
-     *
-     * @param trade         the Iron Condor paper trade
-     * @param unrealizedPnl the current unrealized P&L
-     * @param cfg           the Iron Condor strategy configuration
-     * @param currentVix    the current VIX value (or -1.0 if unavailable)
-     * @param currentTime   the current time for force-close-time check
-     * @return true if any exit condition is met, false otherwise
-     */
-    Mono<Boolean> shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
-                                       com.trademesh.strategy.config.StrategyProperties cfg,
-                                       double currentVix, LocalTime currentTime) {
-        // Check 0: VIX panic exit (highest priority)
-        double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
-        if (currentVix > 0 && currentVix > vixPanicThreshold) {
-            log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
-                    cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
-            trade.setExitReason("VIX_PANIC");
-            return Mono.just(true);
-        }
-        // currentVix <= 0 means VIX data was unavailable — skip this check silently
+     /**
+      * Checks if Iron Condor position should be exited based on multiple conditions.
+      * Exit priority: VIX panic → DTE exit → leg breach → stop loss → profit target.
+      *
+      * @param trade         the Iron Condor paper trade
+      * @param unrealizedPnl the current unrealized P&L
+      * @param cfg           the Iron Condor strategy configuration
+      * @param currentVix    the current VIX value (or -1.0 if unavailable)
+      * @param currentTime   the current time for force-close-time check
+      * @return true if any exit condition is met, false otherwise
+      */
+     Mono<Boolean> shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                        com.trademesh.strategy.config.StrategyProperties cfg,
+                                        double currentVix, LocalTime currentTime) {
+         // Check 0: VIX panic exit (highest priority)
+         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
+         if (currentVix > 0 && currentVix > vixPanicThreshold) {
+             log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
+                     cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
+             trade.setExitReason("VIX_PANIC");
+             return Mono.just(true);
+         }
+         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
-        // Check 1: DTE exit (scheduled wind-down)
-        if (isDteExitDue(trade, cfg, 2)) {
-            trade.setExitReason("DTE_EXIT");
-            return Mono.just(true);
-        }
+         // Check 1: DTE exit (scheduled wind-down)
+         if (isDteExitDue(trade, cfg, 2, currentTime)) {
+             trade.setExitReason("DTE_EXIT");
+             return Mono.just(true);
+         }
 
         // Check 2: Leg breach (spot crosses short strike) — reactive check
         return isLegBreach(trade)
@@ -343,23 +343,6 @@ public class PaperTradingEngine {
                                 trade.getId(), unrealizedPnl, profitTarget);
                         trade.setExitReason("TARGET_HIT");
                         return Mono.just(true);
-                    }
-
-                    // Check 5: Force close time
-                    String forceCloseTimeStr = cfg.getExtraDouble("force-close-time", 0) > 0 ?
-                            "15:15" : null;
-                    if (forceCloseTimeStr != null) {
-                        try {
-                            LocalTime forceCloseTime = LocalTime.parse(forceCloseTimeStr, DateTimeFormatter.ofPattern("HH:mm"));
-                            if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
-                                log.info("Force close time reached for Iron Condor trade {}: current={}, forceClose={}",
-                                        trade.getId(), currentTime, forceCloseTime);
-                                trade.setExitReason("FORCE_CLOSE_EOD");
-                                return Mono.just(true);
-                            }
-                        } catch (Exception e) {
-                            log.warn("Error parsing force close time: {}", e.getMessage());
-                        }
                     }
 
                     return Mono.just(false);
@@ -894,17 +877,25 @@ public class PaperTradingEngine {
         }
     }
 
-    /**
-     * Checks if a trade should be exited based on DTE (Days To Expiry).
-     *
-     * @param trade            the paper trade
-     * @param cfg              the strategy configuration
-     * @param defaultThreshold the default DTE threshold if config key is missing
-     * @return true if DTE exit condition is met, false otherwise
-     */
-    public boolean isDteExitDue(PaperTrade trade,
-                                com.trademesh.strategy.config.StrategyProperties cfg,
-                                int defaultThreshold) {
+     /**
+      * Checks if a trade should be exited based on DTE (Days To Expiry).
+      * Implements a time gate on the threshold day to prevent premature exits.
+      *
+      * Logic:
+      * - If tradingDaysRemaining < threshold: exit immediately (past threshold day)
+      * - If tradingDaysRemaining == threshold: exit only if currentTime >= dte-exit-earliest-time
+      * - If tradingDaysRemaining > threshold: do not exit (not yet at threshold)
+      *
+      * @param trade            the paper trade
+      * @param cfg              the strategy configuration
+      * @param defaultThreshold the default DTE threshold if config key is missing
+      * @param currentTime      the current time for time-gate check on threshold day
+      * @return true if DTE exit condition is met, false otherwise
+      */
+     public boolean isDteExitDue(PaperTrade trade,
+                                 com.trademesh.strategy.config.StrategyProperties cfg,
+                                 int defaultThreshold,
+                                 LocalTime currentTime) {
         List<TradeLeg> legs = trade.getLegs();
 
         // Guard: no legs
@@ -926,13 +917,40 @@ public class PaperTradingEngine {
         int tradingDaysRemaining = marketCalendarService.countTradingDays(
                 LocalDate.now(this.clock), expiryDate);
 
-        if (tradingDaysRemaining <= dteExitThreshold) {
-            log.info("DTE exit due for trade {}: {} trading days remaining (threshold: {})",
+        // If we haven't reached the threshold day yet, don't exit
+        if (tradingDaysRemaining > dteExitThreshold) {
+            return false;
+        }
+
+        // If we're past the threshold day, exit immediately (no time gate)
+        if (tradingDaysRemaining < dteExitThreshold) {
+            log.info("DTE exit due for trade {}: {} trading days remaining (past threshold: {})",
                     trade.getId(), tradingDaysRemaining, dteExitThreshold);
             return true;
         }
 
-        return false;
+         // We're exactly at the threshold day — apply time gate
+         // Only exit if current time >= dte-exit-earliest-time
+         String dteExitEarliestTimeStr = cfg.getExtraString("dte-exit-earliest-time", "10:00");
+
+         try {
+             LocalTime dteExitEarliestTime = LocalTime.parse(dteExitEarliestTimeStr,
+                     DateTimeFormatter.ofPattern("HH:mm"));
+
+             if (currentTime.isBefore(dteExitEarliestTime)) {
+                 log.debug("DTE exit blocked for trade {}: threshold day but time gate not yet reached. " +
+                                 "Current: {}, Gate: {}", trade.getId(), currentTime, dteExitEarliestTime);
+                 return false;
+             }
+
+             log.info("DTE exit due for trade {}: threshold day ({} trading days) and time gate passed. " +
+                             "Current: {}, Gate: {}", trade.getId(), tradingDaysRemaining, currentTime, dteExitEarliestTime);
+             return true;
+         } catch (Exception e) {
+             log.warn("Error parsing dte-exit-earliest-time '{}' for trade {}: {}. " +
+                             "Allowing exit as fallback.", dteExitEarliestTimeStr, trade.getId(), e.getMessage());
+             return true;
+         }
     }
 
     /**
@@ -960,10 +978,10 @@ public class PaperTradingEngine {
         }
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
-        // Check 1: DTE exit (scheduled wind-down)
-        if (isDteExitDue(trade, cfg, 1)) {
-            trade.setExitReason("DTE_EXIT");
-            return Mono.just(true);
+         // Check 1: DTE exit (scheduled wind-down)
+         if (isDteExitDue(trade, cfg, 1, currentTime)) {
+             trade.setExitReason("DTE_EXIT");
+             return Mono.just(true);
         }
 
         // Check 2: Leg breach (spot crosses short strike) — reactive check
@@ -998,19 +1016,6 @@ public class PaperTradingEngine {
                                 trade.getId(), unrealizedPnl, profitTarget);
                         trade.setExitReason("TARGET_HIT");
                         return Mono.just(true);
-                    }
-
-                    // Check 5: Force close time
-                    try {
-                        LocalTime forceCloseTime = LocalTime.parse("15:15", DateTimeFormatter.ofPattern("HH:mm"));
-                        if (currentTime.isAfter(forceCloseTime) || currentTime.equals(forceCloseTime)) {
-                            log.info("Force close time reached for spread trade {}: current={}, forceClose={}",
-                                    trade.getId(), currentTime, forceCloseTime);
-                            trade.setExitReason("FORCE_CLOSE_EOD");
-                            return Mono.just(true);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Error parsing force close time: {}", e.getMessage());
                     }
 
                     return Mono.just(false);

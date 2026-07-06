@@ -21,6 +21,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 
 /**
@@ -326,7 +327,8 @@ public class TradingOrchestrator {
 
                     return paperTradeRepository.findByStrategyNameAndStatus(strategyName, TradeStatus.OPEN)
                             .flatMap(trade -> {
-                                if (paperTradingEngine.isDteExitDue(trade, cfg, defaultThreshold)) {
+                                if (paperTradingEngine.isDteExitDue(trade, cfg, defaultThreshold,
+                                        LocalTime.now(ZoneId.of("Asia/Kolkata")))) {
                                     log.info("DTE exit due for {} position {}, closing with reason DTE_EXIT_SAFETY_NET",
                                             strategyName, trade.getId());
                                     return paperTradingEngine.closeTrade(trade, "DTE_EXIT_SAFETY_NET");

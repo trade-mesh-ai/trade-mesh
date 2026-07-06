@@ -138,4 +138,21 @@ public class StrategyProperties {
             return defaultValue;
         }
     }
+
+    /**
+     * Safely retrieves a string value from the extra map.
+     *
+     * @param key          the configuration key
+     * @param defaultValue the default value if key not found or conversion fails
+     * @return the string value or defaultValue
+     */
+    public String getExtraString(String key, String defaultValue) {
+        Object val = extra.get(key);
+        if (val == null) return defaultValue;
+        try {
+            return val.toString();
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
 }

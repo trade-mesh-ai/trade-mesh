@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
@@ -79,7 +80,7 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createIronCondorTrade(expiryDate);
 
         // Act
-        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2);
+        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2, LocalTime.of(10, 1));
 
         // Assert
         assertFalse(result, "isDteExitDue should return false when DTE > threshold");
@@ -102,14 +103,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createIronCondorTrade(expiryDate);
 
         // Act
-        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2);
+        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2, LocalTime.of(10, 1));
 
         // Assert
         assertTrue(result, "isDteExitDue should return true when DTE < threshold");
-    }
+     }
 
-    /**
-     * Test 3: Iron Condor - Equal to threshold (2 days == 2) → true.
+     /**
+      * Test 3: Iron Condor - Equal to threshold (2 days == 2) → true.
      * <p>
      * Verifies that when tradingDaysRemaining (2) == threshold (2),
      * isDteExitDue() returns true (boundary condition: <= threshold).
@@ -125,14 +126,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createIronCondorTrade(expiryDate);
 
         // Act
-        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2);
+        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2, LocalTime.of(10, 1));
 
         // Assert
         assertTrue(result, "isDteExitDue should return true when DTE == threshold");
-    }
+     }
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // SPREAD TESTS (default threshold = 1)
+     // ═══════════════════════════════════════════════════════════════════════════════
+     // SPREAD TESTS (default threshold = 1)
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /**
@@ -152,14 +153,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createSpreadTrade(expiryDate);
 
         // Act
-        boolean result = engine.isDteExitDue(trade, spreadConfig, 1);
+        boolean result = engine.isDteExitDue(trade, spreadConfig, 1, LocalTime.of(10, 1));
 
         // Assert
         assertFalse(result, "isDteExitDue should return false when DTE > threshold");
-    }
+     }
 
-    /**
-     * Test 5: Spread - Below threshold (0 days < 1) → true.
+     /**
+      * Test 5: Spread - Below threshold (0 days < 1) → true.
      * <p>
      * Verifies that when tradingDaysRemaining (0) < threshold (1),
      * isDteExitDue() returns true.
@@ -175,14 +176,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createSpreadTrade(expiryDate);
 
         // Act
-        boolean result = engine.isDteExitDue(trade, spreadConfig, 1);
+        boolean result = engine.isDteExitDue(trade, spreadConfig, 1, LocalTime.of(10, 1));
 
         // Assert
         assertTrue(result, "isDteExitDue should return true when DTE < threshold");
-    }
+     }
 
-    /**
-     * Test 6: Spread - Equal to threshold (1 day == 1) → true.
+     /**
+      * Test 6: Spread - Equal to threshold (1 day == 1) → true.
      * <p>
      * Verifies that when tradingDaysRemaining (1) == threshold (1),
      * isDteExitDue() returns true (boundary condition: <= threshold).
@@ -198,14 +199,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createSpreadTrade(expiryDate);
 
         // Act
-        boolean result = engine.isDteExitDue(trade, spreadConfig, 1);
+        boolean result = engine.isDteExitDue(trade, spreadConfig, 1, LocalTime.of(10, 1));
 
         // Assert
         assertTrue(result, "isDteExitDue should return true when DTE == threshold");
-    }
+     }
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // CONFIG FALLBACK TESTS
+     // ═══════════════════════════════════════════════════════════════════════════════
+     // CONFIG FALLBACK TESTS
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /**
@@ -234,14 +235,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createIronCondorTrade(expiryDate);
 
         // Act: Pass defaultThreshold = 2
-        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2);
+        boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2, LocalTime.of(10, 1));
 
         // Assert: 2 days <= 2 threshold → true
-        assertTrue(result, "isDteExitDue should return true when DTE (2) == threshold (2)");
-    }
+         assertTrue(result, "isDteExitDue should return true when DTE (2) == threshold (2)");
+     }
 
-    /**
-     * Test 7b: Config key missing → falls back to defaultThreshold = 1.
+     /**
+      * Test 7b: Config key missing → falls back to defaultThreshold = 1.
      * <p>
      * Verifies that when config key "dte-exit-threshold" is missing,
      * the method correctly falls back to the passed defaultThreshold (1).
@@ -260,14 +261,14 @@ class PaperTradingEngineDteExitDueTest {
         PaperTrade trade = createSpreadTrade(expiryDate);
 
         // Act: Pass defaultThreshold = 1
-        boolean result = engine.isDteExitDue(trade, spreadConfig, 1);
+        boolean result = engine.isDteExitDue(trade, spreadConfig, 1, LocalTime.of(10, 1));
 
         // Assert: 2 days > 1 threshold → false
-        assertFalse(result, "isDteExitDue should return false when DTE (2) > threshold (1)");
-    }
+         assertFalse(result, "isDteExitDue should return false when DTE (2) > threshold (1)");
+     }
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // EDGE CASE TESTS
+     // ═══════════════════════════════════════════════════════════════════════════════
+     // EDGE CASE TESTS
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /**
@@ -285,7 +286,7 @@ class PaperTradingEngineDteExitDueTest {
 
         // Act & Assert: No exception should be thrown
         assertDoesNotThrow(() -> {
-            boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2);
+            boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2, LocalTime.of(10, 1));
             assertFalse(result, "isDteExitDue should return false when legs are null");
         }, "isDteExitDue should not throw exception for null legs");
     }
@@ -305,7 +306,7 @@ class PaperTradingEngineDteExitDueTest {
 
         // Act & Assert: No exception should be thrown
         assertDoesNotThrow(() -> {
-            boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2);
+            boolean result = engine.isDteExitDue(trade, ironCondorConfig, 2, LocalTime.of(10, 1));
             assertFalse(result, "isDteExitDue should return false when expiry date is null");
         }, "isDteExitDue should not throw exception for null expiry date");
     }
