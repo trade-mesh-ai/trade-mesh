@@ -24,6 +24,8 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -81,6 +83,20 @@ public class BearCallSpreadStrategy implements TradingStrategy {
             return Mono.just(StrategyResult.builder()
                     .isExecutable(false)
                     .skipReason("VIX too high: " + currentVix)
+                    .build());
+        }
+
+        // Entry time gate
+        LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+        LocalTime latestTime = LocalTime.parse(cfg.getLatestEntryTime(),
+                DateTimeFormatter.ofPattern("HH:mm"));
+        if (currentTime.isAfter(latestTime)) {
+            log.info("Too late to enter Bear Call Spread (current: {}, limit: {})",
+                    currentTime.format(DateTimeFormatter.ofPattern("HH:mm")), cfg.getLatestEntryTime());
+            return Mono.just(StrategyResult.builder()
+                    .isExecutable(false)
+                    .skipReason("Too late to enter (current: " + currentTime.format(DateTimeFormatter.ofPattern("HH:mm")) +
+                            ", limit: " + cfg.getLatestEntryTime() + ")")
                     .build());
         }
 

@@ -22,10 +22,10 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
@@ -67,9 +67,9 @@ class PaperTradingEngineVixPanicTest {
         // Constructor: (paperTradeRepository, redisTemplate, telegramNotificationBot, objectMapper, strategiesConfig, lotSizeService, vixMonitorService, marketCalendarService)
         lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
         lenient().when(reactiveValueOps.get("price:NIFTY50")).thenReturn(Mono.just("19400"));
-        
+
         engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService);
-        
+
         // Stub marketCalendarService for all tests (safe DTE value)
         lenient().when(marketCalendarService.countTradingDays(any(), any())).thenReturn(5);
     }

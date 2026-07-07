@@ -2,7 +2,6 @@ package com.trademesh.execution;
 
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.config.StrategyProperties;
-import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.trading.MarketCalendarService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,8 +11,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -22,9 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 /**
@@ -48,8 +44,8 @@ class PaperTradingEngineTest {
 
     @BeforeEach
     void setUp() {
-        today = LocalDate.of(2026, 7, 6); // Monday
-        expiryDate = LocalDate.of(2026, 7, 9); // Thursday (3 trading days away)
+        today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        expiryDate = today.plusDays(3); // 3 days from today
 
         // Create a trade with one leg
         trade = PaperTrade.createNew();

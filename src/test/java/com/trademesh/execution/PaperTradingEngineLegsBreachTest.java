@@ -18,16 +18,12 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for LEG_BREACH exit detection in PaperTradingEngine.
@@ -436,7 +432,7 @@ class PaperTradingEngineLegsBreachTest {
     @DisplayName("EXPIRY_DAY_STRANGLE: Explicitly excluded from LEG_BREACH detection")
     void expiryDayStrangle_excludedFromLegBreach() {
         // Arrange
-        
+
         PaperTrade trade = createExpiryDayStrangleTrade();
 
         // Mock Redis to return spot price that would trigger breach for other strategies

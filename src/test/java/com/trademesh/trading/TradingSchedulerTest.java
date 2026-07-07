@@ -1,5 +1,8 @@
 package com.trademesh.trading;
 
+import com.trademesh.intelligence.MarketIntelligenceService;
+import com.trademesh.strategy.StrategySelector;
+import com.trademesh.strategy.config.StrategiesConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,7 +12,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -35,12 +37,24 @@ class TradingSchedulerTest {
     @Mock
     private MarketCalendarService marketCalendarService;
 
+    @Mock
+    private StrategiesConfig strategiesConfig;
+
+    @Mock
+    private MarketIntelligenceService marketIntelligenceService;
+
+    @Mock
+    private StrategySelector strategySelector;
+
     @BeforeEach
     void setUp() {
         tradingScheduler = new TradingScheduler(
                 tradingOrchestrator,
                 dailyReportService,
-                marketCalendarService
+                marketCalendarService,
+                strategiesConfig,
+                marketIntelligenceService,
+                strategySelector
         );
     }
 
