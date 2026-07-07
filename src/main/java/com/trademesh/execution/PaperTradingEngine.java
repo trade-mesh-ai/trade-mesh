@@ -284,35 +284,35 @@ public class PaperTradingEngine {
         }
     }
 
-     /**
-      * Checks if Iron Condor position should be exited based on multiple conditions.
-      * Exit priority: VIX panic → DTE exit → leg breach → stop loss → profit target.
-      *
-      * @param trade         the Iron Condor paper trade
-      * @param unrealizedPnl the current unrealized P&L
-      * @param cfg           the Iron Condor strategy configuration
-      * @param currentVix    the current VIX value (or -1.0 if unavailable)
-      * @param currentTime   the current time for force-close-time check
-      * @return true if any exit condition is met, false otherwise
-      */
-     Mono<Boolean> shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
-                                        com.trademesh.strategy.config.StrategyProperties cfg,
-                                        double currentVix, LocalTime currentTime) {
-         // Check 0: VIX panic exit (highest priority)
-         double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
-         if (currentVix > 0 && currentVix > vixPanicThreshold) {
-             log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
-                     cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
-             trade.setExitReason("VIX_PANIC");
-             return Mono.just(true);
-         }
-         // currentVix <= 0 means VIX data was unavailable — skip this check silently
+    /**
+     * Checks if Iron Condor position should be exited based on multiple conditions.
+     * Exit priority: VIX panic → DTE exit → leg breach → stop loss → profit target.
+     *
+     * @param trade         the Iron Condor paper trade
+     * @param unrealizedPnl the current unrealized P&L
+     * @param cfg           the Iron Condor strategy configuration
+     * @param currentVix    the current VIX value (or -1.0 if unavailable)
+     * @param currentTime   the current time for force-close-time check
+     * @return true if any exit condition is met, false otherwise
+     */
+    Mono<Boolean> shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
+                                       com.trademesh.strategy.config.StrategyProperties cfg,
+                                       double currentVix, LocalTime currentTime) {
+        // Check 0: VIX panic exit (highest priority)
+        double vixPanicThreshold = cfg.getExtraDouble("vix-panic-threshold", 25.0);
+        if (currentVix > 0 && currentVix > vixPanicThreshold) {
+            log.warn("VIX panic exit triggered for {} trade {}: vix={}, threshold={}",
+                    cfg.getName(), trade.getId(), currentVix, vixPanicThreshold);
+            trade.setExitReason("VIX_PANIC");
+            return Mono.just(true);
+        }
+        // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
-         // Check 1: DTE exit (scheduled wind-down)
-         if (isDteExitDue(trade, cfg, 2, currentTime)) {
-             trade.setExitReason("DTE_EXIT");
-             return Mono.just(true);
-         }
+        // Check 1: DTE exit (scheduled wind-down)
+        if (isDteExitDue(trade, cfg, 2, currentTime)) {
+            trade.setExitReason("DTE_EXIT");
+            return Mono.just(true);
+        }
 
         // Check 2: Leg breach (spot crosses short strike) — reactive check
         return isLegBreach(trade)
@@ -877,25 +877,25 @@ public class PaperTradingEngine {
         }
     }
 
-     /**
-      * Checks if a trade should be exited based on DTE (Days To Expiry).
-      * Implements a time gate on the threshold day to prevent premature exits.
-      *
-      * Logic:
-      * - If tradingDaysRemaining < threshold: exit immediately (past threshold day)
-      * - If tradingDaysRemaining == threshold: exit only if currentTime >= dte-exit-earliest-time
-      * - If tradingDaysRemaining > threshold: do not exit (not yet at threshold)
-      *
-      * @param trade            the paper trade
-      * @param cfg              the strategy configuration
-      * @param defaultThreshold the default DTE threshold if config key is missing
-      * @param currentTime      the current time for time-gate check on threshold day
-      * @return true if DTE exit condition is met, false otherwise
-      */
-     public boolean isDteExitDue(PaperTrade trade,
-                                 com.trademesh.strategy.config.StrategyProperties cfg,
-                                 int defaultThreshold,
-                                 LocalTime currentTime) {
+    /**
+     * Checks if a trade should be exited based on DTE (Days To Expiry).
+     * Implements a time gate on the threshold day to prevent premature exits.
+     * <p>
+     * Logic:
+     * - If tradingDaysRemaining < threshold: exit immediately (past threshold day)
+     * - If tradingDaysRemaining == threshold: exit only if currentTime >= dte-exit-earliest-time
+     * - If tradingDaysRemaining > threshold: do not exit (not yet at threshold)
+     *
+     * @param trade            the paper trade
+     * @param cfg              the strategy configuration
+     * @param defaultThreshold the default DTE threshold if config key is missing
+     * @param currentTime      the current time for time-gate check on threshold day
+     * @return true if DTE exit condition is met, false otherwise
+     */
+    public boolean isDteExitDue(PaperTrade trade,
+                                com.trademesh.strategy.config.StrategyProperties cfg,
+                                int defaultThreshold,
+                                LocalTime currentTime) {
         List<TradeLeg> legs = trade.getLegs();
 
         // Guard: no legs
@@ -929,28 +929,28 @@ public class PaperTradingEngine {
             return true;
         }
 
-         // We're exactly at the threshold day — apply time gate
-         // Only exit if current time >= dte-exit-earliest-time
-         String dteExitEarliestTimeStr = cfg.getExtraString("dte-exit-earliest-time", "10:00");
+        // We're exactly at the threshold day — apply time gate
+        // Only exit if current time >= dte-exit-earliest-time
+        String dteExitEarliestTimeStr = cfg.getExtraString("dte-exit-earliest-time", "10:00");
 
-         try {
-             LocalTime dteExitEarliestTime = LocalTime.parse(dteExitEarliestTimeStr,
-                     DateTimeFormatter.ofPattern("HH:mm"));
+        try {
+            LocalTime dteExitEarliestTime = LocalTime.parse(dteExitEarliestTimeStr,
+                    DateTimeFormatter.ofPattern("HH:mm"));
 
-             if (currentTime.isBefore(dteExitEarliestTime)) {
-                 log.debug("DTE exit blocked for trade {}: threshold day but time gate not yet reached. " +
-                                 "Current: {}, Gate: {}", trade.getId(), currentTime, dteExitEarliestTime);
-                 return false;
-             }
+            if (currentTime.isBefore(dteExitEarliestTime)) {
+                log.debug("DTE exit blocked for trade {}: threshold day but time gate not yet reached. " +
+                        "Current: {}, Gate: {}", trade.getId(), currentTime, dteExitEarliestTime);
+                return false;
+            }
 
-             log.info("DTE exit due for trade {}: threshold day ({} trading days) and time gate passed. " +
-                             "Current: {}, Gate: {}", trade.getId(), tradingDaysRemaining, currentTime, dteExitEarliestTime);
-             return true;
-         } catch (Exception e) {
-             log.warn("Error parsing dte-exit-earliest-time '{}' for trade {}: {}. " +
-                             "Allowing exit as fallback.", dteExitEarliestTimeStr, trade.getId(), e.getMessage());
-             return true;
-         }
+            log.info("DTE exit due for trade {}: threshold day ({} trading days) and time gate passed. " +
+                    "Current: {}, Gate: {}", trade.getId(), tradingDaysRemaining, currentTime, dteExitEarliestTime);
+            return true;
+        } catch (Exception e) {
+            log.warn("Error parsing dte-exit-earliest-time '{}' for trade {}: {}. " +
+                    "Allowing exit as fallback.", dteExitEarliestTimeStr, trade.getId(), e.getMessage());
+            return true;
+        }
     }
 
     /**
@@ -978,10 +978,10 @@ public class PaperTradingEngine {
         }
         // currentVix <= 0 means VIX data was unavailable — skip this check silently
 
-         // Check 1: DTE exit (scheduled wind-down)
-         if (isDteExitDue(trade, cfg, 1, currentTime)) {
-             trade.setExitReason("DTE_EXIT");
-             return Mono.just(true);
+        // Check 1: DTE exit (scheduled wind-down)
+        if (isDteExitDue(trade, cfg, 1, currentTime)) {
+            trade.setExitReason("DTE_EXIT");
+            return Mono.just(true);
         }
 
         // Check 2: Leg breach (spot crosses short strike) — reactive check
