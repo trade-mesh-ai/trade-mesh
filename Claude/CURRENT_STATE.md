@@ -7,7 +7,7 @@ Most recent verified evidence > this file > README.md narrative.
 
 ## Branch state
 - `feature/paper_trade_sit_issues` — **merged to main.** Contains: LEG_BREACH, DTE boundary fix, DTE_EXIT time-gate, FORCE_CLOSE_EOD removal.
-- `feature/adding_periodic_entry_retry` — new branch, pushed, not yet merged. Contains: latest-entry-time enforcement + periodic entry retry scheduler.
+- `feature/adding_periodic_entry_retry` — **merging to main.** Contains: latest-entry-time enforcement, periodic entry retry scheduler, retry-loop single-call fix, stale Javadoc cleanup. Merge rationale documented below.
 
 ## Verified, stable (merged to main)
 
@@ -43,7 +43,7 @@ Most recent verified evidence > this file > README.md narrative.
 ## Open / Unverified
 
 - **Stage 4c still has zero live/runtime observation of a position surviving a trading-day boundary** — design is now correct for the first time (FORCE_CLOSE_EOD + DTE boundary fixes on main). No open position exists as of session end. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary.
-- `feature/adding_periodic_entry_retry` not yet merged — decide merge timing; retry mechanism is a second gate-override layer, consider whether to hold it until Stage 4c's first observation lands, per the original gate rationale, or merge now per Kuldeep's standing override right.
+- **Merge decision made:** `feature/adding_periodic_entry_retry` will be merged to main. Rationale: without the retry mechanism, entries only happen once daily at 9:30 AM and may miss the window entirely on any given day — this slows arrival of Stage 4c's first observation rather than protecting it. The two features (entry retry, exit timing) don't interact with each other's core logic, so merging doesn't confound root-causing between them. Same evidence discipline applies to whatever happens next regardless of branch state.
 - Zerodha token refresh remains manual (~6 AM) — accepted operational reality.
 
 ## Tracked gaps (logged, not scheduled)
