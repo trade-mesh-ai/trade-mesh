@@ -8,15 +8,15 @@ import reactor.core.publisher.Mono;
 
 /**
  * Scheduler for automated trading cycles and position management.
- *
+ * <p>
  * Manages scheduled tasks for:
  * - Daily entry signals at 9:30 AM (strategy selection handled by StrategySelector)
  * - Forced position exit at 3:15 PM
  * - Daily P&L reporting at 3:45 PM
- *
+ * <p>
  * All times are in IST (Asia/Kolkata timezone).
  * Market hours: 9:15 AM - 3:30 PM IST, Monday to Friday only.
- *
+ * <p>
  * Strategy selection is automatic via StrategySelector based on market condition:
  * - Tuesday (EXPIRY_DAY) → EXPIRY_DAY_STRANGLE
  * - Other days (SIDEWAYS) → IRON_CONDOR
@@ -33,13 +33,36 @@ public class TradingScheduler {
     private final MarketCalendarService marketCalendarService;
 
     /**
+     * Runs DTE exit safety net check every weekday at 9:00 AM IST.
+     * <p>
+     * Provides a daily backstop for any mark-to-market DTE-exit failures.
+     * Closes positions where isDteExitDue() returns true for DTE-governed strategies only.
+     * <p>
+     * Cron: "0 0 9 * * MON-FRI"
+     * - 0: second (0)
+     * - 0: minute (0)
+     * - 9: hour (9 AM)
+     * - *: day of month (any)
+     * - *: month (any)
+     * - MON-FRI: day of week (Monday to Friday)
+     */
+    @Scheduled(cron = "0 0 9 * * MON-FRI", zone = "Asia/Kolkata")
+    public void dailySafetyNetCheck() {
+        tradingOrchestrator.runDteExitSafetyNetCheck()
+                .doOnSuccess(count -> log.info("DTE safety net check completed, closed {} positions", count))
+                .doOnError(e -> log.error("Error in DTE safety net check: {}", e.getMessage(), e))
+                .subscribe(ignored -> {
+                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+    }
+
+    /**
      * Runs trading cycle entry every weekday at 9:30 AM IST.
-     *
+     * <p>
      * Triggers strategy evaluation and potential trade entry for NIFTY50.
      * StrategySelector automatically picks the right strategy based on market condition:
      * - Tuesday → EXPIRY_DAY_STRANGLE
      * - Other days → IRON_CONDOR, BULL_PUT_SPREAD, or BEAR_CALL_SPREAD
-     *
+     * <p>
      * Cron: "0 30 9 * * MON-FRI"
      * - 0: second (0)
      * - 30: minute (30)
@@ -55,7 +78,7 @@ public class TradingScheduler {
 
     /**
      * Manually triggers daily entry, bypassing market open checks.
-     *
+     * <p>
      * Useful for testing or manual intervention outside of market hours.
      * Logs a warning to indicate this is for testing purposes only.
      */
@@ -66,7 +89,7 @@ public class TradingScheduler {
 
     /**
      * Executes the daily entry trading cycle.
-     *
+     * <p>
      * Runs trading cycle for NIFTY50. StrategySelector automatically determines
      * which strategy to use based on current market condition.
      *
@@ -98,43 +121,45 @@ public class TradingScheduler {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
 
-    /**
-     * Forces exit of all open positions every weekday at 3:15 PM IST.
-     *
-     * Closes all open NIFTY50 positions regardless of P&L status.
-     *
-     * Cron: "0 15 15 * * MON-FRI"
-     * - 0: second (0)
-     * - 15: minute (15)
-     * - 15: hour (3 PM, 15:15 = 3:15 PM)
-     * - *: day of month (any)
-     * - *: month (any)
-     * - MON-FRI: day of week (Monday to Friday)
-     */
-    @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void scheduledDailyExit() {
-        marketCalendarService.isMarketOpen()
-                .filter(Boolean::booleanValue)
-                .flatMap(ignored -> Mono.fromRunnable(() -> {
-                    log.info("Forcing exit of all open positions at 3:15 PM");
+     /**
+      * Forces exit of EXPIRY_DAY_STRANGLE positions every weekday at 3:15 PM IST.
+      * <p>
+      * Closes all open EXPIRY_DAY_STRANGLE positions for NIFTY50 regardless of P&L status.
+      * Other strategies (IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD) are left untouched
+      * and managed by their own DTE-based exit logic.
+      * <p>
+      * Cron: "0 15 15 * * MON-FRI"
+      * - 0: second (0)
+      * - 15: minute (15)
+      * - 15: hour (3 PM, 15:15 = 3:15 PM)
+      * - *: day of month (any)
+      * - *: month (any)
+      * - MON-FRI: day of week (Monday to Friday)
+      */
+     @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
+     public void scheduledDailyExit() {
+         marketCalendarService.isMarketOpen()
+                 .filter(Boolean::booleanValue)
+                 .flatMap(ignored -> Mono.fromRunnable(() -> {
+                     log.info("Forcing exit of EXPIRY_DAY_STRANGLE positions at 3:15 PM");
 
-                    tradingOrchestrator.exitAllPositions("NIFTY50")
-                            .doOnSuccess(count -> {
-                                log.info("Closed {} NIFTY positions at daily exit", count);
-                            })
-                            .doOnError(e -> log.error("Error closing NIFTY positions: {}", e.getMessage(), e))
-                            .subscribe(ignored2 -> {
-                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-                }))
-                .subscribe(ignored -> {
-                }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-    }
+                     tradingOrchestrator.exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE")
+                             .doOnSuccess(count -> {
+                                 log.info("Closed {} EXPIRY_DAY_STRANGLE positions at daily exit", count);
+                             })
+                             .doOnError(e -> log.error("Error closing EXPIRY_DAY_STRANGLE positions: {}", e.getMessage(), e))
+                             .subscribe(ignored2 -> {
+                             }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                 }))
+                 .subscribe(ignored -> {
+                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+     }
 
     /**
      * Generates and sends daily P&L report every weekday at 3:45 PM IST.
-     *
+     * <p>
      * Aggregates daily trading metrics and sends comprehensive summary via Telegram.
-     *
+     * <p>
      * Cron: "0 45 15 * * MON-FRI"
      * - 0: second (0)
      * - 45: minute (45)

@@ -3,20 +3,25 @@ package com.trademesh.trading;
 import com.trademesh.alert.Alert;
 import com.trademesh.alert.AlertType;
 import com.trademesh.alert.TelegramNotificationBot;
+import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.PaperTradingEngine;
+import com.trademesh.execution.TradeStatus;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketIntelligenceService;
+import com.trademesh.risk.RiskManager;
 import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.StrategySelector;
 import com.trademesh.strategy.TradeSignal;
+import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.enums.Confidence;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 
 /**
@@ -43,8 +48,21 @@ public class TradingOrchestrator {
     private final MarketIntelligenceService marketIntelligenceService;
     private final StrategySelector strategySelector;
     private final PaperTradingEngine paperTradingEngine;
+    private final PaperTradeRepository paperTradeRepository;
+    private final StrategiesConfig strategiesConfig;
     private final TelegramNotificationBot telegramNotificationBot;
     private final StrategyExecutionLogRepository executionLogRepository;
+    private final RiskManager riskManager;
+
+    /**
+     * Getter for PaperTradingEngine to allow REST controllers to access live P&L calculation.
+     * Used by TradingController to calculate live unrealized P&L without DB writes.
+     *
+     * @return the PaperTradingEngine instance
+     */
+    public PaperTradingEngine getPaperTradingEngine() {
+        return paperTradingEngine;
+    }
 
     /**
      * Runs a complete trading cycle for a given symbol.
@@ -63,7 +81,7 @@ public class TradingOrchestrator {
     public Mono<StrategyResult> runTradingCycle(String symbol) {
         log.info("Starting trading cycle for symbol: {}", symbol);
 
-        return marketIntelligenceService.generateIntelligence(symbol)
+        return marketIntelligenceService.generateFreshIntelligence(symbol)
                 .flatMap(intelligence -> {
                     // Step 2: Check if safe to trade
                     if (!intelligence.getIsSafeToTrade()) {
@@ -80,17 +98,29 @@ public class TradingOrchestrator {
                             .flatMap(result -> {
                                 // Step 4: If signal is executable, execute the trade
                                 if (result.getIsExecutable() && result.getSignal() != null) {
-                                    TradeSignal signal = result.getSignal();
-                                    return paperTradingEngine.executeTrade(result)
-                                            .flatMap(trade -> {
-                                                // Step 5: Log execution
-                                                return logExecution(symbol, signal, intelligence)
-                                                        .then(Mono.just(result));
-                                            })
-                                            .flatMap(result2 -> {
-                                                // Step 6: Send summary alert
-                                                return sendTradingCycleSummary(symbol, result2.getSignal(), intelligence)
-                                                        .then(Mono.just(result2));
+                                    return riskManager.isWithinConcurrentPositionLimit()
+                                            .flatMap(withinLimit -> {
+                                                if (!withinLimit) {
+                                                    int maxAllowed = riskManager.getMaxConcurrentOpenPositions();
+                                                    log.info("Max concurrent open positions ({}) reached, skipping entry", maxAllowed);
+                                                    return Mono.just(StrategyResult.builder()
+                                                            .isExecutable(false)
+                                                            .skipReason("Max concurrent open positions (" + maxAllowed + ") reached")
+                                                            .build());
+                                                }
+
+                                                TradeSignal signal = result.getSignal();
+                                                return paperTradingEngine.executeTrade(result)
+                                                        .flatMap(trade -> {
+                                                            // Step 5: Log execution
+                                                            return logExecution(symbol, signal, intelligence)
+                                                                    .then(Mono.just(result));
+                                                        })
+                                                        .flatMap(result2 -> {
+                                                            // Step 6: Send summary alert
+                                                            return sendTradingCycleSummary(symbol, result2.getSignal(), intelligence)
+                                                                    .then(Mono.just(result2));
+                                                        });
                                             });
                                 } else {
                                     // Signal not executable, just log and return
@@ -121,7 +151,18 @@ public class TradingOrchestrator {
 
         return executionLogRepository.findOpenPositionsBySymbol(symbol)
                 .flatMap(position -> {
-                    // Get fresh intelligence
+                    // TODO: Architectural Decision - Market Intelligence Freshness for Position Monitoring
+                    // CURRENT STATE: Uses cached generateIntelligence() because current exit logic
+                    // (mark-to-market only) does not depend on fresh VIX, Market Regime, or Open Interest.
+                    //
+                    // FUTURE RE-EVALUATION REQUIRED IF:
+                    // - VIX-based exit conditions are implemented
+                    // - Market Regime-based exits are added
+                    // - Open Interest-based exits are implemented
+                    // - Any other Market Intelligence-derived exit conditions are introduced
+                    //
+                    // When any of these conditions are met, evaluate whether fresh intelligence should
+                    // be fetched for each position monitoring cycle (similar to trade entry in runTradingCycle).
                     return marketIntelligenceService.generateIntelligence(symbol)
                             .flatMap(intelligence -> {
                                 // Mark to market to update current value and P&L
@@ -141,32 +182,63 @@ public class TradingOrchestrator {
                 });
     }
 
-    /**
-     * Exits all open positions for a given symbol.
-     *
-     * @param symbol trading symbol
-     * @return Mono emitting the count of closed positions
-     */
-    public Mono<Integer> exitAllPositions(String symbol) {
-        log.info("Exiting all open positions for symbol: {}", symbol);
+     /**
+      * Exits all open positions for a given symbol.
+      *
+      * @param symbol trading symbol
+      * @return Mono emitting the count of closed positions
+      */
+     public Mono<Integer> exitAllPositions(String symbol) {
+         log.info("Exiting all open positions for symbol: {}", symbol);
 
-        return executionLogRepository.findOpenPositionsBySymbol(symbol)
-                .flatMap(position -> {
-                    return paperTradingEngine.closeTrade(position, "FORCED_EXIT_END_OF_DAY");
-                })
-                .count()
-                .map(Math::toIntExact)
-                .doOnSuccess(count -> {
-                    log.info("Closed {} positions for {} at end of day", count, symbol);
-                    if (count > 0) {
-                        sendEndOfDayAlert(symbol, count).subscribe();
-                    }
-                })
-                .onErrorResume(e -> {
-                    log.error("Error exiting positions for {}: {}", symbol, e.getMessage(), e);
-                    return Mono.just(0);
-                });
-    }
+         return executionLogRepository.findOpenPositionsBySymbol(symbol)
+                 .flatMap(position -> {
+                     return paperTradingEngine.closeTrade(position, "FORCED_EXIT_END_OF_DAY");
+                 })
+                 .count()
+                 .map(Math::toIntExact)
+                 .doOnSuccess(count -> {
+                     log.info("Closed {} positions for {} at end of day", count, symbol);
+                     if (count > 0) {
+                         sendEndOfDayAlert(symbol, count).subscribe();
+                     }
+                 })
+                 .onErrorResume(e -> {
+                     log.error("Error exiting positions for {}: {}", symbol, e.getMessage(), e);
+                     return Mono.just(0);
+                 });
+     }
+
+     /**
+      * Exits open positions for a specific strategy and symbol.
+      * <p>
+      * Closes only positions matching the given strategy name, leaving other strategies untouched.
+      * Used for strategy-specific end-of-day exits (e.g., EXPIRY_DAY_STRANGLE at 3:15 PM).
+      *
+      * @param symbol trading symbol
+      * @param strategyName strategy name to filter by
+      * @return Mono emitting the count of closed positions
+      */
+     public Mono<Integer> exitPositionsForStrategy(String symbol, String strategyName) {
+         log.info("Exiting open positions for strategy {} and symbol: {}", strategyName, symbol);
+
+         return paperTradeRepository.findByStrategyNameAndStatus(strategyName, TradeStatus.OPEN)
+                 .flatMap(position -> {
+                     return paperTradingEngine.closeTrade(position, "FORCED_EXIT_END_OF_DAY");
+                 })
+                 .count()
+                 .map(Math::toIntExact)
+                 .doOnSuccess(count -> {
+                     log.info("Closed {} {} positions for {} at end of day", count, strategyName, symbol);
+                     if (count > 0) {
+                         sendEndOfDayAlert(symbol, count).subscribe();
+                     }
+                 })
+                 .onErrorResume(e -> {
+                     log.error("Error exiting {} positions for {}: {}", strategyName, symbol, e.getMessage(), e);
+                     return Mono.just(0);
+                 });
+     }
 
     /**
      * Logs strategy execution to the database.
@@ -177,16 +249,14 @@ public class TradingOrchestrator {
      * @return Mono emitting the saved log entry
      */
     private Mono<StrategyExecutionLog> logExecution(String symbol, TradeSignal signal, MarketIntelligence intelligence) {
-        StrategyExecutionLog logger = StrategyExecutionLog.builder()
-                .id(java.util.UUID.randomUUID())
-                .symbol(symbol)
-                .strategyName(signal.getStrategyName())
-                .marketCondition(intelligence.getMarketCondition().name())
-                .action(signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name())
-                .reason(signal.getReason())
-                .vixLevel(intelligence.getVixData().getCurrentVix())
-                .executedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
-                .build();
+        StrategyExecutionLog logger = StrategyExecutionLog.createNew();
+        logger.setSymbol(symbol);
+        logger.setStrategyName(signal.getStrategyName());
+        logger.setMarketCondition(intelligence.getMarketCondition().name());
+        logger.setAction(signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name());
+        logger.setReason(signal.getReason());
+        logger.setVixLevel(intelligence.getVixData().getCurrentVix());
+        logger.setExecutedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
 
         return executionLogRepository.save(logger)
                 .doOnSuccess(saved -> log.info("Logged execution: {} | {} | {}", symbol, signal.getStrategyName(), signal.getReason()));
@@ -205,23 +275,23 @@ public class TradingOrchestrator {
             return Mono.empty();
         }
 
-         String message = String.format(
-                 "🤖 <b>Trading Cycle Complete</b>\n\n" +
-                         "Symbol: <b>%s</b>\n" +
-                         "Condition: <b>%s</b>\n" +
-                         "Strategy: <b>%s</b>\n" +
-                         "Action: <b>%s</b>\n" +
-                         "Signal: <code>%s</code>\n" +
-                         "VIX: <b>%.1f</b>\n" +
-                         "Confidence: <b>%s</b>",
-                 symbol,
-                 intelligence.getMarketCondition().name(),
-                 signal.getStrategyName(),
-                 signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name(),
-                 signal.getReason(),
-                 intelligence.getVixData().getCurrentVix(),
-                 signal.getConfidence() != null ? signal.getConfidence().name() : Confidence.MEDIUM.name()
-         );
+        String message = String.format(
+                "🤖 <b>Trading Cycle Complete</b>\n\n" +
+                        "Symbol: <b>%s</b>\n" +
+                        "Condition: <b>%s</b>\n" +
+                        "Strategy: <b>%s</b>\n" +
+                        "Action: <b>%s</b>\n" +
+                        "Signal: <code>%s</code>\n" +
+                        "VIX: <b>%.1f</b>\n" +
+                        "Confidence: <b>%s</b>",
+                symbol,
+                intelligence.getMarketCondition().name(),
+                signal.getStrategyName(),
+                signal.getSignalType() != null ? signal.getSignalType().name() : com.trademesh.strategy.enums.SignalType.ENTER.name(),
+                signal.getReason(),
+                intelligence.getVixData().getCurrentVix(),
+                signal.getConfidence() != null ? signal.getConfidence().name() : Confidence.MEDIUM.name()
+        );
 
         Alert alert = Alert.builder()
                 .type(AlertType.SIGNAL_GENERATED)
@@ -231,6 +301,48 @@ public class TradingOrchestrator {
                 .build();
 
         return telegramNotificationBot.sendAlert(alert);
+    }
+
+
+    /**
+     * Runs DTE exit safety net check for DTE-governed strategies.
+     * <p>
+     * Closes positions where isDteExitDue() returns true, using exit reason "DTE_EXIT_SAFETY_NET".
+     * Only processes IRON_CONDOR, BULL_PUT_SPREAD, and BEAR_CALL_SPREAD positions.
+     * EXPIRY_DAY_STRANGLE positions are explicitly excluded (not DTE-governed).
+     *
+     * @return Mono emitting the count of closed positions
+     */
+    public Mono<Integer> runDteExitSafetyNetCheck() {
+        log.info("Running DTE exit safety net check for DTE-governed strategies");
+
+        String[] dteGovernedStrategies = {"IRON_CONDOR", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD"};
+
+        return Flux.fromArray(dteGovernedStrategies)
+                .flatMap(strategyName -> {
+                    com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
+
+                    // Determine default threshold based on strategy
+                    int defaultThreshold = "IRON_CONDOR".equals(strategyName) ? 2 : 1;
+
+                    return paperTradeRepository.findByStrategyNameAndStatus(strategyName, TradeStatus.OPEN)
+                            .flatMap(trade -> {
+                                if (paperTradingEngine.isDteExitDue(trade, cfg, defaultThreshold,
+                                        LocalTime.now(ZoneId.of("Asia/Kolkata")))) {
+                                    log.info("DTE exit due for {} position {}, closing with reason DTE_EXIT_SAFETY_NET",
+                                            strategyName, trade.getId());
+                                    return paperTradingEngine.closeTrade(trade, "DTE_EXIT_SAFETY_NET");
+                                }
+                                return Mono.empty();
+                            });
+                })
+                .count()
+                .map(Math::toIntExact)
+                .doOnSuccess(count -> log.info("DTE safety net closed {} positions", count))
+                .onErrorResume(e -> {
+                    log.error("Error in DTE exit safety net check: {}", e.getMessage(), e);
+                    return Mono.just(0);
+                });
     }
 
     /**

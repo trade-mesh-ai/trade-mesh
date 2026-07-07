@@ -1,5 +1,6 @@
 package com.trademesh.strategy.spread;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
@@ -13,6 +14,7 @@ import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.Confidence;
 import com.trademesh.strategy.enums.LegType;
 import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.trading.MarketCalendarService;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionStrike;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,8 @@ import java.util.stream.Collectors;
 public class BullPutSpreadStrategy implements TradingStrategy {
 
     private final StrategiesConfig strategiesConfig;
+    private final LotSizeService lotSizeService;
+    private final MarketCalendarService marketCalendarService;
 
     @Override
     public String getName() {
@@ -91,28 +95,26 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     .build());
         }
 
-        // DTE check
-        int dte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
-        int dteMin = cfg.getExtraInt("dte-min", 3);
-        int dteMax = cfg.getExtraInt("dte-max", 15);
+        // DTE check (trading days, not calendar days)
+        int dte = marketCalendarService.countTradingDays(LocalDate.now(), chain.getExpiryDate());
+        int dteMin = cfg.getExtraInt("dte-min", 1);
+        int dteMax = cfg.getExtraInt("dte-max", 4);
         if (dte < dteMin || dte > dteMax) {
             return Mono.just(StrategyResult.builder()
                     .isExecutable(false)
                     .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
                     .build());
         }
-        if (dte < 3 || dte > 15) {
-            return Mono.just(StrategyResult.builder()
-                    .isExecutable(false)
-                    .skipReason("DTE " + dte + " outside range [3, 15]")
-                    .build());
-        }
 
         // Strike selection
-        double tte = dte / 365.0;
+        // Strike-selection DTE (calendar days — matches /365.0
+        // calendar-year denominator, same convention as
+        // IronCondorStrategy.selectStrikesAndBuildSignal)
+        int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
+        double tte = calendarDte / 365.0;
         double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
         int wingWidth = cfg.getExtraInt("wing-width", 100);
-        int lotSize = 75;
+        int lotSize = lotSizeService.getLotSize("NIFTY50");
         int lots = cfg.getMaxLots();
 
         // Find short PUT strike (below spot, closest OTM with delta <= targetDelta)
@@ -211,19 +213,19 @@ public class BullPutSpreadStrategy implements TradingStrategy {
         metadata.put("dte", String.valueOf(dte));
         metadata.put("currentVix", String.valueOf(currentVix));
 
-         return Mono.just(StrategyResult.builder()
-                 .signal(com.trademesh.strategy.TradeSignal.builder()
-                         .symbol("NIFTY50")
-                         .strategyName(getName())
-                         .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
-                         .legs(legs)
-                         .expectedCredit(netCredit.doubleValue())
-                         .maxLoss(maxLoss.doubleValue())
-                         .reason("Bull Put Spread: " + shortPutStrikePrice + "PE / " +
-                                 longPutStrikePrice + "PE | Credit: " + netCredit)
-                         .confidence(Confidence.MEDIUM)
-                         .metadata(metadata)
-                         .build())
+        return Mono.just(StrategyResult.builder()
+                .signal(com.trademesh.strategy.TradeSignal.builder()
+                        .symbol("NIFTY50")
+                        .strategyName(getName())
+                        .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
+                        .legs(legs)
+                        .expectedCredit(netCredit.doubleValue())
+                        .maxLoss(maxLoss.doubleValue())
+                        .reason("Bull Put Spread: " + shortPutStrikePrice + "PE / " +
+                                longPutStrikePrice + "PE | Credit: " + netCredit)
+                        .confidence(Confidence.MEDIUM)
+                        .metadata(metadata)
+                        .build())
                 .isExecutable(true)
                 .build());
     }

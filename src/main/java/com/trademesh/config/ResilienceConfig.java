@@ -14,4 +14,5 @@ public class ResilienceConfig {
     public CircuitBreaker orderCircuitBreaker() {
         return new CircuitBreaker("orders", 5, 2, 30);
     }
+
 }

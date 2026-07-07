@@ -2,11 +2,11 @@ package com.trademesh.intelligence.maxpain;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trademesh.config.ApplicationConstants;
+import com.trademesh.config.LotSizeService;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionStrike;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -15,7 +15,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
 import static com.trademesh.config.ApplicationConstants.REDIS_KEY_MAX_PAIN_PREFIX;
 
@@ -44,8 +43,7 @@ public class MaxPainCalculatorService {
     private final ReactiveStringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final MaxPainHistoryRepository maxPainHistoryRepository;
-    @Value("#{${maxpain.lot-sizes:{NIFTY50: 75, NIFTYBANK: 30}}}")
-    private Map<String, Integer> lotSizes;
+    private final LotSizeService lotSizeService;
 
     /**
      * Calculates and persists the Max Pain for a given option chain.
@@ -128,7 +126,7 @@ public class MaxPainCalculatorService {
             String symbol = chain.getSymbol();
             List<OptionStrike> strikes = chain.getStrikes();
             BigDecimal spotPrice = chain.getSpotPrice();
-            int lotSize = getLotSize(symbol);
+            int lotSize = lotSizeService.getLotSize(symbol);
 
             log.debug("Calculating max pain for {} with {} strikes, lot size: {}",
                     symbol, strikes.size(), lotSize);
@@ -210,6 +208,6 @@ public class MaxPainCalculatorService {
      * @return lot size for the symbol
      */
     private int getLotSize(String symbol) {
-        return lotSizes.getOrDefault(symbol, 1);
+        return lotSizeService.getLotSize(symbol);
     }
 }

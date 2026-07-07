@@ -1,34 +1,1386 @@
 # TradeMesh — Automated Options Trading Platform
 
-**TradeMesh** is a Spring WebFlux-based reactive trading platform for automated options strategies on NSE (National Stock Exchange). It integrates with Zerodha's Kite Connect API for live market data and order execution, uses PostgreSQL for persistence, and Redis for caching and token management.
+**Version:** 0.0.1-SNAPSHOT | **Last Updated:** July 4, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
 
-**Current Date:** June 29, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
+TradeMesh is a reactive options trading platform for NSE that executes multi-leg options strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day Strangle) based on real-time market intelligence and risk management rules.
 
 ---
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Architecture Overview](#architecture-overview)
+1. [Project Overview](#project-overview)
+2. [Technology Stack](#technology-stack)
 3. [Package Structure](#package-structure)
 4. [Database Schema](#database-schema)
-5. [Scheduled Jobs](#scheduled-jobs)
-6. [REST API Endpoints](#rest-api-endpoints)
-7. [Trading Strategies](#trading-strategies)
-8. [Configuration](#configuration)
+5. [Trading Strategies](#trading-strategies)
+6. [Scheduled Jobs](#scheduled-jobs)
+7. [REST API Endpoints](#rest-api-endpoints)
+8. [Data Pipeline & Iron Condor Foundation](#data-pipeline--iron-condor-foundation)
 9. [Architecture Patterns](#architecture-patterns)
-10. [Data Pipelines](#data-pipelines)
+10. [Key Bugs Fixed (June 29-30, July 1, 2026)](#key-bugs-fixed-june-29-30-july-1-2026)
+11. [Future Roadmap](#future-roadmap)
 
 ---
 
-## Quick Start
+## Project Overview
+
+### Purpose
+
+TradeMesh automates multi-leg options trading on NSE with:
+- **Real-time market intelligence** (VIX, volatility, open interest, max pain)
+- **Intelligent strategy selection** based on market conditions
+- **Automated trade execution** with paper trading simulation
+- **Position monitoring** with mark-to-market every 60 seconds
+- **Risk management** with position limits and daily loss controls
+- **Real-time alerts** via Telegram
+
+### Architecture Summary
+
+```
+Zerodha Kite API (Market Data)
+    ↓
+Market Intelligence Layer (VIX, OI, Max Pain, Metrics)
+    ↓
+Strategy Evaluation (Iron Condor, Spreads, Expiry Day)
+    ↓
+Risk Management (Position Limits, Daily Loss Limits)
+    ↓
+Paper Trading Engine (Simulation)
+    ↓
+Execution Layer (Paper or Live via Zerodha)
+    ↓
+Position Monitoring (Mark-to-Market every 60 sec)
+    ↓
+Telegram Alerts & Daily Reports
+```
+
+### Key Characteristics
+
+- **Reactive:** Spring WebFlux throughout; no `.block()` anywhere
+- **R2DBC:** Reactive database access to PostgreSQL
+- **Redis:** Token storage, option chain caching, tick price caching
+- **Event-Driven:** Market intelligence refreshes every 5 minutes; trades execute at scheduled times
+- **Read/Write Separation:** REST endpoints read-only; all DB writes through schedulers
+- **Structured Logging:** SLF4J only; no System.out.println
+
+---
+
+## Technology Stack
+
+| Component | Technology | Version |
+|-----------|-----------|---------|
+| **Java** | OpenJDK | 21 |
+| **Framework** | Spring Boot | 3.3.0 |
+| **Reactive Web** | Spring WebFlux | 3.3.0 |
+| **Database** | PostgreSQL | 14+ |
+| **Database Access** | R2DBC + Spring Data R2DBC | 1.5.x |
+| **Schema Migrations** | Liquibase | 4.x |
+| **Cache** | Redis | 6+ |
+| **Redis Client** | Lettuce (Reactive) | 6.x |
+| **Build Tool** | Gradle | 8.x |
+| **Broker Integration** | Zerodha Kite Connect SDK | Custom (kiteconnect.jar) |
+| **JSON Processing** | Jackson | 2.15.x |
+| **Object Mapping** | MapStruct | 1.5.5 |
+| **Boilerplate Reduction** | Lombok | 1.18.x |
+| **API Documentation** | SpringDoc OpenAPI | 2.5.0 |
+| **Testing** | JUnit 5, Reactor Test, TestContainers | Latest |
+
+---
+
+## Package Structure
+
+### `com.trademesh`
+
+#### `alert` — Telegram Notifications
+- **`Alert`** — Alert entity with type and message
+- **`AlertType`** — Enum: ENTRY, EXIT, ERROR, VIX_ALERT, SYSTEM
+- **`TelegramClient`** — HTTP client for Telegram Bot API
+- **`TelegramNotificationBot`** — Service to send Telegram messages
+- **`TelegramProperties`** — Configuration properties for Telegram
+
+#### `common` — Shared Utilities
+- **`dto`** — Data transfer objects for API responses
+- **`exception`** — Custom exceptions (InvalidStrategyException, InsufficientMarginException, etc.)
+- **`handler`** — Global exception handlers for REST controllers
+- **`resilience`** — Retry logic and circuit breaker patterns
+
+#### `config` — Application Configuration
+- **`ApplicationConstants`** — Market hours, symbols, timezone constants
+- **`JacksonConfig`** — JSON serialization/deserialization configuration
+- **`JdbcConfig`** — JDBC DataSource for Liquibase
+- **`LotSizeService`** — Centralized lot size lookup for NIFTY50 (65), NIFTYBANK (30)
+- **`PaperTradeLegsConverter`** — JSON converter for trade legs
+- **`R2dbcConfig`** — R2DBC connection pool configuration
+- **`ResilienceConfig`** — Retry and circuit breaker policies
+- **`WebClientConfig`** — WebClient configuration for HTTP calls
+
+#### `domain` — Core Domain Entities
+- **`Instrument`** — Zerodha instrument master (token, symbol, strike, expiry, lot size)
+- **`InstrumentRepository`** — R2DBC repository for instruments
+- **`NiftyDailyPrice`** — NIFTY50 OHLC data (trade_date, open, high, low, close, volume)
+- **`NiftyDailyPriceRepository`** — R2DBC repository for daily prices
+
+#### `execution` — Trade Execution & Position Management
+- **`MarkToMarketScheduler`** — Marks all open trades to market every 60 seconds (fixedRate)
+- **`OrderExecutionService`** — Executes orders via Zerodha API
+- **`PaperTrade`** — Simulated trade record (UUID id, symbol, strategy, status, legs, P&L)
+- **`PaperTradeController`** — REST endpoints for paper trade queries
+- **`PaperTradeRepository`** — R2DBC repository for paper trades
+- **`PaperTradingEngine`** — Simulates trade execution and mark-to-market calculations
+- **`TradeStatus`** — Enum: OPEN, CLOSED, CANCELLED
+- **`LivePnlData`** — DTO for live P&L data (liveUnrealizedPnl, isPnlLive flag)
+
+#### `intelligence` — Market Intelligence & Analysis
+- **`IntelligenceScheduler`** — Refreshes market intelligence every 5 minutes (cron: `0 */5 9-15 ? * MON-FRI`)
+- **`KiteHistoricalService`** — Fetches historical OHLC from Kite API
+- **`MarketCondition`** — Enum: SIDEWAYS, TRENDING_BULLISH, TRENDING_BEARISH, EXPIRY_DAY, HIGH_VOLATILITY, NO_TRADE
+- **`MarketIntelligence`** — Aggregated market data (VIX, OI, max pain, condition, metrics)
+- **`MarketIntelligenceController`** — REST endpoints for market intelligence
+- **`MarketIntelligenceService`** — Generates complete market intelligence for a symbol
+  - **`generateIntelligence(symbol)`** — Cached method (5-min TTL) for read-only endpoints
+  - **`generateFreshIntelligence(symbol)`** — Bypasses cache read for trade-decision path
+- **`MarketMetrics`** — Calculated metrics (HV20, ATR14, ATRPct, IVR, IV/HV ratio, PCR)
+- **`MarketMetricsService`** — Calculates market metrics from historical data
+- **`NiftyDailyPriceService`** — Manages NIFTY50 daily price data
+- **`SignalDirection`** — Enum: BULLISH, BEARISH, NEUTRAL
+- **`SignalService`** — Generates trading signals from market intelligence
+- **`TradingSignal`** — Market signal with direction and confidence
+
+##### `intelligence.iv` — Implied Volatility
+- **`ImpliedVolatilityCalculator`** — Black-Scholes IV and delta calculations
+- **`IvHistoryService`** — Tracks daily ATM IV at 9:25 AM
+- **`IvHistory`** — Daily ATM IV record (symbol, trade_date, atm_iv, call_iv, put_iv, spot_price, expiry_date)
+
+##### `intelligence.maxpain` — Max Pain Analysis
+- **`MaxPainCalculator`** — Calculates theoretical max pain for call/put sides
+- **`MaxPainService`** — Persists max pain snapshots every 30 minutes
+- **`MaxPainHistory`** — Max pain record (symbol, expiry_date, max_pain_strike, spot_price, distance)
+
+##### `intelligence.oi` — Open Interest Analysis
+- **`OiAnalysis`** — OI wall detection (max_call_oi_strike, max_put_oi_strike, market_bias)
+- **`OiAnalysisService`** — Analyzes option chain for OI walls
+- **`OiSnapshot`** — OI snapshot record (symbol, max_call_strike, max_put_strike, data JSONB)
+
+##### `intelligence.vix` — VIX Monitoring
+- **`VixAlertService`** — Sends Telegram alerts when VIX crosses thresholds
+- **`VixData`** — Current VIX value, level, change, safe-to-trade flag
+- **`VixHistory`** — VIX snapshot record (vix_value, vix_level, recorded_at)
+- **`VixMonitorService`** — Fetches current VIX from Kite API
+- **`VixScheduler`** — Persists VIX every 15 minutes (cron: `0 */15 9-15 ? * MON-FRI`)
+
+#### `portfolio` — Portfolio Management
+- **`PortfolioService`** — Aggregates positions and calculates portfolio P&L
+- **`PortfolioSummary`** — Aggregated portfolio metrics (total_value, total_pnl, position_count)
+- **`PositionSummary`** — Individual position summary (symbol, quantity, avg_price, current_price, pnl)
+
+#### `risk` — Risk Management
+- **`RiskLimitsConfig`** — Risk configuration (max_position_size, daily_loss_limit, margin_buffer)
+- **`RiskManager`** — Validates trades against risk limits before execution
+
+#### `scheduler` — Scheduled Jobs Coordination
+- **`TradingScheduler`** — Orchestrates daily trading cycles and position exits
+
+#### `strategy` — Strategy Engine
+- **`StrategyConfig`** — Strategy configuration (name, max_lots, stop_loss%, target_profit%, VIX range, allowed_days)
+- **`StrategyController`** — REST endpoints for strategy evaluation and status
+- **`StrategyEngine`** — Evaluates all applicable strategies for a symbol
+- **`StrategyOrchestrator`** — Selects and executes the best strategy
+- **`StrategyResult`** — Strategy evaluation result (executable flag, signal, skip reason)
+- **`StrategySelector`** — Selects strategy based on market condition
+- **`TradeLeg`** — Individual trade leg (instrument, action, strike, quantity, expiry)
+- **`TradeSignal`** — Strategy output (legs, credit, max loss, confidence, reason)
+- **`TradingStrategy`** — Interface for all strategy implementations
+
+##### `strategy.config` — Strategy Configuration
+- **`StrategiesConfig`** — Loads all strategy configs from application.yml
+- **`StrategyProperties`** — Individual strategy configuration properties
+
+##### `strategy.enums` — Strategy Enums
+- **`Action`** — BUY, SELL
+- **`Confidence`** — LOW, MEDIUM, HIGH
+- **`LegType`** — ENTRY, EXIT, ADJUSTMENT
+- **`OptionType`** — CE (Call), PE (Put)
+- **`SignalType`** — ENTER, EXIT, ADJUST
+
+##### `strategy.expiryday` — Expiry Day Strangle
+- **`ExpiryDayStrategy`** — Sells strangle at OI walls on expiry day (Tuesday)
+
+##### `strategy.ironcondor` — Iron Condor
+- **`IronCondorSignal`** — Iron Condor-specific signal with P&L matrix
+- **`IronCondorStrategy`** — Sells call and put spreads in sideways markets
+
+##### `strategy.spread` — Spread Strategies
+- **`BearCallSpreadStrategy`** — Sells OTM call spread in bearish markets
+- **`BullPutSpreadStrategy`** — Sells OTM put spread in bullish markets
+
+#### `trading` — Trading Orchestration
+- **`AdminController`** — Admin endpoints for bootstrapping and testing
+- **`DailyReportService`** — Generates daily P&L reports and sends via Telegram
+- **`MarketCalendarService`** — Checks if market is open (9:15 AM - 3:30 PM IST, Mon-Fri)
+- **`StrategyExecutionLog`** — Audit log for strategy execution events
+- **`StrategyExecutionLogRepository`** — R2DBC repository for execution logs
+- **`TradingController`** — REST endpoints for manual trading operations
+- **`TradingOrchestrator`** — Coordinates trading cycles, position monitoring, and exits
+- **`TradingScheduler`** — Scheduled jobs for daily entry (9:30 AM), exit (3:15 PM), and reporting (3:45 PM)
+
+#### `zerodha` — Zerodha Integration
+- **`zerodha.auth`** — OAuth2 authentication and token management
+  - **`TokenAvailabilityTracker`** — Tracks token availability in Redis
+  - **`ZerodhaAuthController`** — OAuth2 login/callback endpoints
+  - **`ZerodhaAuthService`** — Token exchange and storage
+  - **`ZerodhaSession`** — OAuth2 session entity
+  - **`ZerodhaSessionRepository`** — R2DBC repository for sessions
+
+- **`zerodha.options`** — Option chain and Greeks
+  - **`ImpliedVolatilityCalculator`** — Black-Scholes IV and delta
+  - **`OptionChain`** — Option chain data (spot_price, expiry_date, strikes)
+  - **`OptionChainService`** — Fetches and caches option chains
+  - **`OptionStrike`** — Individual strike (price, call_ltp, put_ltp, call_iv, put_iv, oi)
+
+- **`zerodha.orders`** — Order execution
+  - **`OrderExecutionService`** — Places orders via Kite API
+  - **`OrderStatus`** — Order status tracking
+
+- **`zerodha.ticker`** — WebSocket market data
+  - **`KiteTickerService`** — WebSocket connection to KiteTicker
+  - **`TickPrice`** — Tick price data (symbol, ltp, timestamp)
+  - **`TickerController`** — Server-Sent Events endpoint for price streaming
+
+---
+
+## Database Schema
+
+### Core Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| **zerodha_sessions** | OAuth2 sessions | user_id (unique), access_token, expires_at |
+| **instruments** | Master instrument list | instrument_token (PK), tradingsymbol, strike, expiry, lot_size |
+| **strategies** | Strategy definitions | id (PK), name (unique), is_active, config_json (JSONB) |
+| **orders** | Order records | id (PK), zerodha_order_id (unique), strategy_id (FK), status |
+| **portfolio_positions** | Current positions | id (PK), tradingsymbol, quantity, average_price, pnl |
+
+### Trading Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| **paper_trades** | Paper trading records | id (UUID, PK), trade_date, symbol, strategy_name, status, legs (JSONB), entry_credit, realized_pnl, unrealized_pnl |
+| **strategy_execution_logs** | Strategy execution events | id (UUID, PK), symbol, strategy_name, action (ENTRY/EXIT), reason, executed_at |
+
+### Intelligence Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| **nifty_daily_prices** | NIFTY50 OHLC | id (UUID, PK), trade_date (unique), open, high, low, close, volume |
+| **iv_history** | Daily ATM IV | id (UUID, PK), symbol, trade_date (unique), atm_iv, call_iv, put_iv, spot_price, expiry_date |
+| **vix_history** | VIX snapshots | id (BIGSERIAL, PK), vix_value, vix_level, recorded_at |
+| **vix_alerts** | VIX threshold alerts | id (BIGSERIAL, PK), vix_value, vix_level, alert_message, telegram_sent, triggered_at |
+| **oi_snapshots** | OI analysis snapshots | id (BIGSERIAL, PK), symbol, max_call_strike, max_put_strike, market_bias, data (JSONB), recorded_at |
+| **max_pain_history** | Max pain snapshots | id (BIGSERIAL, PK), symbol, expiry_date, max_pain_strike, spot_price, distance_from_spot, calculated_at |
+| **option_chain_snapshots** | Full option chain snapshots | id (BIGSERIAL, PK), symbol, expiry_date, spot_price, data (JSONB), created_at |
+
+### Schema Management
+
+- **Schema:** `trade_mesh`
+- **Migrations:** Liquibase YAML changesets in `src/main/resources/db/changelog/changes/`
+- **Current Changesets:** 13
+  - 001: Create schema
+  - 002: Create core tables (zerodha_sessions, instruments, strategies, orders, portfolio_positions)
+  - 003: Create paper_trades
+  - 004: Create strategy_execution_logs
+  - 005: Create option_chain_snapshots
+  - 006: Create vix_history
+  - 007: Create vix_alerts
+  - 008: Create oi_snapshots
+  - 009: Create max_pain_history
+  - 010: Create nifty_daily_prices
+  - 011: Create iv_history
+  - 012: Alter oi_snapshots data type
+  - 013: Make oi_snapshots data nullable
+
+---
+
+## Trading Strategies
+
+### 1. EXPIRY_DAY_STRANGLE
+
+**Status:** ✅ Live validated June 30, 2026 | TARGET_HIT confirmed
+
+**Market Condition:** EXPIRY_DAY (Tuesday)
+
+**Entry Logic:**
+- Trades ONLY on Tuesday (NSE expiry day)
+- Sells strangle at OI walls for maximum theta decay
+- Strike selection: OI-wall based with ATR-scaled safety boundary
+  - `min-distance-atr-multiplier: 0.4` — ATR14 × 0.4 = minimum distance from spot
+  - Falls back to boundary strike if OI wall too close
+  - Hard skip if OI wall on wrong side of spot (call strike ≤ spot or put strike ≥ spot)
+- Expiry date: Fixed — correctly picks today's expiry (not next week's)
+- Entry time limit: 12:30 PM IST
+
+**Exit Conditions:**
+- **TARGET_HIT:** 50% of credit collected
+- **STOPLOSS_HIT:** 100% of credit collected (max loss)
+- **FORCE_CLOSE_EOD:** 3:15 PM IST (end of day)
+
+**Configuration:**
+```yaml
+EXPIRY_DAY_STRANGLE:
+  enabled: true
+  allowed-days: [TUESDAY]
+  max-vix: 18.0
+  min-vix: 10.0
+  latest-entry-time: "12:30"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 100.0
+  target-profit-percent: 50.0
+  extra:
+    min-distance-atr-multiplier: 0.4
+```
+
+---
+
+### 2. IRON_CONDOR
+
+**Status:** ✅ Built and unit-tested | Awaiting first live trade
+
+**Market Condition:** SIDEWAYS
+
+**Entry Logic:**
+- Sells both call and put spreads in sideways markets
+- Strike selection: Delta-based (target delta 0.18) via Black-Scholes engine
+- Wing width: 200 points
+- Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
+  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+- Confidence scoring:
+  - IVR (20-80 range): 15-30 points
+  - IV/HV ratio (≥1.1): 10-20 points
+  - ATR% (<0.6-1.0): 10-20 points
+  - VIX (12-20 range): 5-15 points
+  - PCR (0.8-1.2 balanced): 15 points
+  - **Minimum score: 60/100** to execute
+- Minimum credit: 30 points (15% of wing width)
+
+**Exit Conditions (Priority Order):**
+1. **VIX_PANIC_EXIT:** VIX exceeds `vix-panic-threshold: 25.0` — highest priority, checked before all other exits
+2. **DTE_EXIT:** Trading days remaining to expiry drops to or below `dte-exit-threshold: 2` — uses shared `PaperTradingEngine.isDteExitDue()` (single source of truth)
+3. **LEG_BREACH / STOPLOSS_HIT / TARGET_HIT:** Leg breach, 100% credit loss, or 50% credit collected (existing logic, unchanged priority)
+4. **FORCE_CLOSE_EOD:** NO LONGER APPLIES to IRON_CONDOR (see Scheduled Jobs section)
+
+**Dynamic Exit Adjustment:**
+- Calm market (ATR% < 0.7): Tighter targets (90% of base)
+- High volatility (ATR% > 1.0): Wider targets (110% of base)
+
+**Configuration:**
+```yaml
+IRON_CONDOR:
+  enabled: true
+  allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  max-vix: 20.0
+  min-vix: 12.0
+  latest-entry-time: "13:00"
+  min-credit: 30.0
+  max-lots: 1
+  stop-loss-percent: 100.0
+  target-profit-percent: 50.0
+  extra:
+    target-delta: 0.18
+    wing-width: 200
+    min-credit-pct: 0.15
+    min-score: 60
+    dte-min: 1
+    dte-max: 4
+    dte-exit-threshold: 2
+    vix-panic-threshold: 25.0
+    atr-calm-threshold: 0.7
+    atr-high-threshold: 1.0
+    calm-target-multiplier: 0.9
+    calm-sl-multiplier: 0.8
+    high-target-multiplier: 1.1
+    high-sl-multiplier: 1.2
+```
+
+---
+
+### 3. BULL_PUT_SPREAD
+
+**Status:** ✅ Built | Paper-tested June 29
+
+**Market Condition:** TRENDING_BULLISH
+
+**Entry Logic:**
+- Sells OTM put spread in bullish markets
+- Strike selection: Delta-based (target delta 0.30)
+- Wing width: 100 points
+- Profits when market stays above short put strike
+- Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
+  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+- Minimum credit: 10 points (10% of wing width)
+
+**Exit Conditions (Priority Order):**
+1. **VIX_PANIC_EXIT:** VIX exceeds `vix-panic-threshold: 25.0` — highest priority, checked before all other exits
+2. **DTE_EXIT:** Trading days remaining to expiry drops to or below `dte-exit-threshold: 1` — uses shared `PaperTradingEngine.isDteExitDue()` (single source of truth)
+3. **LEG_BREACH / STOPLOSS_HIT / TARGET_HIT:** Leg breach, 100% credit loss, or 50% credit collected (existing logic, unchanged priority)
+4. **FORCE_CLOSE_EOD:** NO LONGER APPLIES to BULL_PUT_SPREAD (see Scheduled Jobs section)
+
+**Configuration:**
+```yaml
+BULL_PUT_SPREAD:
+  enabled: true
+  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  max-vix: 20.0
+  min-vix: 10.0
+  latest-entry-time: "13:00"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 100.0
+  target-profit-percent: 50.0
+  extra:
+    dte-min: 1
+    dte-max: 4
+    dte-exit-threshold: 1
+    vix-panic-threshold: 25.0
+    target-delta: 0.30
+    wing-width: 100
+    min-credit-pct: 0.10
+```
+
+---
+
+### 4. BEAR_CALL_SPREAD
+
+**Status:** ✅ Built | Paper-tested June 29 | Multiple trades executed
+
+**Market Condition:** TRENDING_BEARISH
+
+**Entry Logic:**
+- Sells OTM call spread in bearish markets
+- Strike selection: Delta-based (target delta 0.30)
+- Wing width: 100 points
+- Profits when market stays below short call strike
+- Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
+  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+- Minimum credit: 10 points (10% of wing width)
+
+**Exit Conditions (Priority Order):**
+1. **VIX_PANIC_EXIT:** VIX exceeds `vix-panic-threshold: 25.0` — highest priority, checked before all other exits
+2. **DTE_EXIT:** Trading days remaining to expiry drops to or below `dte-exit-threshold: 1` — uses shared `PaperTradingEngine.isDteExitDue()` (single source of truth)
+3. **LEG_BREACH / STOPLOSS_HIT / TARGET_HIT:** Leg breach, 100% credit loss, or 50% credit collected (existing logic, unchanged priority)
+4. **FORCE_CLOSE_EOD:** NO LONGER APPLIES to BEAR_CALL_SPREAD (see Scheduled Jobs section)
+
+**Configuration:**
+```yaml
+BEAR_CALL_SPREAD:
+  enabled: true
+  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
+  max-vix: 20.0
+  min-vix: 10.0
+  latest-entry-time: "13:00"
+  min-credit: 20.0
+  max-lots: 1
+  stop-loss-percent: 100.0
+  target-profit-percent: 50.0
+  extra:
+    dte-min: 1
+    dte-max: 4
+    dte-exit-threshold: 1
+    vix-panic-threshold: 25.0
+    target-delta: 0.30
+    wing-width: 100
+    min-credit-pct: 0.10
+```
+
+---
+
+## Scheduled Jobs
+
+### TradingScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **scheduledDailyEntry** | `0 30 9 * * MON-FRI` | 9:30 AM | Weekdays | Runs trading cycle entry for NIFTY50; StrategySelector picks strategy based on market condition |
+| **scheduledDailyExit** | `0 15 15 * * MON-FRI` | 3:15 PM | Weekdays | Closes ONLY EXPIRY_DAY_STRANGLE positions via TradingOrchestrator.exitPositionsForStrategy(). IRON_CONDOR, BULL_PUT_SPREAD, and BEAR_CALL_SPREAD are NO LONGER force-closed daily — they can now hold positions overnight and across weekends, governed entirely by DTE-exit logic in the 60-second markToMarket() cycle |
+| **dailySafetyNetCheck** | `0 0 9 * * MON-FRI` | 9:00 AM | Weekdays | Re-checks DTE-exit condition for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD positions as a redundant backstop (calls TradingOrchestrator.runDteExitSafetyNetCheck()). Closes any position that should have exited via the primary 60-second mechanism but remains open, using exit reason "DTE_EXIT_SAFETY_NET" (distinct from normal "DTE_EXIT"). EXPIRY_DAY_STRANGLE is explicitly excluded from this check |
+| **scheduledDailyReport** | `0 45 15 * * MON-FRI` | 3:45 PM | Weekdays | Generates daily P&L report and sends via Telegram |
+
+### IntelligenceScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **refreshMarketIntelligence** | `0 */5 9-15 ? * MON-FRI` (configurable) | Every 5 min | Market hours | Refreshes market intelligence for NIFTY50 and NIFTYBANK; detects condition changes; sends Telegram alerts |
+
+### MarkToMarketScheduler
+
+| Job | Interval | Frequency | Action |
+|-----|----------|-----------|--------|
+| **markToMarketScheduled** | 60,000 ms (60 sec) | Market hours | Marks all open paper trades to market; updates unrealized P&L |
+
+### VixScheduler (in IntelligenceScheduler)
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **persistVix** | `0 */15 9-15 ? * MON-FRI` (configurable) | Every 15 min | Market hours | Persists VIX snapshot to database |
+
+---
+
+## REST API Endpoints
+
+### Authentication
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/zerodha/login` | Redirect to Kite Connect OAuth2 login |
+| GET | `/zerodha/callback?request_token=xxx` | OAuth2 callback; exchanges token and stores in Redis |
+| GET | `/zerodha/token/status` | Check if Zerodha token is valid and available |
+
+### Market Data
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/market/price/{symbol}` | Get latest cached price for symbol |
+| GET | `/market/stream/{symbol}` | Server-Sent Events stream of live prices |
+| GET | `/market/status` | WebSocket connection status |
+
+### Market Intelligence
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/intelligence/{symbol}` | Complete market intelligence (VIX, OI, max pain, metrics, condition) |
+| GET | `/intelligence/{symbol}/condition` | Market condition only (SIDEWAYS, TRENDING_BULLISH, etc.) |
+| GET | `/intelligence/{symbol}/summary` | One-line summary of market intelligence |
+| GET | `/intelligence/metrics/{symbol}` | Market metrics (HV20, ATR14, IVR, IV/HV, PCR) |
+| GET | `/intelligence/vix` | Current VIX data (value, level, change, safe-to-trade) |
+| GET | `/intelligence/maxpain` | Max pain data for current expiry |
+| GET | `/intelligence/oi` | Open interest analysis (OI walls, market bias) |
+
+### Strategy
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/strategy/evaluate/{symbol}` | Evaluate all strategies for symbol; returns best executable signal |
+| GET | `/strategy/applicable/{symbol}` | List strategies applicable to current market condition |
+| GET | `/strategy/status` | Status of all strategies (enabled/disabled) |
+
+### Trading
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/trading/expiry-day/trigger` | Manually trigger expiry day entry (testing only) |
+| POST | `/trading/run/{symbol}` | Manually trigger trading cycle for symbol; always returns JSON response with executable flag and skipReason |
+| GET | `/trading/positions/open` | Get all currently open positions with live P&L refresh (read-only, no DB writes) |
+| POST | `/trading/monitor` | Manually trigger position monitoring for all open positions |
+| GET | `/trading/report/today` | Get today's trading summary (total trades, wins, losses, P&L) |
+
+### Paper Trading
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/paper/trades/open` | Get all open paper trades |
+| GET | `/paper/trades/history` | Get all closed paper trades |
+| GET | `/paper/trades/{id}` | Get specific paper trade by ID |
+| GET | `/paper/trades/symbol/{symbol}` | Get trades for specific symbol |
+| GET | `/paper/trades/strategy/{strategyName}` | Get trades for specific strategy |
+| GET | `/paper/trades/pnl/weekly` | Get weekly P&L summary |
+| GET | `/paper/trades/stats` | Get overall trading statistics |
+| POST | `/paper/trades/{id}/close` | Manually close a paper trade |
+
+### Admin (Internal Use)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/admin/bootstrap/historical-prices?from=YYYY-MM-DD&to=YYYY-MM-DD` | Bootstrap historical NIFTY50 OHLC from Kite API (idempotent) |
+| GET | `/admin/test/atm-iv?symbol=NIFTY50` | Test ATM IV calculation (read-only, no DB save) |
+| GET | `/admin/test/atm-iv-save?symbol=NIFTY50` | Test ATM IV calculation and save to DB |
+| GET | `/admin/test/iron-condor-evaluate` | Test Iron Condor strategy evaluation |
+| GET | `/admin/test/bull-put-spread-evaluate` | Test Bull Put Spread strategy evaluation |
+| GET | `/admin/test/bear-call-spread-evaluate` | Test Bear Call Spread strategy evaluation |
+| GET | `/admin/test/expiry-day-evaluate` | Test Expiry Day Strangle strategy evaluation |
+
+---
+
+## Data Pipeline & Iron Condor Foundation
+
+### Historical Data Foundation
+
+**nifty_daily_prices:** 616 rows bootstrapped from Kite historical API
+- Covers ~2.5 years of NIFTY50 daily OHLC data
+- Used for HV20 (20-day historical volatility) calculation
+- Bootstrapped via `POST /admin/bootstrap/historical-prices?from=2024-01-01&to=2024-12-31`
+
+**iv_history:** Daily ATM IV collection at 9:25 AM
+- Captures ATM IV for current expiry at market open
+- Used for IVR (IV Rank) and IV/HV ratio calculations
+- Unique constraint: (symbol, trade_date)
+
+### Market Metrics Service
+
+**MarketMetricsService** calculates:
+- **HV20:** 20-day historical volatility from nifty_daily_prices
+- **ATR14:** 14-day Average True Range
+- **ATRPct:** ATR as percentage of spot price
+- **IVR:** IV Rank (current IV percentile over 52-week range)
+- **IV/HV Ratio:** Current IV divided by HV20
+- **PCR:** Put/Call Ratio from option chain open interest
+
+### Iron Condor Intelligence Pipeline
+
+1. **Fetch Option Chain** → Get all strikes, call/put prices, IVs, OI
+2. **Calculate Market Metrics** → HV20, ATR14, IVR, IV/HV, PCR
+3. **Fetch VIX** → Current VIX level
+4. **Calculate Confidence Score** → IVR (20-30 pts), IV/HV (10-20 pts), ATR% (10-20 pts), VIX (5-15 pts), PCR (15 pts)
+5. **Validate Confidence** → Must be ≥60/100 to proceed
+6. **Select Strikes** → Delta-based (target delta 0.18) for short legs
+7. **Calculate P&L Matrix** → Max profit, max loss, breakeven, risk/reward ratio
+8. **Adjust Exit Levels** → Based on ATR% volatility (calm/normal/high)
+9. **Build Signal** → 4-leg signal with metadata
+
+### Bootstrap Endpoint
+
+**POST /admin/bootstrap/historical-prices**
+
+Fetches historical NIFTY50 OHLC from Kite Connect and stores in database.
+
+**Parameters:**
+- `from` (optional): Start date (YYYY-MM-DD), default "2024-01-01"
+- `to` (optional): End date (YYYY-MM-DD), default today
+
+**Response:**
+```json
+{
+  "saved": 250,
+  "skipped": 0,
+  "from": "2024-01-01",
+  "to": "2024-12-31",
+  "total": 250
+}
+```
+
+**Idempotency:** Calling multiple times with same date range skips existing records.
+
+---
+
+## Architecture Patterns
+
+### 1. Reactive Throughout
+
+- **No `.block()` anywhere** — All operations are non-blocking
+- **Mono/Flux throughout** — Reactive streams for all async operations
+- **R2DBC for database** — Reactive database access
+- **Lettuce for Redis** — Reactive Redis client
+- **WebFlux for HTTP** — Reactive web framework
+
+### 2. Entity Pattern
+
+All entities follow the **Persistable<UUID>** pattern:
+
+```java
+@Data
+@Entity
+@Table(name = "paper_trades")
+public class PaperTrade implements Persistable<UUID> {
+    @Id
+    private UUID id;
+    
+    @Transient
+    private boolean isNew = false;  // Default: false (not new)
+    
+    // ... other fields
+    
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+    
+    // Factory method (not @PostLoad — JPA annotation doesn't work in R2DBC)
+    public static PaperTrade createNew() {
+        PaperTrade trade = new PaperTrade();
+        trade.isNew = true;
+        return trade;
+    }
+}
+```
+
+**Key Points:**
+- `isNew` defaults to `false` (entity already exists in DB)
+- Use `createNew()` factory method to create new entities
+- Do NOT use `@PostLoad` — R2DBC doesn't support it
+
+### 3. Database Writes: Schedulers Only
+
+**Architectural Rule:** All DB writes happen exclusively through schedulers, never from REST endpoints.
+
+**Pattern:**
+```java
+// REST Controller (read-only)
+@GetMapping("/positions/open")
+public Mono<ResponseEntity<List<PaperTrade>>> getOpenPositions() {
+    return paperTradeRepository.findByStatus(TradeStatus.OPEN)
+            .collectList()
+            .map(ResponseEntity::ok);
+}
+
+// Scheduler (writes to DB)
+@Scheduled(cron = "0 30 9 * * MON-FRI")
+public void scheduledDailyEntry() {
+    tradingOrchestrator.runTradingCycle("NIFTY50")
+            .subscribe();  // Writes trades to DB
+}
+```
+
+### 4. Service Layer: Read + Save Methods
+
+Services expose two method variants:
+
+```java
+@Service
+public class PaperTradeService {
+    
+    // READ method (REST-facing): fetches/calculates, no save
+    public Mono<PaperTrade> getTradeById(UUID id) {
+        return paperTradeRepository.findById(id);
+    }
+    
+    // SAVE method (scheduler-facing): calls read method then saves
+    public Mono<PaperTrade> saveNewTrade(PaperTrade trade) {
+        return paperTradeRepository.save(trade);
+    }
+}
+```
+
+### 5. REST Endpoints: Read-Only Display
+
+REST endpoints never persist to DB. They only:
+- Fetch data from repositories
+- Calculate derived values
+- Return responses
+
+All persistence happens through schedulers.
+
+### 6. Token Guard: Check Before Kite API Calls
+
+Before any Kite API call in schedulers, check token availability:
+
+```java
+@Scheduled(cron = "0 */5 9-15 ? * MON-FRI")
+public void refreshMarketIntelligence() {
+    if (!tokenTracker.isTokenAvailable()) {
+        log.warn("Zerodha token unavailable. Skipping refresh.");
+        return;
+    }
+    
+    // Proceed with Kite API calls
+    for (String symbol : SYMBOLS) {
+        refreshIntelligence(symbol).subscribe();
+    }
+}
+```
+
+### 7. Structured Logging
+
+- **Use SLF4J only** — No System.out.println
+- **Log business events at INFO/DEBUG** — Entry signals, exits, errors
+- **Log exceptions at ERROR** — Stack traces for debugging
+
+```java
+log.info("Iron Condor signal generated: {} | Credit: {} points", 
+         signal.getReason(), legsResult.getTotalCredit());
+log.error("Error evaluating strategy", e);
+```
+
+---
+
+## Key Bugs Fixed (June 29-30, July 1, 2026)
+
+### BUG 5 — P&L Stored in Rupees Instead of Points
+
+**Root Cause:**
+`calculateSpreadPnl()` and `calculateIronCondorPnl()` were multiplying by lot size inside per-leg calculation, storing rupees in unrealizedPnl field which must store points only.
+
+**Symptom:**
+All spread and Iron Condor trades before this fix were exiting almost immediately. Inflated rupee P&L (e.g., 2000 rupees) dwarfed points-based target threshold (e.g., 50% of 30 points = 15 points), causing premature exits.
+
+**Fix:**
+Removed lot size multiplication from per-leg calculation. P&L now stored in points only. Telegram rupee display now correctly multiplies points × lotSize at display time only.
+
+**Code Change:**
+```java
+// BEFORE (wrong — stored rupees)
+legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity() * lotSize);
+
+// AFTER (correct — stores points)
+legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
+
+// Telegram display (correct — multiplies at display time)
+Double pnlAmount = trade.getRealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
+```
+
+**Impact:**
+Before fix: Trades exited almost immediately due to inflated P&L values
+After fix: Trades now hold until actual target/stop loss thresholds are hit
+
+**Validation:**
+June 30 EXPIRY_DAY_STRANGLE: Held until TARGET_HIT (50% of credit), confirming fix works.
+
+---
+
+### BUG 6 — Lot Size Inconsistency Across Codebase
+
+**Root Cause:**
+Four different hardcoded lot size values in simultaneous use:
+- 50 in TradingController/DailyReportService
+- 75 in IronCondorStrategy/BullPutSpreadStrategy/BearCallSpreadStrategy
+- 75 in MaxPainCalculatorService
+- 65 in PaperTradingEngine (this was the correct one)
+
+**Symptom:**
+Different components used different lot sizes, causing inconsistent P&L calculations and Telegram alerts. Live Kite API verification showed NIFTY50=65, NIFTYBANK=30.
+
+**Fix:**
+Created `LotSizeService` as single source of truth. Migrated all 6 consumers:
+1. TradingController
+2. DailyReportService
+3. IronCondorStrategy
+4. BullPutSpreadStrategy
+5. BearCallSpreadStrategy
+6. MaxPainCalculatorService
+
+Removed duplicate config sections (trading.paper.lot-size and intelligence.maxpain.lot-sizes).
+
+**Code Change:**
+```java
+// BEFORE (hardcoded in multiple places)
+Integer lotSize = 75;  // Wrong for NIFTY50
+
+// AFTER (centralized)
+Integer lotSize = lotSizeService.getLotSize(trade.getSymbol());  // Returns 65 for NIFTY50, 30 for NIFTYBANK
+```
+
+**Configuration:**
+```yaml
+# Single canonical source
+trading:
+  lot-sizes:
+    NIFTY50: 65
+    NIFTYBANK: 30
+```
+
+**Impact:**
+Before fix: Inconsistent lot sizes across codebase
+After fix: All components use same lot size values from single source
+
+**Validation:**
+All 6 consumers verified to use LotSizeService; no hardcoded values remain.
+
+---
+
+### BUG 7 — MarketIntelligence Staleness on Trade-Decision Path
+
+**Root Cause:**
+`generateIntelligence()` caches results 5 minutes in Redis. `TradingOrchestrator.runTradingCycle()` was using cached method, meaning strike selection could operate on spot prices and OI walls up to 5 minutes old.
+
+**Symptom:**
+On expiry day June 30, NIFTY moved 100+ points in a 5-minute window. Stale market data caused suboptimal strike selection. Example: maxCallOIStrike=24000 with spot=24056 (5 min old), but actual spot=24150 (current).
+
+**Fix:**
+Added `generateFreshIntelligence()` that bypasses cache read but still writes to cache after fetch. `TradingOrchestrator.runTradingCycle()` now uses fresh method. All read-only display endpoints remain on cached method unchanged.
+
+**Code Change:**
+```java
+// BEFORE (stale data)
+return marketIntelligenceService.generateIntelligence(symbol)  // Uses 5-min cache
+
+// AFTER (fresh data for trade decisions)
+return marketIntelligenceService.generateFreshIntelligence(symbol)  // Bypasses cache read, writes after fetch
+```
+
+**Impact:**
+Before fix: Trade decisions based on up to 5-minute-old data
+After fix: Trade decisions based on fresh data; read-only endpoints still benefit from caching
+
+**Validation:**
+June 30 EXPIRY_DAY_STRANGLE: Correctly selected strikes based on current spot price.
+
+---
+
+### BUG 8 — OI-Wall Strike Correction Was Insufficient and Arbitrary
+
+**Root Cause:**
+Original `selectStrikes()` used flat 100-point minDistance and single fixed-offset widening (50 pts). Could return ITM strikes without detection. On June 30: maxCallOIStrike=24000 with spot=24056 produced callStrike=24050 (below spot, effectively ITM).
+
+**Symptom:**
+Arbitrary 100-point distance insufficient for volatile markets. Fixed +50 widening didn't scale with volatility. No structural sanity check for OI walls on wrong side of spot.
+
+**Fix:**
+Implemented ATR-scaled minDistance (ATR14 × min-distance-atr-multiplier, default 0.4). Principled fallback to boundary strike (Option C) — roundUpToStep/roundDownToStep instead of arbitrary +50. Structural sanity gate: if OI wall on wrong side of spot entirely, skip trade (hard skip, no fallback). StrikeSelection now tracks oiCallWall, oiPutWall, callFallbackUsed, putFallbackUsed, atr14, atrMultiplier for honest Telegram reporting.
+
+**Code Change:**
+```java
+// BEFORE (arbitrary)
+double minDistance = 100.0;  // Flat 100 points
+BigDecimal boundaryCall = spotPrice.add(BigDecimal.valueOf(minDistance + 50));  // +50 arbitrary widening
+
+// AFTER (ATR-scaled)
+double atr14 = metrics.getAtr14().doubleValue();
+double atrMultiplier = 0.4;  // Configurable
+BigDecimal minDistance = BigDecimal.valueOf(atr14 * atrMultiplier);
+BigDecimal boundaryCall = roundUpToStep(spotPrice.add(minDistance), 50);
+
+// Structural sanity gate
+if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
+    log.warn("OI walls structurally invalid relative to spot — skipping");
+    return null;
+}
+
+// Principled fallback
+if (callStrike.compareTo(boundaryCall) < 0) {
+    callStrike = boundaryCall;
+    callFallbackUsed = true;
+}
+```
+
+**Impact:**
+Before fix: Arbitrary 100-point distance; insufficient safety margin; no structural validation
+After fix: ATR-scaled distance; principled fallback; hard skip on structural invalidity
+
+**Validation:**
+Tested with multiple market conditions; safety boundary now adapts to volatility.
+
+---
+
+### BUG 9 — Wrong Expiry Date Traded on Expiry Day
+
+**Root Cause:**
+`findNearestWeeklyExpiry()` used `isAfter(today)` which excluded today's expiry. On expiry day, strategy traded next week's contracts instead of today's.
+
+**Symptom:**
+On Tuesday (expiry day), the strategy would trade next week's contracts instead of today's, missing the intended expiry day trade.
+
+**Fix:**
+Changed to `!isBefore(today)` to include today's expiry.
+
+**Code Change:**
+```java
+// BEFORE (wrong)
+LocalDate expiryDate = optionChain.getStrikes().stream()
+    .map(OptionStrike::getExpiryDate)
+    .filter(date -> date.isAfter(today))  // Excludes today!
+    .min(Comparator.naturalOrder())
+    .orElse(null);
+
+// AFTER (correct)
+LocalDate expiryDate = optionChain.getStrikes().stream()
+    .map(OptionStrike::getExpiryDate)
+    .filter(date -> !date.isBefore(today))  // Includes today
+    .min(Comparator.naturalOrder())
+    .orElse(null);
+```
+
+**Impact:**
+Before fix: Strategy traded next week's contracts on expiry day (wrong)
+After fix: Strategy correctly trades today's expiry contracts
+
+**Validation:**
+Live validated June 30, 2026 — strategy correctly picked today's expiry.
+
+---
+
+### BUG 10 — REST Endpoint Writing to DB (Architecture Violation)
+
+**Root Cause:**
+`getOpenPositions()` was calling `markToMarket()` on every GET hit, writing to DB from a REST endpoint. Violates core architecture rule: REST endpoints are read-only, DB writes via schedulers only.
+
+**Symptom:**
+Every call to GET /trading/positions/open would update unrealizedPnl in DB, causing unintended side effects and violating the read/write separation pattern.
+
+**Fix:**
+Reverted to read-only. Added `calculateLiveUnrealizedPnl()` that reads from Redis without writing. Response now includes liveUnrealizedPnl and isPnlLive fields.
+
+**Code Change:**
+```java
+// BEFORE (wrong — writes to DB)
+return paperTradeRepository.findByStatus(TradeStatus.OPEN)
+        .flatMap(trade -> paperTradingEngine.markToMarket(trade))  // Writes to DB!
+        .collectList()
+        .map(ResponseEntity::ok);
+
+// AFTER (correct — read-only)
+return paperTradeRepository.findByStatus(TradeStatus.OPEN)
+        .flatMap(position -> paperTradingEngine.calculateLiveUnrealizedPnl(position))  // Reads from Redis only
+        .collectList()
+        .map(ResponseEntity::ok);
+```
+
+**Response Structure:**
+```json
+{
+  "count": 1,
+  "positions": [
+    {
+      "id": "uuid",
+      "symbol": "NIFTY50",
+      "unrealizedPnl": 15.5,
+      "liveUnrealizedPnl": 18.2,
+      "isPnlLive": true
+    }
+  ]
+}
+```
+
+**Impact:**
+Before fix: REST endpoint violated architecture rule by writing to DB
+After fix: REST endpoint is truly read-only; live P&L calculated from Redis without persistence
+
+**Validation:**
+GET /trading/positions/open confirmed to not write to DB; isPnlLive flag correctly indicates data freshness.
+
+---
+
+### BUG 11 — Misleading Telegram Alert for ATR-Boundary Strikes
+
+**Root Cause:**
+`buildTradeSignal()` labeled selected strikes as "OI support" and "OI resistance" even when ATR boundary fallback was used instead of actual OI walls.
+
+**Symptom:**
+Telegram alerts claimed "OI resistance: 24050" when actually using ATR boundary (OI wall was 24000, too close to spot). Misleading traders about the actual reason for strike selection.
+
+**Fix:**
+`StrikeSelection` now tracks original OI walls and fallback flags. `buildReasonString()` generates honest description — clearly states when ATR boundary was used vs OI wall, includes ATR14 and multiplier values in the message.
+
+**Code Change:**
+```java
+// BEFORE (misleading)
+return String.format("Expiry day strangle: Sell %dCE + %dPE. OI resistance: %d. OI support: %d",
+        callStrike, putStrike, callStrike, putStrike);
+
+// AFTER (honest)
+if (callFallback && !putFallback) {
+    return String.format(
+            "Expiry day strangle: Sell %dCE + %dPE. " +
+            "CE: ATR boundary %d (OI wall: %d, ATR14: %.2f, mult: %.2f). OI support: %d",
+            callStrike, putStrike, callStrike, oiCall, atr14, mult, putStrike
+    );
+}
+```
+
+**Impact:**
+Before fix: Telegram alerts misleading about strike selection reason
+After fix: Telegram alerts clearly state whether strikes from OI walls or ATR boundaries
+
+**Validation:**
+June 30 EXPIRY_DAY_STRANGLE: Telegram alert correctly stated "ATR boundary" when fallback was used.
+
+---
+
+### BUG 12 — Empty Response Body on Skipped Trade Execution
+
+**Root Cause:**
+POST /trading/run/{symbol} returned HTTP 200 with empty body when trade was skipped (duplicate open trade, strategy skip, etc).
+
+**Symptom:**
+Clients received empty response body, making it impossible to determine why trade was skipped. No skipReason provided.
+
+**Fix:**
+Added `switchIfEmpty` handler in TradingController that always returns a JSON response with executable=false and skipReason.
+
+**Code Change:**
+```java
+// BEFORE (empty response)
+return tradingOrchestrator.runTradingCycle(symbol)
+        .map(result -> ResponseEntity.ok(result));  // Empty if no trade executed
+
+// AFTER (always returns JSON)
+return tradingOrchestrator.runTradingCycle(symbol)
+        .switchIfEmpty(Mono.just(StrategyResult.builder()
+                .isExecutable(false)
+                .skipReason("Trade execution was skipped — check logs for details")
+                .build()))
+        .map(result -> {
+            Map<String, Object> response = new HashMap<>();
+            response.put("executable", result.getIsExecutable());
+            response.put("skipReason", result.getSkipReason());
+            return ResponseEntity.ok(response);
+        });
+```
+
+**Response Structure:**
+```json
+{
+  "symbol": "NIFTY50",
+  "executable": false,
+  "skipReason": "Open trade already exists for EXPIRY_DAY_STRANGLE today, skipping entry"
+}
+```
+
+**Impact:**
+Before fix: Empty response body on skipped trades
+After fix: Always returns JSON with executable flag and skipReason
+
+**Validation:**
+POST /trading/run/{symbol} confirmed to return JSON response even when trade is skipped.
+
+---
+
+## Paper-Tested Results (June 30 – July 3, 2026)
+
+**Note:** These are paper-trading simulation results using real market
+data (prices, strikes, option chains from Zerodha Kite API during
+trading hours). They validate trading logic and mark-to-market
+calculations — they are **not** live order executions, and Stage 4c's
+real multi-day overnight-holding behavior has **not yet been observed**
+(no cloud deployment exists; the app runs locally and is restarted
+daily). Real validation begins whenever a DTE-governed strategy
+(IRON_CONDOR / BULL_PUT_SPREAD / BEAR_CALL_SPREAD) next opens a
+position and survives at least one trading-day boundary — see
+CURRENT_STATE.md for the current status of that observation.
+
+### June 30, 2026: EXPIRY_DAY_STRANGLE — Paper-Tested
+
+**Entry:** 11:25 AM IST
+- Strikes: 24050CE / 23850PE (today's expiry, correctly selected)
+- Entry Credit: 30.9 points
+- Strategy: EXPIRY_DAY_STRANGLE
+
+**Exit:** 1:38 PM IST
+- Exit Reason: TARGET_HIT
+- Realized P&L: +16.05 points (52% of credit collected)
+- Duration: 2h 13m
+
+**Confirmed directly against `paper_trades` table (row `79661506-...`):**
+- Entry/exit timestamps, strikes, exit reason, and realized P&L match
+  the database record exactly.
+- Correct expiry date selected (today's, not next week's).
+- P&L stored in points (not rupees).
+
+*(Entry credit corrected from an earlier draft's 31.5 to the verified
+value of 30.9 — confirmed against the `paper_trades` row directly.)*
+
+---
+
+### July 1, 2026: BULL_PUT_SPREAD — Paper-Tested
+
+**Entry:** 1:15 PM IST
+- Strikes: 23800PE (short) / 23700PE (long)
+- Entry Credit: 21.3 points
+- Strategy: BULL_PUT_SPREAD
+
+**Confirmed directly against `paper_trades` table (row `8d81333b-...`):**
+- Entry timestamp, strikes, and entry credit match the database
+  record exactly. Exit reason: FORCE_CLOSE_EOD (this predates
+  Stage 4c's removal of daily force-close for this strategy).
+
+**Not independently verified:**
+- The duplicate-entry-blocked-at-13:45 behavior and the
+  `liveUnrealizedPnl`/`isPnlLive` endpoint response are plausible and
+  consistent with the architecture (rejected duplicate attempts are
+  not expected to persist in `paper_trades`, so this table cannot
+  confirm or deny them), but no log line or API response has been
+  captured to confirm these specific sub-claims. Treat as unverified
+  until such evidence is captured.
+
+---
+
+## Configuration Changes
+
+### Removed
+- `trading.paper.lot-size` (was hardcoded 75)
+- `intelligence.maxpain.lot-sizes` (was hardcoded 75)
+
+### Added
+- `trading.lot-sizes` (NIFTY50: 65, NIFTYBANK: 30) — single source of truth
+- `EXPIRY_DAY_STRANGLE.extra.min-distance-atr-multiplier: 0.4` — ATR-scaled safety boundary
+
+---
+
+## Risk Management
+
+### Aggregate Position Limits
+
+- **max-concurrent-open-positions:** 3 (configurable) — aggregate cap across ALL strategies combined, enforced in `TradingOrchestrator.runTradingCycle()` via `RiskManager.isWithinConcurrentPositionLimit()`, checked as the final gate immediately before trade execution. This is SEPARATE from and ADDITIONAL to the existing per-strategy duplicate-entry check (one open position per strategy at a time) — both gates must pass for a new trade to execute.
+
+- **Per-strategy duplicate check (fixed):** Previously scoped to "today" only (`existsByStrategyNameAndTradeDateAndStatus`), which would have failed to detect a still-open position from a prior day once overnight holding was enabled. Now uses `existsByStrategyNameAndStatus()` (date-independent).
+
+---
+
+## Known Gaps / Future Work
+
+### Known Gap: Exit Logic Has No Live Order-Placement Path
+
+All current exit mechanisms (profit target, stop-loss, VIX panic, DTE exit, DTE exit safety net) call `PaperTradingEngine.closeTrade()`, which only updates the database — it does NOT place any order with Zerodha/Kite. This is fine for paper trading (current mode) but MUST be addressed before live trading is enabled: a live position would show as "closed" in TradeMesh's database while remaining open and exposed at the broker.
+
+**Before live trading:**
+- Every exit path needs a real Kite order-placement call, with confirmation/retry/failure handling and alerting if a live exit does not actually execute.
+- `dailySafetyNetCheck()`'s 9:00 AM cron timing (currently before NSE market open at 9:15 AM) will need reconsideration for live mode, since an order cannot execute against the exchange before it opens.
+- This requires its own dedicated design cycle before implementation, given it touches order execution, confirmation handling, and timing across every exit path simultaneously.
+
+---
+
+## Known Open Items
+
+- **monitorOpenPositions() staleness:** Classified as acceptable cached but not formally verified against VIX-based exit logic. Must re-examine when VIX exit conditions are implemented.
+- **IVR:** Started collecting June 30 2026, needs 30 days before Iron Condor confidence scoring becomes meaningful.
+- **BANKNIFTY:** Intelligence gathered for both symbols but Iron Condor and spread strategies hardcoded to NIFTY50. BANKNIFTY strategy support deferred.
+- **Option A for skip reason propagation:** Currently uses generic "check logs for details" message. Should propagate actual reason through reactive chain when convenient.
+- **Iron Condor / spread mark-to-market exit validation** — Stage 4c
+  (overnight holding, DTE-based exit) is unit-tested (185 tests,
+  0 failures) but has **not yet been observed against a real elapsed
+  multi-day cycle**. No cloud deployment exists; validation depends on
+  a DTE-governed strategy opening a position that survives at least
+  one trading-day boundary. See CURRENT_STATE.md for live status —
+  this is an ongoing open item, not scheduled to a specific date.
+
+---
+
+## Future Roadmap
+
+### Phase 1 — Immediate (before next expiry day)
+
+- **Iron Condor / spread mark-to-market exit validation** — Stage 4c
+  (overnight holding, DTE-based exit) is unit-tested (185 tests,
+  0 failures) but has **not yet been observed against a real elapsed
+  multi-day cycle**. No cloud deployment exists; validation depends on
+  a DTE-governed strategy opening a position that survives at least
+  one trading-day boundary. See CURRENT_STATE.md for live status —
+  this is an ongoing open item, not scheduled to a specific date.
+
+- **monitorOpenPositions() staleness formal verification**
+  - Currently classified as acceptable cached but not formally verified
+  - Must re-examine when VIX-based exit logic is implemented
+  - Validate against real market conditions
+
+- **VIX-based exit condition in mark-to-market**
+  - Currently TODO in IronCondorStrategy exit logic
+  - Implement dynamic exit thresholds based on VIX levels
+  - Add Telegram alerts for VIX-triggered exits
+
+---
+
+### Phase 2 — Short Term (this month)
+
+- **PCR data collection and confidence scoring**
+  - Currently 0 pts in confidence scoring because PCR calculated from option chain but not persisted
+  - Add PCR persistence to database
+  - Integrate PCR into Iron Condor confidence scoring (target: 15 pts)
+
+- **IVR becomes meaningful after 30 days of iv_history**
+  - Collection started June 30, 2026
+  - Meaningful around August 1, 2026 (30 days of data)
+  - Currently contributes 15-30 pts to Iron Condor confidence scoring
+
+- **Option A skip reason propagation**
+  - Currently uses generic "check logs for details" message
+  - Propagate actual reason through reactive chain instead
+  - Improve API response clarity for debugging
+
+- **BANKNIFTY historical price bootstrap**
+  - Same as NIFTY50 bootstrap, needed for BANKNIFTY Iron Condor
+  - Fetch 2.5 years of BANKNIFTY daily OHLC from Kite API
+  - Store in nifty_daily_prices table (or create banknifty_daily_prices)
+
+---
+
+### Phase 3 — Medium Term
+
+- **Dynamic lot sizing based on capital and risk percentage**
+  - Currently fixed at 1 lot for all strategies
+  - Implement position sizing based on account capital
+  - Add risk percentage controls (e.g., 2% risk per trade)
+
+- **VIX-based position sizing**
+  - VIX > 18 → half size
+  - VIX 12-18 → full size
+  - VIX < 12 → full size
+  - Already designed but not implemented
+
+- **Iron Condor adjustment logic — rolling breached wings**
+  - Explicitly deferred in v1
+  - Add in v2 after base strategy validated over 4 weeks
+  - Implement roll-up/roll-down logic for breached legs
+
+- **BANKNIFTY Iron Condor and spread strategies**
+  - Intelligence pipeline exists for both symbols
+  - Strategies currently hardcoded to NIFTY50
+  - Extend StrategySelector to support BANKNIFTY
+  - Validate over 4 weeks of paper trading before live
+
+- **Skew-based wing width adjustment for Iron Condor**
+  - Currently fixed wing width (200 points)
+  - Adjust based on call/put skew in option chain
+  - Widen wings on high skew days for better credit
+
+---
+
+### Phase 4 — Long Term
+
+- **Live trading mode — switch from paper to real Kite orders**
+  - Requires: order placement API, position reconciliation, risk limits, circuit breakers
+  - Implement live order execution in OrderExecutionService
+  - Add position reconciliation against Zerodha holdings
+  - Implement circuit breakers for daily loss limits
+
+- **Web dashboard — visual P&L tracking, strategy status, open positions, historical performance**
+  - Real-time P&L charts
+  - Strategy performance metrics
+  - Open position monitoring
+  - Historical trade analysis
+
+- **Backtesting framework — run strategies against nifty_daily_prices historical data**
+  - Replay historical market data
+  - Simulate strategy execution
+  - Calculate historical returns and Sharpe ratio
+  - Optimize strategy parameters
+
+- **Greeks tracking at portfolio level**
+  - Delta, vega, gamma aggregation
+  - Requires Black-Scholes engine extension
+  - Portfolio-level risk monitoring
+
+- **Correlation with global markets**
+  - SPX, USDINR correlation tracking
+  - Additional data pipeline needed
+  - Macro-level market regime detection
+
+- **Multi-account support**
+  - Support multiple Zerodha accounts
+  - Per-account strategy configuration
+  - Consolidated reporting across accounts
+
+---
+
+### Architecture Decisions — Explicitly Deferred
+
+Document these as conscious decisions, not oversights:
+
+- **No adjustment/rolling logic in v1 Iron Condor**
+  - Close and re-enter next cycle instead
+  - Rolling logic deferred until base strategy validated over 4 weeks
+
+- **No intraday trend detection**
+  - Regime detection via MarketCondition classification only
+  - No minute-level trend analysis in v1
+
+- **No Kelly criterion position sizing**
+  - Fixed lots until live trading is validated
+  - Dynamic sizing deferred to Phase 3
+
+- **No Greeks-based exit in v1**
+  - Credit-based SL/target only
+  - Greeks-based exits deferred to Phase 4
+
+- **BANKNIFTY Iron Condor deferred until NIFTY50 validated**
+  - Minimum 4 weeks of live paper trading required
+  - Validation period: July 8 - August 8, 2026
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-- **Java 17+**
-- **PostgreSQL 14+**
-- **Redis 6+**
-- **Zerodha Account** with Kite Connect API credentials
+- Java 21
+- PostgreSQL 14+
+- Redis 6+
+- Zerodha Kite Connect API credentials
 
 ### Environment Variables
 
@@ -50,7 +1402,7 @@ export ZERODHA_API_KEY=your_api_key
 export ZERODHA_API_SECRET=your_api_secret
 export ZERODHA_REDIRECT_URL=http://localhost:8080/zerodha/callback
 
-# Telegram (optional)
+# Telegram
 export TELEGRAM_BOT_TOKEN=your_bot_token
 export TELEGRAM_CHAT_ID=your_chat_id
 ```
@@ -64,1515 +1416,31 @@ export TELEGRAM_CHAT_ID=your_chat_id
 # Run
 ./gradlew bootRun
 
-# Access Swagger UI
-http://localhost:8080/swagger-ui.html
+# Access API
+# Swagger UI: http://localhost:8080/swagger-ui.html
+# API Docs: http://localhost:8080/v3/api-docs
 ```
 
----
-
-## Architecture Overview
-
-TradeMesh follows a **reactive, event-driven architecture** with clear separation of concerns:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    REST Controllers                          │
-│  (Read-only, no DB writes)                                  │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│                    Services                                  │
-│  (Business logic, calculations, read operations)            │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│              Repositories (R2DBC)                            │
-│  (Data access layer, reactive)                              │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────────────┐
-│         PostgreSQL + Redis                                   │
-│  (Persistence + Caching)                                    │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                    Schedulers                                │
-│  (Automated tasks, DB writes only)                          │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ▼
-            Services (save methods)
-                       │
-                       ▼
-            Repositories (write operations)
-```
-
-### Key Principles
-
-- **REST endpoints are read-only** — no database writes from controllers
-- **All DB writes happen through schedulers** — via service save methods
-- **Reactive (Spring WebFlux)** — non-blocking I/O throughout
-- **R2DBC for PostgreSQL** — reactive database access
-- **Redis for caching** — token storage, price cache, option chain cache
-- **Structured logging** — no `System.out.println`, use SLF4J
-
----
-
-## Package Structure
-
-### `com.trademesh`
-
-**Root package** — Application entry point and core configuration.
-
-- **`TradeMeshApplication`** — Spring Boot application main class
-
-### `com.trademesh.config`
-
-**Configuration & Constants** — Application-wide settings and utilities.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `ApplicationConstants` | Market hours, symbols (NIFTY50, NIFTYBANK), instrument tokens |
-| `JacksonConfig` | JSON serialization/deserialization configuration |
-| `JdbcConfig` | JDBC DataSource for Liquibase migrations |
-| `R2dbcConfig` | R2DBC connection pool for reactive database access |
-| `WebClientConfig` | WebClient bean for HTTP requests (20MB buffer for Kite instruments) |
-| `ResilienceConfig` | Circuit breaker and retry policies |
-| `PaperTradeLegsConverter` | Converts JSONB trade legs to/from database |
-
-### `com.trademesh.domain`
-
-**Core Domain Entities** — Master data and reference tables.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `Instrument` | Zerodha instrument master (token, symbol, strike, expiry) |
-| `InstrumentRepository` | R2DBC repository for instruments |
-| `NiftyDailyPrice` | NIFTY50 daily OHLC data (for HV20 calculation) |
-| `NiftyDailyPriceRepository` | R2DBC repository for daily prices |
-
-### `com.trademesh.intelligence`
-
-**Market Intelligence & Analysis** — VIX, OI, max pain, market metrics.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `MarketIntelligence` | Aggregated market data (VIX, OI, max pain, condition, safety) |
-| `MarketIntelligenceService` | Generates complete market intelligence for a symbol |
-| `MarketIntelligenceController` | REST endpoints for market intelligence |
-| `MarketMetrics` | Calculated metrics (HV20, ATR14, IVR, IV/HV ratio, PCR) |
-| `MarketMetricsService` | Calculates HV20, ATR14, IVR, IV/HV ratio, ATR percentile, PCR |
-| `MarketCondition` | Enum: SIDEWAYS, TRENDING_BULLISH, TRENDING_BEARISH, EXPIRY_DAY, HIGH_VOLATILITY, NO_TRADE |
-| `SignalDirection` | Enum: BULLISH, BEARISH, NEUTRAL |
-| `TradingSignal` | Signal data (strategy, legs, credit, max loss) |
-| `SignalService` | Generates trading signals from market intelligence |
-| `KiteHistoricalService` | Fetches historical OHLC from Kite Connect API |
-| `NiftyDailyPriceService` | Manages NIFTY50 daily price data (read & save methods) |
-| `IntelligenceScheduler` | Refreshes market intelligence every 5 minutes (9:15 AM–3:30 PM IST) |
-
-#### `com.trademesh.intelligence.vix`
-
-**VIX Monitoring** — Volatility index tracking and alerts.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `VixData` | Current VIX value, level, change, safe-to-trade flag |
-| `VixMonitorService` | Fetches current VIX from Zerodha API (cached 5 min) |
-| `VixHistory` | Historical VIX records (persisted every 15 min) |
-| `VixAlert` | VIX threshold crossing alerts |
-| `VixAlertService` | Detects VIX threshold crossings, sends Telegram alerts |
-| `VixScheduler` | Fetches VIX every 5 min, persists every 15 min, logs stats every 30 min |
-| `VixController` | REST endpoint: `GET /intelligence/vix` |
-
-#### `com.trademesh.intelligence.oi`
-
-**Open Interest Analysis** — OI walls, support/resistance levels.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `OIAnalysis` | OI wall analysis (max call OI strike, max put OI strike) |
-| `OIWall` | Strike-level OI data |
-| `OIAnalyserService` | Analyzes option chain for OI walls, persists snapshots |
-| `OIAnalysisScheduler` | Captures OI snapshots every 15 minutes |
-| `OIController` | REST endpoints for OI analysis |
-
-#### `com.trademesh.intelligence.maxpain`
-
-**Max Pain Calculation** — Theoretical max pain levels.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `MaxPainResult` | Calculated max pain for call/put sides |
-| `MaxPainCalculatorService` | Calculates max pain from option chain, persists snapshots |
-| `MaxPainScheduler` | Captures max pain snapshots every 30 minutes |
-| `MaxPainController` | REST endpoints for max pain data |
-
-#### `com.trademesh.intelligence.iv`
-
-**Implied Volatility Tracking** — ATM IV history for Iron Condor.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `IvHistory` | Daily ATM IV record (symbol, trade_date, atm_iv, call_iv, put_iv) |
-| `IvHistoryRepository` | R2DBC repository for IV history |
-| `IvHistoryService` | Calculates ATM IV (read method), saves ATM IV (save method) |
-| `ImpliedVolatilityCalculator` | Black-Scholes IV and delta calculations |
-| `IvHistoryScheduler` | Captures ATM IV at 9:25 AM IST on weekdays |
-
-### `com.trademesh.strategy`
-
-**Strategy Framework** — Strategy selection, evaluation, execution.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `TradingStrategy` | Interface for all trading strategies |
-| `StrategyConfig` | Strategy configuration (max lots, SL%, TP%, VIX range, allowed days) |
-| `StrategyProperties` | YAML-bound strategy properties from `application.yml` |
-| `StrategySelector` | Selects applicable strategy for current market condition |
-| `StrategyOrchestrator` | Orchestrates strategy evaluation pipeline |
-| `StrategyEngine` | Executes strategy evaluation logic |
-| `StrategyResult` | Strategy evaluation result (executable, signal, skip reason) |
-| `TradeSignal` | Trade signal (legs, credit, max loss, confidence) |
-| `TradeLeg` | Individual trade leg (instrument, action, strike, quantity) |
-| `StrategyController` | REST endpoints: evaluate, applicable, status |
-
-#### `com.trademesh.strategy.expiryday`
-
-**Expiry Day Strangle Strategy** — Sells both call & put at OI walls on expiry day.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `ExpiryDayStrategy` | Implements EXPIRY_DAY_STRANGLE strategy |
-| `ExpiryDayConfig` | Configuration for expiry day strategy |
-
-**Status:** ✅ **ENABLED** (Tuesday expiry day, 9:30 AM entry, 3:15 PM exit)
-
-**Configuration:**
-```yaml
-- name: EXPIRY_DAY_STRANGLE
-  enabled: true
-  allowed-days: [TUESDAY]
-  applicable-conditions: [EXPIRY_DAY]
-  max-vix: 18.0
-  min-vix: 10.0
-  latest-entry-time: "12:30"
-  min-credit: 20.0
-  min-distance-from-spot: 100
-  max-lots: 1
-  stop-loss-percent: 100.0
-  target-profit-percent: 50.0
-```
-
-#### `com.trademesh.strategy.spread`
-
-**Spread Strategies** — Bull Put Spread and Bear Call Spread for directional trades.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `BullPutSpreadStrategy` | Implements BULL_PUT_SPREAD strategy (bullish markets) |
-| `BearCallSpreadStrategy` | Implements BEAR_CALL_SPREAD strategy (bearish markets) |
-
-**Bull Put Spread Status:** ✅ **ENABLED** (Mon/Wed/Thu/Fri, 9:30 AM entry, 3:15 PM exit)
-
-**Configuration:**
-```yaml
-- name: BULL_PUT_SPREAD
-  enabled: true
-  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
-  applicable-conditions: [TRENDING_BULLISH]
-  max-vix: 20.0
-  min-vix: 10.0
-  latest-entry-time: "13:00"
-  min-credit: 20.0
-  max-lots: 1
-  stop-loss-percent: 200.0
-  target-profit-percent: 50.0
-  extra:
-    target-delta: 0.30
-    wing-width: 100
-    strike-step: 50
-    min-credit-pct: 0.10
-```
-
-**Bear Call Spread Status:** ✅ **ENABLED** (Mon/Wed/Thu/Fri, 9:30 AM entry, 3:15 PM exit)
-
-**Configuration:**
-```yaml
-- name: BEAR_CALL_SPREAD
-  enabled: true
-  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
-  applicable-conditions: [TRENDING_BEARISH]
-  max-vix: 20.0
-  min-vix: 10.0
-  latest-entry-time: "13:00"
-  min-credit: 20.0
-  max-lots: 1
-  stop-loss-percent: 200.0
-  target-profit-percent: 50.0
-  extra:
-    target-delta: 0.30
-    wing-width: 100
-    strike-step: 50
-    min-credit-pct: 0.10
-```
-
-#### `com.trademesh.strategy.ironcondor`
-
-**Iron Condor Strategy** — Sells call & put spreads in sideways markets.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `IronCondorStrategy` | Implements IRON_CONDOR strategy with delta-based strike selection |
-| `IronCondorSignal` | Iron Condor signal (short/long strikes, credit, P&L matrix) |
-
-**Status:** ✅ **ENABLED** (Mon/Wed/Thu/Fri, 9:30 AM entry, 3:15 PM exit)
-
-**Configuration:**
-```yaml
-- name: IRON_CONDOR
-  enabled: true
-  allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
-  applicable-conditions: [SIDEWAYS]
-  max-vix: 20.0
-  min-vix: 12.0
-  latest-entry-time: "13:00"
-  min-credit: 30.0
-  max-lots: 1
-  stop-loss-percent: 200.0
-  target-profit-percent: 50.0
-  extra:
-    target-delta: 0.18
-    wing-width: 200
-    strike-step: 50
-    min-credit-pct: 0.15
-    min-score: 60
-    ivr-min: 20.0
-    ivr-max: 80.0
-    iv-hv-ratio-min: 1.1
-    atr-pct-max: 1.0
-    dte-min: 1
-    dte-max: 15
-    atr-calm-threshold: 0.7
-    atr-high-threshold: 1.0
-    calm-target-multiplier: 0.9
-    calm-sl-multiplier: 0.8
-    high-target-multiplier: 1.1
-    high-sl-multiplier: 1.2
-    vix-panic-threshold: 25.0
-    force-close-time: "15:15"
-```
-
-**Iron Condor Evaluation Pipeline:**
-1. Check if enabled
-2. Fetch current VIX (hard gate: VIX ≤ max-vix)
-3. Calculate market metrics (HV20, ATR14, IVR, IV/HV ratio, PCR)
-4. Check ATR% (hard gate: ATR% ≤ atr-pct-max)
-5. Calculate confidence score (IVR, IV/HV, ATR%, VIX, PCR)
-6. Check confidence score (hard gate: score ≥ min-score)
-7. Fetch option chain
-8. Check DTE (hard gate: dte-min ≤ DTE ≤ dte-max)
-9. Select strikes using delta-based approach (target-delta = 0.18)
-10. Calculate net credit and validate (credit ≥ min-credit-pct × wing-width)
-11. Calculate P&L matrix (max profit, max loss, breakevens, risk/reward)
-12. Adjust exit levels based on ATR% (calm/normal/high volatility)
-13. Build trade legs and return signal
-
-#### `com.trademesh.strategy.config`
-
-**Strategy Configuration** — Unified strategy config loading.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `StrategiesConfig` | Loads all strategies from `application.yml` |
-
-### `com.trademesh.trading`
-
-**Trading Orchestration** — Main trading cycle, scheduling, reporting.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `TradingOrchestrator` | Orchestrates complete trading cycle (intelligence → strategy → execution) |
-| `TradingScheduler` | Scheduled entry/exit for EXPIRY_DAY_STRANGLE and IRON_CONDOR |
-| `TradingController` | REST endpoints: manual triggers, open positions, daily report |
-| `MarketCalendarService` | Checks if market is open (9:15 AM–3:30 PM IST, Mon–Fri) |
-| `DailyReportService` | Generates daily P&L report, sends via Telegram |
-| `StrategyExecutionLog` | Logs strategy execution events (entry, exit, P&L) |
-| `StrategyExecutionLogRepository` | R2DBC repository for execution logs |
-| `AdminController` | Admin endpoints: bootstrap historical prices, test strategy evaluation |
-
-### `com.trademesh.execution`
-
-**Trade Execution & Paper Trading** — Order execution, position tracking, mark-to-market.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `PaperTradingEngine` | Simulates trade execution (entry, exit, mark-to-market) |
-| `PaperTrade` | Paper trade record (legs, entry credit, P&L, status) |
-| `PaperTradeRepository` | R2DBC repository for paper trades |
-| `TradeStatus` | Enum: OPEN, CLOSED, CANCELLED |
-| `OrderExecutionService` | Executes orders via Zerodha API (live mode) |
-| `MarkToMarketScheduler` | Updates open trade values every 60 seconds (during market hours) |
-| `PaperTradeController` | REST endpoints: open trades, history, P&L, stats |
-
-### `com.trademesh.portfolio`
-
-**Portfolio Management** — Position tracking, P&L summary.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `PortfolioService` | Aggregates portfolio data (positions, P&L) |
-| `PortfolioSummary` | Portfolio summary (total P&L, exposure, margin) |
-| `PositionSummary` | Individual position summary (symbol, quantity, P&L) |
-
-### `com.trademesh.risk`
-
-**Risk Management** — Position limits, daily loss limits, margin checks.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `RiskManager` | Enforces risk limits before trade execution |
-| `RiskLimitsConfig` | Risk configuration (max position size, daily loss limit, sector exposure) |
-
-**Configuration:**
-```yaml
-risk:
-  max-position-size-per-symbol: 5
-  daily-loss-limit-percent: 2.0
-  max-sector-exposure: 50000
-  min-margin-buffer-percent: 10
-  position-sizing:
-    risk-percent: 1.0
-    max-quantity: 10
-```
-
-### `com.trademesh.zerodha`
-
-**Zerodha Integration** — API authentication, market data, order execution.
-
-#### `com.trademesh.zerodha.auth`
-
-**Authentication & Token Management** — OAuth2, token storage, expiry monitoring.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `ZerodhaAuthService` | OAuth2 flow, token exchange, Redis storage |
-| `ZerodhaAuthController` | REST endpoints: login, callback, token status |
-| `ZerodhaConfig` | Zerodha API configuration (API key, secret, URLs) |
-| `TokenAvailabilityTracker` | Tracks token availability across schedulers |
-| `TokenRefreshScheduler` | Daily token health check (8:00 AM, 9:00 AM IST) |
-| `TokenExpiryWatcher` | Monitors token expiry every 5 minutes, sends alerts |
-| `SensitiveDataMasker` | Masks sensitive data in logs |
-
-#### `com.trademesh.zerodha.ticker`
-
-**Live Market Data (WebSocket)** — KiteTicker WebSocket connection, price streaming.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `ZerodhaTickerService` | Manages KiteTicker WebSocket connection, streams ticks |
-| `TickerService` | Subscribes to instruments, processes ticks |
-| `TickerConnectionManager` | Auto-connect on startup, health check every 30 sec, reconnect logic |
-| `TickData` | Tick data (symbol, last price, high, low, volume, timestamp) |
-| `MarketDataController` | REST endpoints: latest price, SSE stream, connection status |
-
-#### `com.trademesh.zerodha.options`
-
-**Option Chain Data** — Fetching, caching, snapshots.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `OptionChain` | Option chain data (symbol, expiry, spot, strikes) |
-| `OptionStrike` | Strike-level data (strike, call/put LTP, IV, OI, Greeks) |
-| `OptionChainService` | Fetches option chain from Kite API, caches in Redis |
-| `OptionChainSnapshot` | Persisted option chain snapshot (JSONB) |
-| `OptionChainSnapshotRepository` | R2DBC repository for snapshots |
-| `OptionChainSnapshotScheduler` | Captures option chain snapshots every 5 minutes |
-| `KiteQuotesResponse` | Kite API response wrapper |
-| `KiteInstrumentsResponse` | Kite instruments CSV response |
-
-#### `com.trademesh.zerodha.orders`
-
-**Order Management** — Order placement, status tracking.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `OrderService` | Places orders via Kite API |
-| `OrderRequest` | Order request (symbol, quantity, price, order type) |
-
-### `com.trademesh.alert`
-
-**Alerting System** — Telegram notifications.
-
-| Class | Responsibility |
-|-------|-----------------|
-| `Alert` | Alert message (type, symbol, message) |
-| `AlertType` | Enum: ENTRY_SIGNAL, EXIT_SIGNAL, SYSTEM_ERROR, VIX_ALERT |
-| `TelegramNotificationBot` | Sends alerts via Telegram Bot API |
-| `TelegramClient` | HTTP client for Telegram API |
-| `TelegramProperties` | Telegram configuration (bot token, chat ID) |
-
-### `com.trademesh.common`
-
-**Shared Utilities** — Exception handling, DTOs, resilience patterns.
-
-#### `com.trademesh.common.exception`
-
-| Class | Responsibility |
-|-------|-----------------|
-| `TradeMeshException` | Base exception for all TradeMesh errors |
-| `DatabaseException` | Database operation failures |
-| `ExecutionException` | Trade execution failures |
-| `RiskException` | Risk limit violations |
-| `CacheException` | Redis/cache operation failures |
-| `ApiException` | External API failures (Zerodha, Telegram) |
-
-#### `com.trademesh.common.dto`
-
-| Class | Responsibility |
-|-------|-----------------|
-| `SuccessResponse<T>` | Generic success response wrapper |
-| `ErrorResponse` | Error response with details |
-| `ErrorDetail` | Individual error detail |
-
-#### `com.trademesh.common.handler`
-
-| Class | Responsibility |
-|-------|-----------------|
-| `GlobalExceptionHandler` | Spring exception handler for REST endpoints |
-
-#### `com.trademesh.common.resilience`
-
-| Class | Responsibility |
-|-------|-----------------|
-| `CircuitBreaker` | Circuit breaker pattern implementation |
-| `DeadLetterQueue` | Failed message queue for retry logic |
-
----
-
-## Database Schema
-
-All tables are in the `trade_mesh` schema. Schema changes are managed via **Liquibase** changesets.
-
-### Core Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `zerodha_sessions` | OAuth2 sessions | user_id, access_token, expires_at |
-| `instruments` | Master instrument list | instrument_token, tradingsymbol, strike, expiry |
-| `strategies` | Strategy definitions | name, is_active, config_json |
-| `orders` | Order records | zerodha_order_id, tradingsymbol, status |
-| `portfolio_positions` | Current positions | tradingsymbol, quantity, average_price, pnl |
-
-### Trading Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `paper_trades` | Paper trading records | id (UUID), symbol, strategy_name, status, entry_credit, realized_pnl |
-| `strategy_execution_logs` | Strategy execution events | strategy_name, symbol, action (ENTRY/EXIT), timestamp |
-
-### Intelligence Tables
-
-| Table | Purpose | Key Columns |
-|-------|---------|-------------|
-| `nifty_daily_prices` | NIFTY50 OHLC | trade_date (unique), open, high, low, close, volume |
-| `vix_history` | VIX snapshots | vix_value, vix_level, recorded_at |
-| `vix_alerts` | VIX threshold alerts | alert_message, triggered_at |
-| `iv_history` | Daily ATM IV | symbol, trade_date (unique), atm_iv, call_iv, put_iv, spot_price |
-| `oi_snapshots` | OI analysis snapshots | symbol, max_call_oi_strike, max_put_oi_strike, recorded_at |
-| `max_pain_history` | Max pain snapshots | symbol, call_max_pain, put_max_pain, recorded_at |
-| `option_chain_snapshots` | Full option chain snapshots | symbol, expiry_date, data (JSONB), created_at |
-
----
-
-## Scheduled Jobs
-
-All times are in **IST (Asia/Kolkata)** timezone. Market hours: **9:15 AM – 3:30 PM, Monday–Friday**.
-
-### Trading Cycle
-
-| Job | Cron | Frequency | Symbols | Action |
-|-----|------|-----------|---------|--------|
-| **Expiry Day Entry** | `0 30 9 * * TUE` | Tuesday 9:30 AM | NIFTY50, NIFTYBANK | Run EXPIRY_DAY_STRANGLE strategy |
-| **Iron Condor Entry** | `0 30 9 * * MON,WED,THU,FRI` | Mon/Wed/Thu/Fri 9:30 AM | NIFTY50 | Run IRON_CONDOR strategy |
-| **Expiry Day Exit** | `0 15 15 * * TUE` | Tuesday 3:15 PM | NIFTY50, NIFTYBANK | Force close all open positions |
-| **Iron Condor Exit** | `0 15 15 * * MON,WED,THU,FRI` | Mon/Wed/Thu/Fri 3:15 PM | NIFTY50 | Force close all open positions |
-| **Daily Report (Expiry)** | `0 45 15 * * TUE` | Tuesday 3:45 PM | — | Generate & send daily P&L report |
-| **Daily Report (Regular)** | `0 45 15 * * MON,WED,THU,FRI` | Mon/Wed/Thu/Fri 3:45 PM | — | Generate & send daily P&L report |
-
-### Market Intelligence
-
-| Job | Cron | Frequency | Action |
-|-----|------|-----------|--------|
-| **Market Intelligence Refresh** | `0 */5 9-15 ? * MON-FRI` | Every 5 min (9 AM–3 PM) | Refresh VIX, OI, max pain, market condition |
-| **VIX Fetch** | `0 */5 9-15 ? * MON-FRI` | Every 5 min (9 AM–3 PM) | Fetch current VIX, check threshold crossings |
-| **VIX Persist** | `0 */15 9-15 ? * MON-FRI` | Every 15 min (9 AM–3 PM) | Save VIX snapshot to database |
-| **VIX Statistics** | Fixed rate 30 min | Every 30 min | Log VIX statistics, persistence tracking |
-| **ATM IV Capture** | `0 25 9 * * MON-FRI` | 9:25 AM (market open) | Capture ATM IV for NIFTY50 |
-| **OI Analysis** | `0 */15 9-15 ? * MON-FRI` | Every 15 min (9 AM–3 PM) | Analyze OI walls, persist snapshots |
-| **Max Pain** | `0 */30 9-15 ? * MON-FRI` | Every 30 min (9 AM–3 PM) | Calculate max pain, persist snapshots |
-| **Option Chain Snapshots** | Fixed rate 5 min | Every 5 min | Capture full option chain snapshots |
-
-### Position Management
-
-| Job | Cron | Frequency | Action |
-|-----|------|-----------|--------|
-| **Mark-to-Market** | Fixed rate 60 sec | Every 60 sec (during market hours) | Update open trade values, check SL/TP |
-
-### Authentication & Token Management
-
-| Job | Cron | Frequency | Action |
-|-----|------|-----------|--------|
-| **Token Health Check** | `0 0 8 * * *` | Daily 8:00 AM | Verify token is present in Redis |
-| **Pre-Market Token Check** | `0 0 9 * * MON-FRI` | Weekdays 9:00 AM | Final token check before market open |
-| **Token Expiry Watcher** | Fixed rate 5 min | Every 5 min | Monitor token expiry, send alerts |
-| **KiteTicker Health Check** | Fixed delay 30 sec | Every 30 sec | Check WebSocket connection, reconnect if needed |
-
----
-
-## REST API Endpoints
-
-All endpoints return JSON. Base URL: `http://localhost:8080`
-
-### Authentication (`/zerodha`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/zerodha/login` | Redirect to Kite Connect login page |
-| `GET` | `/zerodha/callback?request_token=xxx` | OAuth2 callback, exchange token |
-| `GET` | `/zerodha/token/status` | Check if valid token is in Redis |
-
-### Market Data (`/market`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/market/price/{symbol}` | Get latest cached price (Redis) |
-| `GET` | `/market/stream/{symbol}` | Server-Sent Events live price stream |
-| `GET` | `/market/status` | KiteTicker WebSocket connection status |
-
-### Market Intelligence (`/intelligence`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/intelligence/{symbol}` | Complete market intelligence (VIX, OI, max pain, condition) |
-| `GET` | `/intelligence/{symbol}/condition` | Market condition only |
-| `GET` | `/intelligence/{symbol}/summary` | One-line intelligence summary |
-| `GET` | `/intelligence/metrics/{symbol}` | Market metrics (HV20, ATR14, IVR, IV/HV, PCR) |
-| `GET` | `/intelligence/vix` | Current VIX data |
-| `GET` | `/intelligence/maxpain` | Max pain data |
-| `GET` | `/intelligence/oi` | Open interest analysis |
-| `GET` | `/intelligence/optionchain` | Option chain data |
-
-### Strategy (`/strategy`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/strategy/evaluate/{symbol}` | Evaluate strategies for symbol |
-| `GET` | `/strategy/applicable/{symbol}` | Get applicable strategies for current condition |
-| `GET` | `/strategy/status` | Status of all available strategies |
-
-### Trading (`/trading`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/trading/expiry-day/trigger` | Manually trigger expiry day entry |
-| `POST` | `/trading/run/{symbol}` | Manually trigger trading cycle for symbol |
-| `GET` | `/trading/positions/open` | Get all currently open positions |
-| `POST` | `/trading/monitor` | Manually trigger position monitoring |
-| `GET` | `/trading/report/today` | Today's trading summary and report |
-
-### Paper Trading (`/paper/trades`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/paper/trades/open` | All currently open paper trades |
-| `GET` | `/paper/trades/history` | All closed paper trades (history) |
-| `GET` | `/paper/trades/{id}` | Specific paper trade by ID |
-| `GET` | `/paper/trades/symbol/{symbol}` | All trades for a symbol |
-| `GET` | `/paper/trades/strategy/{strategyName}` | All trades for a strategy |
-| `GET` | `/paper/trades/pnl/weekly` | Weekly P&L summary with daily breakdown |
-| `GET` | `/paper/trades/stats` | Overall paper trading statistics |
-| `POST` | `/paper/trades/{id}/close` | Manually close a paper trade |
-
-### Admin (`/admin`)
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/admin/bootstrap/historical-prices?from=YYYY-MM-DD&to=YYYY-MM-DD` | Bootstrap historical NIFTY50 prices |
-| `GET` | `/admin/test/atm-iv?symbol=NIFTY50` | Test ATM IV calculation (no DB save) |
-| `GET` | `/admin/test/iron-condor-evaluate` | Test Iron Condor evaluation (no DB save) |
-
----
-
-## Trading Strategies
-
-### 1. EXPIRY_DAY_STRANGLE
-
-**Status:** ✅ **ENABLED**
-
-**Concept:** Sells both call and put options at OI walls on Thursday expiry day for maximum theta decay with zero overnight risk.
-
-**Entry Conditions:**
-- Day: **Tuesday** (NSE weekly expiry)
-- Time: **9:30 AM IST**
-- Market Condition: **EXPIRY_DAY**
-- VIX Range: **10.0 – 18.0**
-- Entry Deadline: **12:30 PM**
-
-**Strike Selection:**
-- **Call Strike:** Highest OI call strike (adjusted if too close to spot)
-- **Put Strike:** Highest OI put strike (adjusted if too close to spot)
-- **Minimum Distance from Spot:** 100 points (NIFTY50), 50 points (NIFTYBANK)
-
-**Exit Conditions:**
-- **Time:** **3:15 PM IST** (forced close before market close)
-- **Profit Target:** 50% of credit collected
-- **Stop Loss:** 100% of credit collected
-
-**Configuration:**
-```yaml
-EXPIRY_DAY_STRANGLE:
-  enabled: true
-  allowed-days: [TUESDAY]
-  applicable-conditions: [EXPIRY_DAY]
-  max-vix: 18.0
-  min-vix: 10.0
-  latest-entry-time: "12:30"
-  min-credit: 20.0
-  min-distance-from-spot: 100
-  max-lots: 1
-  stop-loss-percent: 100.0
-  target-profit-percent: 50.0
-```
-
----
-
-### 2. IRON CONDOR
-
-**Status:** ✅ **ENABLED**
-
-**Concept:** Sells both call and put spreads in sideways markets for theta decay. Uses delta-based strike selection (target delta = 0.18) for consistent OTM positioning.
-
-**Entry Conditions:**
-- **Days:** Monday, Wednesday, Thursday, Friday (NOT Tuesday — expiry day)
-- **Time:** **9:30 AM IST**
-- **Market Condition:** **SIDEWAYS**
-- **VIX Range:** **12.0 – 20.0**
-- **Entry Deadline:** **1:00 PM**
-
-**Confidence Score Calculation:**
-- **IVR (IV Rank):** 20–50% = 20 pts, 50–65% = 30 pts, 65–80% = 15 pts
-- **IV/HV Ratio:** ≥1.3 = 20 pts, ≥1.1 = 10 pts
-- **ATR%:** <0.6 = 15 pts, <0.8 = 20 pts, <1.0 = 10 pts, >1.0 = -20 pts
-- **VIX:** 12–16 = 15 pts, 16–20 = 5 pts, >20 = -50 pts
-- **PCR:** 0.8–1.2 = 15 pts
-- **Minimum Score:** 60 points
-
-**Strike Selection (Delta-Based):**
-1. Find short call strike: first strike above spot with delta ≤ 0.18
-2. Find short put strike: first strike below spot with delta ≤ 0.18
-3. Long call strike = short call + wing width (200 points)
-4. Long put strike = short put − wing width (200 points)
-
-**Exit Levels (Adjusted by ATR%):**
-- **Calm Market (ATR% < 0.7):** Target = 45% of credit, SL = 80% of credit
-- **Normal Market (0.7 ≤ ATR% ≤ 1.0):** Target = 50% of credit, SL = 100% of credit
-- **High Volatility (ATR% > 1.0):** Target = 55% of credit, SL = 120% of credit
-
-**Hard Gates:**
-- VIX ≤ 20.0
-- ATR% ≤ 1.0
-- Confidence Score ≥ 60
-- DTE: 1–15 days
-- Net Credit ≥ 15% of wing width
-
-**Exit Conditions:**
-- **Time:** **3:15 PM IST** (forced close)
-- **Profit Target:** Adjusted based on ATR%
-- **Stop Loss:** Adjusted based on ATR%
-- **Force Close Time:** **3:15 PM IST**
-
-**Configuration:**
-```yaml
-IRON_CONDOR:
-  enabled: true
-  allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
-  applicable-conditions: [SIDEWAYS]
-  max-vix: 20.0
-  min-vix: 12.0
-  latest-entry-time: "13:00"
-  min-credit: 30.0
-  max-lots: 1
-  stop-loss-percent: 200.0
-  target-profit-percent: 50.0
-  extra:
-    target-delta: 0.18
-    wing-width: 200
-    strike-step: 50
-    min-credit-pct: 0.15
-    min-score: 60
-    ivr-min: 20.0
-    ivr-max: 80.0
-    iv-hv-ratio-min: 1.1
-    atr-pct-max: 1.0
-    dte-min: 1
-    dte-max: 15
-    atr-calm-threshold: 0.7
-    atr-high-threshold: 1.0
-    calm-target-multiplier: 0.9
-    calm-sl-multiplier: 0.8
-    high-target-multiplier: 1.1
-    high-sl-multiplier: 1.2
-    vix-panic-threshold: 25.0
-    force-close-time: "15:15"
-```
-
----
-
-### 3. BULL PUT SPREAD
-
-**Status:** ✅ **ENABLED**
-
-**Concept:** Sells OTM put spread in bullish markets to collect premium. Profits when market stays above short put strike.
-
-**Entry Conditions:**
-- **Days:** Monday, Wednesday, Thursday, Friday
-- **Time:** **9:30 AM IST**
-- **Market Condition:** **TRENDING_BULLISH**
-- **VIX Range:** **10.0 – 20.0**
-- **Entry Deadline:** **1:00 PM**
-
-**Strike Selection (Delta-Based):**
-1. Find short put strike: first strike below spot with delta ≤ 0.30
-2. Long put strike = short put − wing width (100 points)
-
-**Exit Conditions:**
-- **Time:** **3:15 PM IST** (forced close)
-- **Profit Target:** 50% of credit collected
-- **Stop Loss:** 200% of credit collected
-
-**Configuration:**
-```yaml
-BULL_PUT_SPREAD:
-  enabled: true
-  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
-  applicable-conditions: [TRENDING_BULLISH]
-  max-vix: 20.0
-  min-vix: 10.0
-  latest-entry-time: "13:00"
-  min-credit: 20.0
-  max-lots: 1
-  stop-loss-percent: 200.0
-  target-profit-percent: 50.0
-  extra:
-    target-delta: 0.30
-    wing-width: 100
-    strike-step: 50
-    min-credit-pct: 0.10
-```
-
----
-
-### 4. BEAR CALL SPREAD
-
-**Status:** ✅ **ENABLED**
-
-**Concept:** Sells OTM call spread in bearish markets to collect premium. Profits when market stays below short call strike.
-
-**Entry Conditions:**
-- **Days:** Monday, Wednesday, Thursday, Friday
-- **Time:** **9:30 AM IST**
-- **Market Condition:** **TRENDING_BEARISH**
-- **VIX Range:** **10.0 – 20.0**
-- **Entry Deadline:** **1:00 PM**
-
-**Strike Selection (Delta-Based):**
-1. Find short call strike: first strike above spot with delta ≤ 0.30
-2. Long call strike = short call + wing width (100 points)
-
-**Exit Conditions:**
-- **Time:** **3:15 PM IST** (forced close)
-- **Profit Target:** 50% of credit collected
-- **Stop Loss:** 200% of credit collected
-
-**Configuration:**
-```yaml
-BEAR_CALL_SPREAD:
-  enabled: true
-  allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
-  applicable-conditions: [TRENDING_BEARISH]
-  max-vix: 20.0
-  min-vix: 10.0
-  latest-entry-time: "13:00"
-  min-credit: 20.0
-  max-lots: 1
-  stop-loss-percent: 200.0
-  target-profit-percent: 50.0
-  extra:
-    target-delta: 0.30
-    wing-width: 100
-    strike-step: 50
-    min-credit-pct: 0.10
-```
-
----
-
-### Disabled Strategies
-
-| Strategy | Status | Reason |
-|----------|--------|--------|
-| (None) | ✅ All Enabled | All strategies are now implemented and enabled |
-
----
-
-## Configuration
-
-### `application.yml` Structure
-
-#### Server
-```yaml
-server:
-  port: 8080
-```
-
-#### Spring Core (R2DBC, DataSource, Liquibase, Redis)
-```yaml
-spring:
-  application:
-    name: trade-mesh
-  r2dbc:
-    url: r2dbc:postgresql://localhost:5432/trade_mesh_db?schema=trade_mesh
-    username: postgres
-    password: postgres
-    pool:
-      initial-size: 2
-      max-size: 10
-      max-idle-time: 30m
-  datasource:
-    url: jdbc:postgresql://localhost:5432/trade_mesh_db
-    username: postgres
-    password: postgres
-  liquibase:
-    enabled: true
-    change-log: classpath:db/changelog/db.changelog-master.yaml
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password: ""
-      timeout: 30s
-```
-
-#### Zerodha / Kite Connect
-```yaml
-zerodha:
-  kite:
-    api-key: ${ZERODHA_API_KEY}
-    api-secret: ${ZERODHA_API_SECRET}
-    redirect-url: http://localhost:8080/zerodha/callback
-    base-url: https://api.kite.trade
-    login-url: https://kite.zerodha.com/connect/login
-    access-token-ttl-hours: 8
-    instruments-buffer-size-mb: 20MB
-  token-check-interval-ms: 300000
-  ticker:
-    instruments:
-      nifty50-token: 256265
-      niftybank-token: 260105
-    price-cache-ttl-seconds: 60
-    health-check-interval-ms: 30000
-    max-reconnect-alerts: 10
-```
-
-#### Market Intelligence
-```yaml
-intelligence:
-  market-data:
-    fetch-interval-minutes: "0 */5 9-15 ? * MON-FRI"
-    cache-ttl-minutes: 10
-  vix:
-    fetch-interval-cron: "0 */5 9-15 ? * MON-FRI"
-    persist-interval-cron: "0 */15 9-15 ? * MON-FRI"
-    alert-threshold: 20.0
-  maxpain:
-    persist-interval-minutes: "0 */30 9-15 ? * MON-FRI"
-    cache-ttl-minutes: 15
-  oi:
-    persist-interval-minutes: "0 */15 9-15 ? * MON-FRI"
-```
-
-#### Trading Engine
-```yaml
-trading:
-  mode: paper  # paper | live
-  expiry-day: THU
-  symbols:
-    - NIFTY50
-    - NIFTYBANK
-  mark-to-market-interval-ms: 60000
-  paper:
-    enabled: true
-    lot-size:
-      NIFTY50: 75
-      NIFTYBANK: 30
-```
-
-#### Strategies
-```yaml
-trading-strategies:
-  items:
-    - name: EXPIRY_DAY_STRANGLE
-      enabled: true
-      allowed-days: [TUESDAY]
-      applicable-conditions: [EXPIRY_DAY]
-      max-vix: 18.0
-      min-vix: 10.0
-      latest-entry-time: "12:30"
-      min-credit: 20.0
-      min-distance-from-spot: 100
-      max-lots: 1
-      stop-loss-percent: 100.0
-      target-profit-percent: 50.0
-    
-    - name: IRON_CONDOR
-      enabled: true
-      allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
-      applicable-conditions: [SIDEWAYS]
-      max-vix: 20.0
-      min-vix: 12.0
-      latest-entry-time: "13:00"
-      min-credit: 30.0
-      max-lots: 1
-      stop-loss-percent: 200.0
-      target-profit-percent: 50.0
-      extra:
-        target-delta: 0.18
-        wing-width: 200
-        # ... (see full config above)
-```
-
-#### Risk Management
-```yaml
-risk:
-  max-position-size-per-symbol: 5
-  daily-loss-limit-percent: 2.0
-  max-sector-exposure: 50000
-  min-margin-buffer-percent: 10
-  position-sizing:
-    risk-percent: 1.0
-    max-quantity: 10
-```
-
-#### Logging
-```yaml
-logging:
-  level:
-    root: INFO
-    com.trademesh: DEBUG
-    org.springframework.r2dbc: DEBUG
-    reactor.netty: INFO
-    io.netty: INFO
-    liquibase: INFO
-```
-
----
-
-## Architecture Patterns
-
-### 1. Reactive (Spring WebFlux)
-
-**All I/O is non-blocking:**
-- Database queries return `Mono<T>` or `Flux<T>`
-- HTTP requests use `WebClient` (reactive)
-- Redis operations are reactive
-- Schedulers use `Schedulers.boundedElastic()` for blocking operations
-
-**Example:**
-```java
-return marketMetricsService.calculateMetrics("NIFTY50")
-    .flatMap(metrics -> optionChainService.fetchOptionChain("NIFTY50"))
-    .map(chain -> buildSignal(metrics, chain))
-    .doOnSuccess(signal -> log.info("Signal generated"))
-    .onErrorResume(e -> Mono.just(defaultSignal));
-```
-
-### 2. Service Layer Pattern
-
-**Two method variants for data that needs persistence:**
-
-```java
-// READ method (REST-facing, no save)
-public Mono<MarketMetrics> calculateMetrics(String symbol) {
-    // Fetch data, calculate, return
-}
-
-// SAVE method (scheduler-facing, calls read then saves)
-public Mono<MarketMetrics> calculateAndSaveMetrics(String symbol) {
-    return calculateMetrics(symbol)
-        .flatMap(metrics -> repository.save(metrics));
-}
-```
-
-### 3. REST Endpoints are Read-Only
-
-**Controllers never write to the database:**
-```java
-@RestController
-@RequestMapping("/trading")
-public class TradingController {
-    @GetMapping("/positions/open")
-    public Mono<ResponseEntity<List<PaperTrade>>> getOpenPositions() {
-        // READ ONLY — no DB writes
-        return repository.findByStatus(TradeStatus.OPEN).collectList();
-    }
-}
-```
-
-**All writes happen through schedulers:**
-```java
-@Component
-public class TradingScheduler {
-    @Scheduled(cron = "0 30 9 * * TUE")
-    public void scheduledEntry() {
-        // Calls service.save() which writes to DB
-        tradingOrchestrator.runTradingCycle("NIFTY50")
-            .subscribe();
-    }
-}
-```
-
-### 4. Entity Pattern (R2DBC)
-
-**Entities implement `Persistable<ID>`:**
-```java
-@Table("paper_trades")
-public class PaperTrade implements Persistable<UUID> {
-    @Id
-    private UUID id;
-    
-    private String symbol;
-    private TradeStatus status;
-    
-    @Override
-    public UUID getId() { return id; }
-    
-    @Override
-    public boolean isNew() { return id == null; }
-}
-```
-
-### 5. Scheduler/Service/Controller Separation
-
-```
-┌─────────────────────────────────────────┐
-│         REST Controller                  │
-│  (Read-only, no DB writes)              │
-│  GET /trading/positions/open            │
-└──────────────┬──────────────────────────┘
-               │
-               ▼
-        ┌──────────────┐
-        │   Service    │
-        │  (Read only) │
-        └──────────────┘
-               │
-               ▼
-        ┌──────────────┐
-        │ Repository   │
-        │  (Read only) │
-        └──────────────┘
-
-┌─────────────────────────────────────────┐
-│         Scheduler                        │
-│  (Automated, DB writes)                 │
-│  @Scheduled(cron = "...")               │
-└──────────────┬──────────────────────────┘
-               │
-               ▼
-        ┌──────────────┐
-        │   Service    │
-        │  (Save mode) │
-        └──────────────┘
-               │
-               ▼
-        ┌──────────────┐
-        │ Repository   │
-        │  (Write)     │
-        └──────────────┘
-```
-
-### 6. Structured Logging
-
-**No `System.out.println`, use SLF4J:**
-```java
-@Slf4j
-public class TradingScheduler {
-    public void scheduledEntry() {
-        log.info("🚀 Starting trading cycle entry");
-        log.debug("Market condition: {}", condition);
-        log.warn("VIX exceeds threshold: {}", vix);
-        log.error("Trade execution failed: {}", e.getMessage(), e);
-    }
-}
-```
-
----
-
-## Data Pipelines
-
-### 1. Nifty Daily Prices Pipeline
-
-**Purpose:** Maintain historical NIFTY50 OHLC data for HV20 calculation.
-
-**Flow:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. Bootstrap (Manual)                                       │
-│    POST /admin/bootstrap/historical-prices?from=...&to=... │
-└──────────────┬──────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 2. KiteHistoricalService.fetchHistoricalOHLC()             │
-│    Fetches OHLC from Kite API (1-minute candles)           │
-└──────────────┬──────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 3. NiftyDailyPriceService.saveIfNotExists()                │
-│    Saves to nifty_daily_prices table (idempotent)          │
-└──────────────┬──────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 4. MarketMetricsService.calculateMetrics()                 │
-│    Fetches last 21 days, calculates HV20, ATR14            │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Data Retention:** All historical data retained indefinitely.
-
----
-
-### 2. IV History Pipeline
-
-**Purpose:** Track daily ATM implied volatility for Iron Condor strategy.
-
-**Flow:**
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 1. IvHistoryScheduler.captureAtmIv()                        │
-│    Runs at 9:25 AM IST (market open)                        │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 2. IvHistoryService.calculateAtmIv()                        │
-│    Fetches option chain, finds ATM strike                   │
-│    Calculates IV using Black-Scholes                        │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 3. IvHistoryService.calculateAndSaveAtmIv()                │
-│    Saves to iv_history table (symbol, trade_date unique)   │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 4. MarketMetricsService.calculateMetrics()                 │
-│    Fetches last 365 days of IV history                      │
-│    Calculates IVR (IV Rank)                                 │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Data Retention:** Last 365 days for IVR calculation.
-
----
-
-### 3. MarketMetrics Calculation Flow
-
-**Purpose:** Calculate comprehensive market metrics for strategy evaluation.
-
-**Flow:**
-```
-┌──────────────────────────────────────────────────────────────┐
-│ MarketMetricsService.calculateMetrics(symbol)              │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-        ┌──────┴──────┬──────────┬──────────┬──────────┐
-        │             │          │          │          │
-        ▼             ▼          ▼          ▼          ▼
-   Last 21 Days  Last 60 Days  IV History Current IV  Option Chain
-   (HV20, ATR14) (ATR%)        (IVR)      (ATM IV)    (PCR)
-        │             │          │          │          │
-        └──────┬──────┴──────────┴──────────┴──────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ buildMetrics()                                              │
-│ - HV20 = daily std dev * sqrt(252) * 100                   │
-│ - ATR14 = average of last 14 true ranges                   │
-│ - ATR% = ATR14 / spot price * 100                          │
-│ - IVR = (current IV - min IV) / (max IV - min IV) * 100    │
-│ - IV/HV = current IV / HV20                                │
-│ - PCR = total put OI / total call OI                       │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ Return MarketMetrics                                        │
-│ (HV20, ATR14, IVR, IV/HV, PCR, ATR%, spot price)          │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Calculation Details:**
-
-**HV20 (20-day Historical Volatility):**
-```
-1. Calculate 20 log returns: ln(close[i] / close[i-1])
-2. Calculate mean of log returns
-3. Calculate sample variance (divide by 19)
-4. Daily std dev = sqrt(variance)
-5. HV20 = daily std dev * sqrt(252) * 100
-```
-
-**ATR14 (14-day Average True Range):**
-```
-1. Calculate True Range for each day:
-   TR = max(high - low, abs(high - prev_close), abs(low - prev_close))
-2. ATR14 = average of last 14 TR values
-```
-
-**IVR (IV Rank):**
-```
-IVR = (current IV - min IV over 365 days) / (max IV - min IV) * 100
-Range: 0–100 (0 = lowest IV, 100 = highest IV)
-```
-
-**IV/HV Ratio:**
-```
-IV/HV = current ATM IV / HV20
-Interpretation:
-  < 1.0 = IV lower than historical (underpriced)
-  > 1.0 = IV higher than historical (overpriced)
-  > 1.3 = significantly overpriced (good for selling)
-```
-
-**PCR (Put-Call Ratio):**
-```
-PCR = total put OI / total call OI
-Range: 0.5–2.0 (balanced: 0.8–1.2)
-  < 0.8 = bullish sentiment
-  > 1.2 = bearish sentiment
-```
-
----
-
-### 4. Iron Condor Pipeline
-
-**Purpose:** Complete flow from market data to trade execution.
-
-**Flow:**
-```
-┌──────────────────────────────────────────────────────────────┐
-│ 1. TradingScheduler.scheduledIronCondorEntry()             │
-│    Cron: 0 30 9 * * MON,WED,THU,FRI (9:30 AM)             │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 2. TradingOrchestrator.runTradingCycle("NIFTY50")          │
-│    Orchestrates complete trading cycle                      │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-        ┌──────┴──────────────────────────────────────┐
-        │                                              │
-        ▼                                              ▼
-┌──────────────────────────────┐  ┌──────────────────────────────┐
-│ 3a. Generate Market          │  │ 3b. Fetch Current VIX        │
-│     Intelligence             │  │     (hard gate: VIX ≤ 20)    │
-│ - Fetch option chain         │  │                              │
-│ - Analyze OI walls           │  │                              │
-│ - Calculate max pain         │  │                              │
-│ - Classify market condition  │  │                              │
-└──────────────┬───────────────┘  └──────────────┬───────────────┘
-               │                                  │
-               └──────────────┬───────────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 4. MarketMetricsService.calculateMetrics()                 │
-│    Calculate HV20, ATR14, IVR, IV/HV, PCR                  │
-│    (hard gate: ATR% ≤ 1.0)                                 │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 5. IronCondorStrategy.calculateConfidenceScore()           │
-│    Score: IVR (20 pts) + IV/HV (20 pts) + ATR% (20 pts)   │
-│           + VIX (15 pts) + PCR (15 pts) = max 100 pts      │
-│    (hard gate: score ≥ 60)                                 │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 6. OptionChainService.fetchOptionChain()                   │
-│    Fetch current option chain from Kite API                │
-│    (hard gate: DTE 1–15 days)                              │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 7. IronCondorStrategy.selectStrikesAndBuildSignal()        │
-│    - Find short call: first strike above spot, delta ≤ 0.18│
-│    - Find short put: first strike below spot, delta ≤ 0.18 │
-│    - Long call = short call + 200 points                   │
-│    - Long put = short put − 200 points                     │
-│    - Calculate net credit                                  │
-│    - Validate credit ≥ 15% of wing width                  │
-│    - Calculate P&L matrix (max profit, max loss, BE)       │
-│    - Adjust exit levels based on ATR%                      │
-│    (hard gate: credit ≥ 30 points)                         │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 8. StrategyOrchestrator.orchestrate()                      │
-│    Returns StrategyResult with signal                       │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 9. TradingOrchestrator.executeStrategy()                   │
-│    If executable:                                           │
-│    - Create paper trade record                             │
-│    - Place orders (paper or live)                          │
-│    - Log execution event                                   │
-│    - Send Telegram alert                                  │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 10. MarkToMarketScheduler (every 60 sec)                   │
-│     - Fetch current prices                                 │
-│     - Update trade values                                  │
-│     - Check SL/TP triggers                                 │
-│     - Close if triggered                                   │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│ 11. TradingScheduler.scheduledIronCondorExit()             │
-│     Cron: 0 15 15 * * MON,WED,THU,FRI (3:15 PM)           │
-│     Force close all open positions                         │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Hard Gates (Must Pass):**
-1. ✅ VIX ≤ 20.0
-2. ✅ ATR% ≤ 1.0
-3. ✅ Confidence Score ≥ 60
-4. ✅ DTE: 1–15 days
-5. ✅ Net Credit ≥ 30 points
-
-**Confidence Score Breakdown:**
-- **IVR:** 20–50% = 20 pts, 50–65% = 30 pts, 65–80% = 15 pts
-- **IV/HV:** ≥1.3 = 20 pts, ≥1.1 = 10 pts
-- **ATR%:** <0.6 = 15 pts, <0.8 = 20 pts, <1.0 = 10 pts, >1.0 = -20 pts
-- **VIX:** 12–16 = 15 pts, 16–20 = 5 pts, >20 = -50 pts
-- **PCR:** 0.8–1.2 = 15 pts
-
-**Exit Level Adjustment (Based on ATR%):**
-- **Calm (ATR% < 0.7):** Target = 45% of credit, SL = 80% of credit
-- **Normal (0.7 ≤ ATR% ≤ 1.0):** Target = 50% of credit, SL = 100% of credit
-- **High Vol (ATR% > 1.0):** Target = 55% of credit, SL = 120% of credit
-
----
-
-## Development & Testing
-
-### Running Tests
+### Bootstrap Historical Data
 
 ```bash
-# Unit tests
-./gradlew test
-
-# Integration tests
-./gradlew integrationTest
-
-# All tests
-./gradlew test integrationTest
-```
-
-### Debug Endpoints
-
-```bash
-# Test ATM IV calculation (no DB save)
-curl http://localhost:8080/admin/test/atm-iv?symbol=NIFTY50
-
-# Test Iron Condor evaluation (no DB save)
-curl http://localhost:8080/admin/test/iron-condor-evaluate
-
-# Bootstrap historical prices
 curl -X POST "http://localhost:8080/admin/bootstrap/historical-prices?from=2024-01-01&to=2024-12-31"
 ```
 
-### Swagger UI
-
-Access API documentation at: `http://localhost:8080/swagger-ui.html`
-
 ---
 
-## Troubleshooting
+## Summary
 
-### Token Expiry
+TradeMesh is a **reactive options trading platform** with:
+- ✅ Four fully implemented trading strategies
+- ✅ Comprehensive market intelligence pipeline
+- ✅ Paper trading simulation with mark-to-market
+- ✅ Real-time position monitoring
+- ✅ Risk management and position limits
+- ✅ Telegram alerting and daily reports
+- ✅ Zerodha Kite Connect integration
+- ✅ PostgreSQL + R2DBC + Redis architecture
+- ✅ 12 critical bugs fixed (June 29-30, July 1, 2026)
+- ✅ Live validation on expiry day and spread strategies
 
-**Symptom:** All API calls fail with "No Zerodha access token"
-
-**Solution:**
-1. Check token status: `GET /zerodha/token/status`
-2. Re-authenticate: `GET /zerodha/login`
-3. Check Redis: `redis-cli get zerodha:access_token`
-
-### WebSocket Disconnection
-
-**Symptom:** Live prices not updating, `/market/price/{symbol}` returns 404
-
-**Solution:**
-1. Check connection: `GET /market/status`
-2. Check logs for "KiteTicker WebSocket is DISCONNECTED"
-3. Verify token is valid
-4. Check network connectivity to `wss://ws.kite.trade`
-
-### Database Connection Issues
-
-**Symptom:** "Connection refused" errors
-
-**Solution:**
-1. Verify PostgreSQL is running: `psql -U postgres -d trade_mesh_db`
-2. Check R2DBC URL in `application.yml`
-3. Verify database exists: `createdb trade_mesh_db`
-4. Run Liquibase migrations: `./gradlew liquibaseUpdate`
-
-### Redis Connection Issues
-
-**Symptom:** "Redis connection refused"
-
-**Solution:**
-1. Verify Redis is running: `redis-cli ping`
-2. Check Redis host/port in `application.yml`
-3. Verify Redis password (if set)
-
----
-
-## License
-
-TradeMesh is proprietary software. All rights reserved.
-
----
-
-## Support
-
-For issues, questions, or feature requests, contact the development team.
-
-**Last Updated:** June 29, 2026
+The codebase is well-structured and follows reactive patterns throughout. It is not yet validated for live trading — Stage 4c's overnight-holding behavior has not been observed in a live market cycle, and no exit path places real orders with the broker (see Known Gaps section).

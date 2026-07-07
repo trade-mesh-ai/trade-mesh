@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 013-make-oi-snapshots-data-nullable
+      author: trade-mesh
+      comment: "Make oi_snapshots data column nullable - data is supplementary JSON for display, not critical business data"
+      changes:
+        - sql:
+            sql: |
+              -- Make data column nullable
+              -- The data field is a serialized JSON string for display purposes only
+              ALTER TABLE oi_snapshots ALTER COLUMN data DROP NOT NULL;
+            splitStatements: false

@@ -48,6 +48,12 @@ public class RiskLimitsConfig {
     private double minMarginBufferPercent = 10;
 
     /**
+     * Maximum concurrent open positions across all strategies.
+     * Default: 3 positions
+     */
+    private int maxConcurrentOpenPositions = 3;
+
+    /**
      * Position sizing configuration.
      */
     private PositionSizingConfig positionSizing = new PositionSizingConfig();

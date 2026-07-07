@@ -3,6 +3,7 @@ package com.trademesh.trading;
 import com.trademesh.alert.Alert;
 import com.trademesh.alert.AlertType;
 import com.trademesh.alert.TelegramNotificationBot;
+import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
@@ -14,6 +15,8 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * Service for generating and sending daily trading reports.
@@ -33,6 +36,89 @@ public class DailyReportService {
 
     private final PaperTradeRepository paperTradeRepository;
     private final TelegramNotificationBot telegramNotificationBot;
+    private final LotSizeService lotSizeService;
+
+    /**
+     * Computes aggregated daily trading metrics from a list of trades.
+     * <p>
+     * Calculates all metrics including trade counts, P&L values (in points and rupees),
+     * win rate, and identifies best/worst trades with deterministic tie-breaking.
+     * <p>
+     * Best/worst trades are determined by:
+     * - Primary: realizedPnl (descending for best, ascending for worst)
+     * - Secondary: exitTime ascending (for deterministic ordering when PnL is equal)
+     *
+     * @param trades list of closed trades for the day
+     * @return DailyReportMetrics with all calculated values; never null
+     */
+    DailyReportMetrics computeMetrics(List<PaperTrade> trades) {
+        DailyReportMetrics metrics = new DailyReportMetrics();
+
+        if (trades.isEmpty()) {
+            return metrics;
+        }
+
+        metrics.totalTrades = trades.size();
+        metrics.winningTrades = trades.stream()
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                .count();
+        metrics.losingTrades = trades.stream()
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
+                .count();
+
+        metrics.totalPnl = trades.stream()
+                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                .sum();
+
+        // Best trade: highest realizedPnl, with exitTime ascending as tie-breaker
+        metrics.bestTrade = trades.stream()
+                .max(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                        .thenComparing(PaperTrade::getExitTime, Comparator.reverseOrder()))
+                .orElse(null);
+
+        // Worst trade: lowest realizedPnl, with exitTime ascending as tie-breaker
+        metrics.worstTrade = trades.stream()
+                .min(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                        .thenComparing(PaperTrade::getExitTime))
+                .orElse(null);
+
+        metrics.winRate = metrics.totalTrades > 0 ? (metrics.winningTrades * 100.0) / metrics.totalTrades : 0;
+
+        // Calculate rupee amounts using per-trade lot sizes
+        metrics.totalPnlAmount = trades.stream()
+                .mapToDouble(t -> {
+                    int lotSize = lotSizeService.getLotSize(t.getSymbol());
+                    return (t.getRealizedPnl() != null ? t.getRealizedPnl() : 0) * lotSize;
+                })
+                .sum();
+
+        if (metrics.bestTrade != null && metrics.bestTrade.getRealizedPnl() != null) {
+            metrics.bestPnlAmount = metrics.bestTrade.getRealizedPnl() * lotSizeService.getLotSize(metrics.bestTrade.getSymbol());
+        }
+
+        if (metrics.worstTrade != null && metrics.worstTrade.getRealizedPnl() != null) {
+            metrics.worstPnlAmount = metrics.worstTrade.getRealizedPnl() * lotSizeService.getLotSize(metrics.worstTrade.getSymbol());
+        }
+
+        return metrics;
+    }
+
+    /**
+     * Retrieves aggregated daily trading metrics for a specific date.
+     * <p>
+     * Fetches all closed trades for the given date and computes aggregated metrics.
+     *
+     * @param date the trading date
+     * @return Mono emitting DailyReportMetrics (never empty)
+     */
+    public Mono<DailyReportMetrics> getMetricsForDate(LocalDate date) {
+        return paperTradeRepository.findByStatusAndTradeDate(TradeStatus.CLOSED, date)
+                .collectList()
+                .doOnNext(trades -> {
+                    log.info("getMetricsForDate fetched {} trades for {}", trades.size(), date);
+                })
+                .map(this::computeMetrics);
+    }
 
     /**
      * Generates and sends the daily trading report.
@@ -46,48 +132,14 @@ public class DailyReportService {
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
-        // Fetch all closed trades for today
-        return paperTradeRepository.findByStatus(TradeStatus.CLOSED)
-                .filter(trade -> trade.getTradeDate().equals(today))
-                .collectList()
-                .flatMap(trades -> {
-                    if (trades.isEmpty()) {
+        return getMetricsForDate(today)
+                .flatMap(metrics -> {
+                    if (metrics.totalTrades == 0) {
                         log.info("No trades executed today");
                         return sendNoTradesAlert();
                     }
 
-                    // Calculate metrics
-                    int totalTrades = trades.size();
-                    long winningTrades = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
-                            .count();
-                    long losingTrades = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
-                            .count();
-
-                    double totalPnl = trades.stream()
-                            .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
-                            .sum();
-
-                    // Calculate best and worst trades
-                    PaperTrade bestTrade = trades.stream()
-                            .max((t1, t2) -> Double.compare(
-                                    t1.getRealizedPnl() != null ? t1.getRealizedPnl() : 0,
-                                    t2.getRealizedPnl() != null ? t2.getRealizedPnl() : 0
-                            ))
-                            .orElse(null);
-
-                    PaperTrade worstTrade = trades.stream()
-                            .min((t1, t2) -> Double.compare(
-                                    t1.getRealizedPnl() != null ? t1.getRealizedPnl() : 0,
-                                    t2.getRealizedPnl() != null ? t2.getRealizedPnl() : 0
-                            ))
-                            .orElse(null);
-
-                    double winRate = totalTrades > 0 ? (winningTrades * 100.0) / totalTrades : 0;
-
-                    // Send report
-                    return sendDailyReport(today, totalTrades, winningTrades, losingTrades, totalPnl, bestTrade, worstTrade, winRate);
+                    return sendDailyReport(metrics);
                 })
                 .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e));
     }
@@ -95,29 +147,12 @@ public class DailyReportService {
     /**
      * Sends the daily report via Telegram.
      *
-     * @param date          the trading date
-     * @param totalTrades   total number of trades
-     * @param winningTrades number of winning trades
-     * @param losingTrades  number of losing trades
-     * @param totalPnl      total P&L for the day
-     * @param bestTrade     the best performing trade
-     * @param worstTrade    the worst performing trade
-     * @param winRate       win rate percentage
+     * @param metrics aggregated daily trading metrics
      * @return Mono emitting void
      */
-    private Mono<Void> sendDailyReport(LocalDate date, int totalTrades, long winningTrades, long losingTrades,
-                                       double totalPnl, PaperTrade bestTrade, PaperTrade worstTrade, double winRate) {
-
-        // Calculate rupee amount (assuming lot sizes)
-        double totalPnlAmount = calculatePnlAmount(totalPnl);
-        double bestPnlAmount = bestTrade != null && bestTrade.getRealizedPnl() != null
-                ? calculatePnlAmount(bestTrade.getRealizedPnl())
-                : 0;
-        double worstPnlAmount = worstTrade != null && worstTrade.getRealizedPnl() != null
-                ? calculatePnlAmount(worstTrade.getRealizedPnl())
-                : 0;
-
-        String emoji = totalPnl >= 0 ? "📊" : "📉";
+    private Mono<Void> sendDailyReport(DailyReportMetrics metrics) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        String emoji = metrics.totalPnl >= 0 ? "📊" : "📉";
 
         String message = String.format(
                 "%s <b>Daily Report - %s</b>\n\n" +
@@ -130,19 +165,19 @@ public class DailyReportService {
                         "Best: <b>%.2f pts</b> (₹ <b>%.2f</b>) - %s\n" +
                         "Worst: <b>%.2f pts</b> (₹ <b>%.2f</b>) - %s",
                 emoji,
-                date,
-                totalTrades,
-                winningTrades,
-                losingTrades,
-                winRate,
-                totalPnl,
-                totalPnlAmount,
-                bestTrade != null ? bestTrade.getRealizedPnl() : 0,
-                bestPnlAmount,
-                bestTrade != null ? bestTrade.getStrategyName() : "N/A",
-                worstTrade != null ? worstTrade.getRealizedPnl() : 0,
-                worstPnlAmount,
-                worstTrade != null ? worstTrade.getStrategyName() : "N/A"
+                today,
+                metrics.totalTrades,
+                metrics.winningTrades,
+                metrics.losingTrades,
+                metrics.winRate,
+                metrics.totalPnl,
+                metrics.totalPnlAmount,
+                metrics.bestTrade != null ? metrics.bestTrade.getRealizedPnl() : 0,
+                metrics.bestPnlAmount,
+                metrics.bestTrade != null ? metrics.bestTrade.getStrategyName() : "N/A",
+                metrics.worstTrade != null ? metrics.worstTrade.getRealizedPnl() : 0,
+                metrics.worstPnlAmount,
+                metrics.worstTrade != null ? metrics.worstTrade.getStrategyName() : "N/A"
         );
 
         Alert alert = Alert.builder()
@@ -183,20 +218,38 @@ public class DailyReportService {
     }
 
     /**
-     * Calculates the rupee amount from points based on lot sizes.
+     * Package-private nested class holding aggregated daily trading metrics.
      * <p>
-     * Assumes:
-     * - NIFTY: 75 contracts per lot
-     * - BANKNIFTY: 30 contracts per lot
-     * <p>
-     * For simplicity, uses average lot size of 50 contracts.
-     *
-     * @param points the P&L in points
-     * @return P&L in rupees
+     * Contains all calculated metrics for a single trading day:
+     * - Trade counts (total, winning, losing)
+     * - P&L values (total, best, worst) in both points and rupees
+     * - Win rate percentage
+     * - Best and worst trade references
      */
-    private double calculatePnlAmount(double points) {
-        // Average lot size: 50 contracts
-        // Each point = 1 rupee per contract
-        return points * 50;
+    static class DailyReportMetrics {
+        public int totalTrades;
+        public long winningTrades;
+        public long losingTrades;
+        public double totalPnl;
+        public PaperTrade bestTrade;
+        public PaperTrade worstTrade;
+        public double winRate;
+        public double totalPnlAmount;
+        public double bestPnlAmount;
+        public double worstPnlAmount;
+
+        DailyReportMetrics() {
+            this.totalTrades = 0;
+            this.winningTrades = 0;
+            this.losingTrades = 0;
+            this.totalPnl = 0;
+            this.bestTrade = null;
+            this.worstTrade = null;
+            this.winRate = 0;
+            this.totalPnlAmount = 0;
+            this.bestPnlAmount = 0;
+            this.worstPnlAmount = 0;
+        }
     }
+
 }

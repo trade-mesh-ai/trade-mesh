@@ -1,7 +1,6 @@
 package com.trademesh.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.persistence.PostLoad;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -40,10 +39,9 @@ public class NiftyDailyPrice implements Persistable<UUID> {
      * Flag to indicate if this entity is new (not yet persisted).
      * Used by Spring Data R2DBC to determine INSERT vs UPDATE.
      */
-    @Builder.Default
     @Transient
     @JsonIgnore
-    private boolean isNew = true;
+    private boolean isNew = false;
 
     /**
      * Trading date for this OHLC data.
@@ -98,11 +96,15 @@ public class NiftyDailyPrice implements Persistable<UUID> {
     }
 
     /**
-     * Called by Spring after loading entity from database.
-     * Marks the entity as no longer new to ensure subsequent saves use UPDATE.
+     * Factory method to create a new NiftyDailyPrice entity.
+     * Sets isNew=true to indicate this is a new record not yet persisted.
+     *
+     * @return a new NiftyDailyPrice instance with isNew=true
      */
-    @PostLoad
-    void markNotNew() {
-        this.isNew = false;
+    public static NiftyDailyPrice createNew() {
+        NiftyDailyPrice price = new NiftyDailyPrice();
+        price.isNew = true;
+        price.id = UUID.randomUUID();
+        return price;
     }
 }

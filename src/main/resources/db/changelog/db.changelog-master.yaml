@@ -23,3 +23,5 @@ databaseChangeLog:
       file: db/changelog/changes/011-create-iv-history.yaml
   - include:
       file: db/changelog/changes/012-alter-oi-snapshots-data-type.yaml
+  - include:
+      file: db/changelog/changes/013-make-oi-snapshots-data-nullable.yaml

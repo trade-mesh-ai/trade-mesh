@@ -69,15 +69,15 @@ public class MarketMetricsService {
                             return Mono.just(Optional.empty());
                         });
 
-         // Fetch option chain for PCR calculation
-         Mono<Optional<OptionChain>> optionChainMono =
-                 optionChainService.fetchOptionChain(symbol)
-                         .map(Optional::of)
-                         .defaultIfEmpty(Optional.empty())
-                         .onErrorResume(e -> {
-                             log.warn("Option chain unavailable for PCR: {}", e.getMessage());
-                             return Mono.just(Optional.empty());
-                         });
+        // Fetch option chain for PCR calculation
+        Mono<Optional<OptionChain>> optionChainMono =
+                optionChainService.fetchOptionChain(symbol)
+                        .map(Optional::of)
+                        .defaultIfEmpty(Optional.empty())
+                        .onErrorResume(e -> {
+                            log.warn("Option chain unavailable for PCR: {}", e.getMessage());
+                            return Mono.just(Optional.empty());
+                        });
 
         // Combine all data sources in parallel
         return Mono.zip(last21, last60, ivHistList, currentIv, optionChainMono)
@@ -375,30 +375,30 @@ public class MarketMetricsService {
      * @return PCR value rounded to 4 decimal places, or null if chain unavailable
      */
     private BigDecimal calculatePcr(OptionChain chain) {
-        if (chain == null || chain.getStrikes() == null || 
-            chain.getStrikes().isEmpty()) {
+        if (chain == null || chain.getStrikes() == null ||
+                chain.getStrikes().isEmpty()) {
             return null;
         }
-        
+
         long totalCallOI = chain.getStrikes().stream()
-            .mapToLong(s -> s.getCallOI())
-            .sum();
-        
+                .mapToLong(s -> s.getCallOI())
+                .sum();
+
         long totalPutOI = chain.getStrikes().stream()
-            .mapToLong(s -> s.getPutOI())
-            .sum();
-        
+                .mapToLong(s -> s.getPutOI())
+                .sum();
+
         if (totalCallOI == 0) {
             log.warn("Total call OI is zero, cannot calculate PCR");
             return null;
         }
-        
+
         BigDecimal pcr = BigDecimal.valueOf(totalPutOI)
-            .divide(BigDecimal.valueOf(totalCallOI), 4, RoundingMode.HALF_UP);
-        
-        log.debug("PCR calculated: putOI={}, callOI={}, pcr={}", 
-            totalPutOI, totalCallOI, pcr);
-        
+                .divide(BigDecimal.valueOf(totalCallOI), 4, RoundingMode.HALF_UP);
+
+        log.debug("PCR calculated: putOI={}, callOI={}, pcr={}",
+                totalPutOI, totalCallOI, pcr);
+
         return pcr;
     }
 }

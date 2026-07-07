@@ -1,5 +1,6 @@
 package com.trademesh.strategy.ironcondor;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
@@ -17,6 +18,7 @@ import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.Confidence;
 import com.trademesh.strategy.enums.LegType;
 import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.trading.MarketCalendarService;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionChainService;
 import com.trademesh.zerodha.options.OptionStrike;
@@ -47,6 +49,8 @@ public class IronCondorStrategy implements TradingStrategy {
     private final MarketMetricsService marketMetricsService;
     private final OptionChainService optionChainService;
     private final VixMonitorService vixMonitorService;
+    private final LotSizeService lotSizeService;
+    private final MarketCalendarService marketCalendarService;
 
     @Override
     public String getName() {
@@ -172,7 +176,7 @@ public class IronCondorStrategy implements TradingStrategy {
                 metrics.getCurrentAtmIv().doubleValue() : 15.0;
         double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
         int wingWidth = cfg.getExtraInt("wing-width", 200);
-        int lotSize = 75; // NIFTY lot size
+        int lotSize = lotSizeService.getLotSize("NIFTY50");
         int lots = cfg.getMaxLots();
 
         // Find short CALL strike (first strike with delta <= targetDelta, above spot)
@@ -406,11 +410,11 @@ public class IronCondorStrategy implements TradingStrategy {
                                 // Strike selection
                                 return optionChainService.fetchOptionChain("NIFTY50")
                                         .flatMap(chain -> {
-                                            int dte = (int) ChronoUnit.DAYS.between(
+                                            int dte = marketCalendarService.countTradingDays(
                                                     LocalDate.now(), chain.getExpiryDate());
 
-                                            int dteMin = cfg.getExtraInt("dte-min", 3);
-                                            int dteMax = cfg.getExtraInt("dte-max", 15);
+                                            int dteMin = cfg.getExtraInt("dte-min", 1);
+                                            int dteMax = cfg.getExtraInt("dte-max", 4);
 
                                             if (dte < dteMin || dte > dteMax) {
                                                 return Mono.just(StrategyResult.builder()
@@ -447,8 +451,8 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         metadata.put("currentAtmIv", signal.getCurrentAtmIv() != null ? signal.getCurrentAtmIv().toString() : "0");
 
                                                         Confidence confidence = score >= 70 ? Confidence.HIGH
-                                                                              : score >= 50 ? Confidence.MEDIUM
-                                                                              : Confidence.LOW;
+                                                                : score >= 50 ? Confidence.MEDIUM
+                                                                  : Confidence.LOW;
                                                         return StrategyResult.builder()
                                                                 .signal(com.trademesh.strategy.TradeSignal.builder()
                                                                         .symbol("NIFTY50")

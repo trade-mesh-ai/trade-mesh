@@ -1,5 +1,7 @@
 package com.trademesh.risk;
 
+import com.trademesh.execution.PaperTradeRepository;
+import com.trademesh.execution.TradeStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -31,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class RiskManager {
 
     private final RiskLimitsConfig riskLimitsConfig;
+    private final PaperTradeRepository paperTradeRepository;
 
     // Track daily P&L per day (reset at market open)
     private final ConcurrentHashMap<LocalDate, AtomicReference<Double>> dailyPnlMap = new ConcurrentHashMap<>();
@@ -205,6 +208,35 @@ public class RiskManager {
      */
     public Mono<Integer> getPositionSize(String tradingSymbol) {
         return Mono.just(positionSizeMap.getOrDefault(tradingSymbol, 0));
+    }
+
+    /**
+     * Gets the maximum concurrent open positions limit from configuration.
+     *
+     * @return the max concurrent open positions limit
+     */
+    public int getMaxConcurrentOpenPositions() {
+        return riskLimitsConfig.getMaxConcurrentOpenPositions();
+    }
+
+    /**
+     * Checks if the current number of open positions is within the concurrent position limit.
+     * <p>
+     * Queries the database directly to count all OPEN trades across all strategies.
+     * This is the source of truth for aggregate position tracking.
+     *
+     * @return Mono emitting true if open count is below limit, false if at or above limit
+     */
+    public Mono<Boolean> isWithinConcurrentPositionLimit() {
+        return paperTradeRepository.findByStatus(TradeStatus.OPEN)
+                .count()
+                .map(openCount -> {
+                    int maxAllowed = riskLimitsConfig.getMaxConcurrentOpenPositions();
+                    boolean withinLimit = openCount < maxAllowed;
+                    log.debug("Concurrent position check: openCount={} maxAllowed={} result={}",
+                            openCount, maxAllowed, withinLimit);
+                    return withinLimit;
+                });
     }
 
     /**
