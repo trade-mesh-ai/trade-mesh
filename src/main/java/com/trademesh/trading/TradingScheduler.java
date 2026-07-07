@@ -1,10 +1,17 @@
 package com.trademesh.trading;
 
+import com.trademesh.strategy.config.StrategiesConfig;
+import com.trademesh.strategy.config.StrategyProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
+
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 /**
  * Scheduler for automated trading cycles and position management.
@@ -31,6 +38,7 @@ public class TradingScheduler {
     private final TradingOrchestrator tradingOrchestrator;
     private final DailyReportService dailyReportService;
     private final MarketCalendarService marketCalendarService;
+    private final StrategiesConfig strategiesConfig;
 
     /**
      * Runs DTE exit safety net check every weekday at 9:00 AM IST.
@@ -183,5 +191,90 @@ public class TradingScheduler {
                 }))
                 .subscribe(ignored -> {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+    }
+
+    /**
+     * Runs periodic entry retry every 15 minutes during market hours (9:00 AM - 1:00 PM IST).
+     * <p>
+     * Attempts to enter trades for strategies that:
+     * - Have no open position for today
+     * - Have not yet passed their latest-entry-time
+     * <p>
+     * Stops retrying once:
+     * - A position opens for the strategy, OR
+     * - The strategy's latest-entry-time passes
+     * <p>
+     * Cron: "0 *\/15 9-13 * * MON-FRI"
+     * - 0: second (0)
+     * - *\/15: every 15 minutes
+     * - 9-13: hours 9 AM to 1 PM (covers all strategies' latest-entry-times)
+     * - *: day of month (any)
+     * - *: month (any)
+     * - MON-FRI: day of week (Monday to Friday)
+     */
+    @Scheduled(cron = "0 45,0,15,30 9-13 * * MON-FRI", zone = "Asia/Kolkata")
+    public void scheduledEntryRetry() {
+        executeEntryRetry();
+    }
+
+    /**
+     * Executes periodic entry retry for all four strategies.
+     * <p>
+     * For each strategy:
+     * 1. Check if no open position exists for today
+     * 2. Check if current time is before strategy's latest-entry-time
+     * 3. If both true: run trading cycle
+     * 4. Log outcome: entered / skipped with reason / gate closed
+     * <p>
+     * RiskManager's concurrent position limit (3 max) gates every retry attempt
+     * through runTradingCycle(), preventing runaway position creation.
+     */
+    private void executeEntryRetry() {
+        String[] strategies = {"IRON_CONDOR", "BULL_PUT_SPREAD", "BEAR_CALL_SPREAD", "EXPIRY_DAY_STRANGLE"};
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+
+        for (String strategyName : strategies) {
+            // Check if no open position exists for this strategy
+            tradingOrchestrator.hasOpenPositionForStrategy(strategyName)
+                    .flatMap(hasOpenPosition -> {
+                        if (hasOpenPosition) {
+                            log.info("Retry gate closed for {}: position already open", strategyName);
+                            return Mono.empty();
+                        }
+
+                        // Check if current time is before latest-entry-time
+                        StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
+                        LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
+                        LocalTime latestTime = LocalTime.parse(cfg.getLatestEntryTime(),
+                                DateTimeFormatter.ofPattern("HH:mm"));
+
+                        if (currentTime.isAfter(latestTime)) {
+                            log.info("Retry gate closed for {}: latest-entry-time ({}) has passed (current: {})",
+                                    strategyName, cfg.getLatestEntryTime(),
+                                    currentTime.format(DateTimeFormatter.ofPattern("HH:mm")));
+                            return Mono.empty();
+                        }
+
+                        // Both conditions met: attempt entry
+                        log.info("Retry attempt for {} (current: {}, limit: {})",
+                                strategyName,
+                                currentTime.format(DateTimeFormatter.ofPattern("HH:mm")),
+                                cfg.getLatestEntryTime());
+
+                        return tradingOrchestrator.runTradingCycle("NIFTY50")
+                                .doOnSuccess(result -> {
+                                    if (result.getIsExecutable()) {
+                                        log.info("Retry ENTERED for {}", strategyName);
+                                    } else {
+                                        log.info("Retry skipped for {}: {}", strategyName, result.getSkipReason());
+                                    }
+                                })
+                                .doOnError(e -> log.error("Error in retry for {}: {}", strategyName, e.getMessage(), e));
+                    })
+                    .subscribe(
+                            ignored -> {},
+                            e -> log.error("Error checking retry conditions for {}: {}", strategyName, e.toString(), e)
+                    );
+        }
     }
 }

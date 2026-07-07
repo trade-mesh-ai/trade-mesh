@@ -210,6 +210,19 @@ public class TradingOrchestrator {
      }
 
      /**
+      * Checks if an open position exists for a given strategy.
+      * <p>
+      * Used by TradingScheduler's entry retry logic to determine if a strategy
+      * already has an open position (gate condition).
+      *
+      * @param strategyName strategy name to check
+      * @return Mono emitting true if an open position exists, false otherwise
+      */
+     public Mono<Boolean> hasOpenPositionForStrategy(String strategyName) {
+         return paperTradeRepository.existsByStrategyNameAndStatus(strategyName, TradeStatus.OPEN);
+     }
+
+     /**
       * Exits open positions for a specific strategy and symbol.
       * <p>
       * Closes only positions matching the given strategy name, leaving other strategies untouched.
@@ -219,7 +232,7 @@ public class TradingOrchestrator {
       * @param strategyName strategy name to filter by
       * @return Mono emitting the count of closed positions
       */
-     public Mono<Integer> exitPositionsForStrategy(String symbol, String strategyName) {
+      public Mono<Integer> exitPositionsForStrategy(String symbol, String strategyName) {
          log.info("Exiting open positions for strategy {} and symbol: {}", strategyName, symbol);
 
          return paperTradeRepository.findByStrategyNameAndStatus(strategyName, TradeStatus.OPEN)

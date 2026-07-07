@@ -1,5 +1,6 @@
 package com.trademesh.trading;
 
+import com.trademesh.strategy.config.StrategiesConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,12 +36,16 @@ class TradingSchedulerTest {
     @Mock
     private MarketCalendarService marketCalendarService;
 
+    @Mock
+    private StrategiesConfig strategiesConfig;
+
     @BeforeEach
     void setUp() {
         tradingScheduler = new TradingScheduler(
                 tradingOrchestrator,
                 dailyReportService,
-                marketCalendarService
+                marketCalendarService,
+                strategiesConfig
         );
     }
 
