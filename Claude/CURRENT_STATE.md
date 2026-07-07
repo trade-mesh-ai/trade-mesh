@@ -1,69 +1,64 @@
 # TradeMesh — Current State
 
-**Last updated:** 2026-07-06 (Monday, live paper-trading observation session)
+**Last updated:** 2026-07-07 (Tuesday, expiry day — live paper-trading + retry mechanism session)
 
 ## Source-of-truth rule
 Most recent verified evidence > this file > README.md narrative.
 
-## Verified, stable
+## Branch state
+- `feature/paper_trade_sit_issues` — **merged to main.** Contains: LEG_BREACH, DTE boundary fix, DTE_EXIT time-gate, FORCE_CLOSE_EOD removal.
+- `feature/adding_periodic_entry_retry` — new branch, pushed, not yet merged. Contains: latest-entry-time enforcement + periodic entry retry scheduler.
+
+## Verified, stable (merged to main)
 
 | Stage | What it does | Evidence |
 |---|---|---|
-| Stage 1 | Entry DTE, trading-day based | Verified |
-| Stage 3 | VIX panic exit, 3 strategies | 8/8 tests |
-| Stage 4a | DTE-based exit (dormant staging) | 13/13 tests |
-| Clock fix | `LocalTime` param, no Spring bean | Verified |
-| Stage 4b | Position cap + date-scoping fix | Verified |
-| Stage 4c scheduler | `scheduledDailyExit()` → `exitPositionsForStrategy("NIFTY50","EXPIRY_DAY_STRANGLE")`. `exitAllPositions()` has zero production callers. | Fixed 2026-07-04 — real diff, grep, 174 tests. |
-| @PostLoad fix | `NiftyDailyPrice` & `StrategyExecutionLog`: `isNew` defaults `false`, `@PostLoad` removed, `createNew()` factory added. | Fixed 2026-07-04 — real diff, 174 tests unchanged. |
-| **LEG_BREACH** | Implemented for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD (EXPIRY_DAY_STRANGLE explicitly excluded). Reactive, Redis spot price (`price:NIFTY50`), no `.block()`. Priority: VIX_PANIC → DTE_EXIT → LEG_BREACH → STOPLOSS_HIT/TARGET_HIT. | **Implemented 2026-07-06** — real diff, grep, 185 tests. **Implemented ahead of Stage 4c's first live boundary observation, per Kuldeep's explicit override** — confounding risk with Stage 4c root-causing accepted and logged. |
-| **DTE boundary overlap fix** | `dte-min` was `<=` `dte-exit-threshold` for all three DTE-governed strategies (BULL_PUT_SPREAD 1/1, BEAR_CALL_SPREAD 1/1, IRON_CONDOR 1/2) — meant a trade entered at the minimum allowed DTE would satisfy its own exit condition on the very next 60-second mark-to-market cycle. Fixed: `dte-min` now 2/2/3 respectively (strictly `>` `dte-exit-threshold`). `@PostConstruct` startup validation added in `StrategiesConfig.java` — fails fast with `IllegalStateException` if any enabled strategy violates `dte-min > dte-exit-threshold`. | **Fixed 2026-07-06** — discovered via live manual paper-trade observation (see below), real diff, 209 tests. |
-| **DTE_EXIT time-gate** | Even after the boundary fix, `isDteExitDue()` fired the instant `tradingDaysRemaining <= threshold` with no time-of-day check — meaning on the exit-threshold day, DTE_EXIT fired on the first mark-to-market cycle after market open (~9:15 AM), giving near-zero time to observe overnight gap risk before forced closure. Added `dte-exit-earliest-time` config (default `"10:00"`) — `isDteExitDue()` now only fires on the threshold day at or after this time; fires immediately regardless of time if already past the threshold day (safety-net-equivalent behavior). Signature changed to `isDteExitDue(PaperTrade, StrategyProperties, int, LocalTime)`. | **Fixed 2026-07-06** — real diff, 209 tests, boundary cases covered (exact time, ±1 minute). |
-| **FORCE_CLOSE_EOD removed from IRON_CONDOR/spreads** | `shouldExitIronCondor()` had a config-gated FORCE_CLOSE_EOD at 15:15 (`force-close-time: "15:15"` was actively set for IRON_CONDOR — gate was open). `shouldExitSpread()` had an unconditional, hardcoded 15:15 force-close with no config gate at all, applying to both BULL_PUT_SPREAD and BEAR_CALL_SPREAD. **This directly contradicted README's documented Stage 4c architecture** ("FORCE_CLOSE_EOD NO LONGER APPLIES to IRON_CONDOR/spreads") and silently prevented any of these three strategies from ever holding a position overnight — every position was force-closed same-day at 3:15 PM regardless of DTE status, every single day, since this code was never actually removed when Stage 4c was built. Confirmed EXPIRY_DAY_STRANGLE is unaffected — it exits via a fully separate path (`TradingScheduler.scheduledDailyExit()` → `TradingOrchestrator.exitPositionsForStrategy()`, still correctly force-closing at 15:15 daily as required for a same-day-expiry strategy). Removed both blocks; removed `force-close-time` config key from IRON_CONDOR. | **Fixed 2026-07-06** — real diff, grep confirming zero remaining `FORCE_CLOSE_EOD`/`force-close-time` logic outside EXPIRY_DAY_STRANGLE's separate path, 209 tests. **This is likely the single biggest reason Stage 4c has never been observed holding overnight — the mechanism blocking it has now been removed.** |
+| Stage 1–4b | Entry DTE, VIX panic, DTE-exit staging, clock fix, position cap | Verified, unchanged |
+| Stage 4c scheduler | `exitPositionsForStrategy("NIFTY50","EXPIRY_DAY_STRANGLE")` | Fixed 2026-07-04 |
+| @PostLoad fix | 2 entities corrected | Fixed 2026-07-04 |
+| **LEG_BREACH** | IRON_CONDOR/BULL_PUT_SPREAD/BEAR_CALL_SPREAD, EXPIRY_DAY_STRANGLE excluded. Reactive, Redis spot (`price:NIFTY50`), no `.block()`. **Implemented ahead of Stage 4c's first live observation — Kuldeep's explicit override, risk logged.** | 2026-07-06, 185 tests |
+| **DTE boundary overlap fix** | `dte-min` was `<=` `dte-exit-threshold` for all three strategies — self-closing bug. Fixed: dte-min now 2/2/3. `@PostConstruct` startup validation added (fails fast on violation). | 2026-07-06, 209 tests |
+| **DTE_EXIT time-gate** | `dte-exit-earliest-time` (default "10:00") — DTE_EXIT no longer fires in the first minute of the threshold day. | 2026-07-06, 209 tests |
+| **FORCE_CLOSE_EOD removed (IRON_CONDOR/spreads)** | Was silently active (config-gated for IRON_CONDOR, hardcoded for spreads), contradicting README, force-closing all three daily regardless of DTE. **Likely the actual reason Stage 4c had zero live observation.** Removed. EXPIRY_DAY_STRANGLE confirmed unaffected (separate scheduler path). | 2026-07-06, 209 tests |
 
-## Corrected today (2026-07-06) — read before trusting older docs
+## New this session (2026-07-07) — pending merge on `feature/adding_periodic_entry_retry`
 
-**This may be the actual explanation for Stage 4c's persistent zero-live-observation status.** Discovered while manually exercising `/trading/run/NIFTY50` in real market hours (see below): a BULL_PUT_SPREAD entered and self-closed via `DTE_EXIT` within 60 seconds, twice in a row. Root-caused to two independent, compounding bugs:
+**Periodic entry retry, all 4 strategies.** New automated layer, added ahead of Stage 4c's first live observation — **second explicit gate override this week** (LEG_BREACH was the first). Risk logged: confounds root-causing if something breaks post-observation; accepted per Kuldeep.
 
-1. **DTE boundary overlap** — entry allowed at the exact DTE value that immediately satisfies exit (`dte-min == dte-exit-threshold`). Fixed.
-2. **FORCE_CLOSE_EOD still active for IRON_CONDOR/spreads** — even had (1) been fixed in isolation, these strategies would still force-close every single day at 15:15, making genuine overnight holding structurally impossible regardless of DTE logic. This directly contradicts README's own documentation of Stage 4c's design. Fixed.
+- **Latest-entry-time now enforced** for BULL_PUT_SPREAD, BEAR_CALL_SPREAD, IRON_CONDOR (EXPIRY_DAY_STRANGLE already had this check). Previously configured in `application.yml` but never read by 3 of 4 strategies.
+- **`scheduledEntryRetry()`** added to `TradingScheduler`, cron `0 45,0,15,30 9-13 * * MON-FRI` — re-attempts entry every 15 min, 9:45 AM–1:30 PM, only when no open position exists for that strategy and current time is before its `latest-entry-time`.
+- **Architecture correction applied during review:** initial Cline proposal injected `PaperTradeRepository` directly into `TradingScheduler`, violating `.clinerules` ("never inject repositories directly into schedulers"). Corrected: added `TradingOrchestrator.hasOpenPositionForStrategy()` (reuses existing `existsByStrategyNameAndStatus()`), `TradingScheduler` stays repository-free.
+- Reuses existing `runTradingCycle()` / `StrategySelector` / `RiskManager.isWithinConcurrentPositionLimit()` — no duplicated logic, concurrent-position cap confirmed to gate every retry attempt.
+- **Found and fixed in passing:** `PaperTradingEngineTest.java` had a hardcoded `today = LocalDate.of(2026, 7, 6)` — silently correct only while wall-clock date matched, broke the moment the calendar advanced past July 6. Fixed to `LocalDate.now(ZoneId.of("Asia/Kolkata"))`.
+- **Retry-loop design bug found and fixed same day, via live expiry-day log review:** first implementation of `executeEntryRetry()` looped over all 4 strategy names and called `runTradingCycle("NIFTY50")` once per name — but `runTradingCycle()` is condition-driven via `StrategySelector`, which always picks exactly one strategy regardless of the loop variable. Result: 3 redundant Kite API calls + intelligence fetches per retry cycle, and misleading logs (all 4 strategies reported the same outcome under different names). Confirmed live on 2026-07-07 (expiry day) — retry logs showed IRON_CONDOR/BULL_PUT_SPREAD/BEAR_CALL_SPREAD/EXPIRY_DAY_STRANGLE all logging identical "Premium too low" skip reasons, when only EXPIRY_DAY_STRANGLE should have been evaluated at all that day. Fixed: `StrategySelector.getSelectedStrategyName()` added to resolve the actual selected strategy from one fresh intelligence fetch; pre-flight checks (open-position, latest-entry-time) now applied to that one resolved strategy only; `runTradingCycle()` called exactly once per cycle. A first-pass implementation attempt silently dropped the pre-flight gating entirely (called `runTradingCycle()` unconditionally with dead/no-op code) — caught before merge via evidence review, not accepted on Cline's narrative alone.
+- 209 tests, BUILD SUCCESSFUL, pushed to `feature/adding_periodic_entry_retry`. **Not yet merged to main.**
 
-Both fixes together are what actually make Stage 4c's core premise — DTE-governed overnight holding — possible for the first time. Previously, no combination of market conditions could have produced a real overnight hold under IRON_CONDOR/BULL_PUT_SPREAD/BEAR_CALL_SPREAD; the architecture documented in README was aspirational, not actually wired end-to-end.
+## Live paper-trading observations (2026-07-06 Monday, 2026-07-07 Tuesday/expiry day)
 
-## Live paper-trading observation (2026-07-06, Monday, real market hours)
-
-Manually triggered `/trading/run/NIFTY50` twice during real market hours (13:05, 13:08 IST) using live Kite option-chain data:
-- Both times: BULL_PUT_SPREAD entered (24300PE/24200PE, ~13.6-13.7 credit), then closed via `DTE_EXIT` within 60 seconds (next mark-to-market cycle).
-- This is what surfaced both bugs above — not a hypothetical, an actual repeated real-market observation.
-- No open position exists as of session end; both test trades closed same-minute as designed-at-the-time (now fixed).
-
-Separately verified via live endpoints:
-- `/intelligence/{symbol}/summary` Support/Resistance/MaxPain briefly showed identical values (24400/24400/24400) for NIFTY50 — investigated, confirmed to be a **cache-timing artifact**, not a bug. `/intelligence/oi/{symbol}` (uncached) showed correctly differentiated OI walls throughout (24500 call / 24400 put); re-hitting `/summary` after the 5-min cache cycle showed correctly differentiated values too. `generateIntelligence()`'s 5-min TTL is working as designed per `.clinerules` — no code change made.
-- `/admin/test/{strategy}-evaluate` endpoints correctly bypass `StrategySelector`'s market-condition gate by design (isolated per-strategy diagnostic testing) — confirmed via grep, both BULL_PUT_SPREAD and BEAR_CALL_SPREAD showing `isExecutable: true` simultaneously from these endpoints is expected, not a bug. Real entry path (`/trading/run/{symbol}`) correctly selects exactly one strategy via `StrategySelector`.
+- Manually triggered `/trading/run/NIFTY50` in real market hours multiple times across two sessions. This is what originally surfaced the DTE boundary + FORCE_CLOSE_EOD bugs (July 6) and confirmed EXPIRY_DAY strategy's OI-wall structural-validity hard-skip is working correctly (July 7 — spot moved above the call wall mid-morning, correctly triggered the existing "OI walls structurally invalid" skip per Bug 8's safety gate).
+- `/intelligence/{symbol}/summary` Support/Resistance/MaxPain briefly collapsed to identical values for NIFTY50 — investigated, confirmed cache-timing artifact (5-min TTL), not a bug. No code change.
+- `/admin/test/{strategy}-evaluate` endpoints confirmed to correctly bypass `StrategySelector`'s condition gate by design (isolated diagnostics) — both spreads showing `isExecutable:true` simultaneously from these endpoints is expected; real entry path (`/trading/run/{symbol}`) correctly selects one strategy.
+- Confirmed `scheduledDailyEntry()` cron is `0 30 9 * * MON-FRI` (9:30 AM) in production — a temporary local test change to `0 40 11...` was reverted before session end, never committed.
 
 ## Open / Unverified
 
-- **Stage 4c still has zero live/runtime observation of a position surviving a trading-day boundary.** Design is now correct for the first time (both blocking bugs fixed today) — no position has yet actually held overnight under the corrected logic. No open position exists as of today. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary — not a calendar date.
-- Zerodha token refresh is manual (~6 AM), dependent on Kuldeep's availability — accepted operational reality, not a defect.
-- `dailySafetyNetCheck()` at 9:00 AM — now correctly time-gated via the same `dte-exit-earliest-time` logic as the primary path (fixed today, see above); previously would have fired before market open regardless.
+- **Stage 4c still has zero live/runtime observation of a position surviving a trading-day boundary** — design is now correct for the first time (FORCE_CLOSE_EOD + DTE boundary fixes on main). No open position exists as of session end. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary.
+- `feature/adding_periodic_entry_retry` not yet merged — decide merge timing; retry mechanism is a second gate-override layer, consider whether to hold it until Stage 4c's first observation lands, per the original gate rationale, or merge now per Kuldeep's standing override right.
+- Zerodha token refresh remains manual (~6 AM) — accepted operational reality.
 
 ## Tracked gaps (logged, not scheduled)
 
-- No exit path anywhere places a real Kite order — all exits, including all of today's fixes, only write to the database. Address only when live trading becomes an active initiative.
-- Cosmetic: two stale Javadoc comments in `PaperTradingEngine.java` still reference "force-close-time check" after the logic itself was removed — Tier 1, safe anytime, not yet done.
-- Leftover unused mock fields / duplicate stubs accumulated during this session's test-fixing iterations — cosmetic, Tier 1, safe anytime.
+- No exit path places a real Kite order — all exits remain DB-only. Address only when live trading becomes active.
+- Two stale Javadoc comments in `PaperTradingEngine.java` still reference "force-close-time check" after removal — Tier 1, cosmetic, not yet done.
+- Leftover unused mock fields from this week's test-fixing iterations — cosmetic, Tier 1, safe anytime.
 
 ## Evidence standard (unchanged)
-
-Risk-tiered, evidence always from Kuldeep, not Cline:
-- **Tier 1** (config, docs, logging, read-only, cosmetic): one targeted piece of evidence.
-- **Tier 3** (P&L, entry/exit, scheduler wiring, lot size, cache freshness, DB writes): diff of changed methods, targeted grep for "only caller"/"doesn't exist elsewhere" claims, specific test names with old→new count.
-- Narrative instead of real command output is rejected at any tier — reconfirmed multiple times today after Cline reported "done" without a passing build on several occasions (LEG_BREACH test-fixing took ~9 round-trips; DTE time-gate signature change missed a third call site + Mockito matcher bugs on first pass). Evidence-first discipline caught every one of these before merge.
+Risk-tiered, evidence always from Kuldeep, not Cline. Tier 1: one targeted command. Tier 3 (entry/exit, scheduler, DB writes): diff + grep + test names/counts. Narrative without real command output rejected at any tier — reconfirmed repeatedly this week; several "done" reports from Cline were incomplete or fabricated (missed call sites, unused imports, mismatched Mockito matchers, stale hardcoded test dates) and only caught because build/test evidence was demanded before acceptance.
 
 ## No open Cline task right now
 
 ## Session changelog (most recent 5)
-- **2026-07-06:** Implemented LEG_BREACH (IRON_CONDOR/BULL_PUT_SPREAD/BEAR_CALL_SPREAD, EXPIRY_DAY_STRANGLE excluded), overriding the standing Stage-4c-observation gate per Kuldeep's explicit acknowledged-risk override. Corrected README's "production-ready" framing and stale test counts. Added `.gitattributes` for LF normalization. Removed dead repo method `existsByStrategyNameAndTradeDateAndStatus`. During live manual paper-trading observation, discovered and fixed two compounding bugs that had silently prevented Stage 4c's core premise (overnight holding) from ever being possible: (1) DTE boundary overlap (`dte-min <= dte-exit-threshold`), fixed with startup validation; (2) FORCE_CLOSE_EOD still active for IRON_CONDOR/spreads despite README claiming removal, force-closing all three strategies daily regardless of DTE — removed. Added `dte-exit-earliest-time` gate so DTE_EXIT doesn't fire in the first minute of the threshold day. 209 tests passing, all committed and pushed.
-- 2026-07-04: Adopted final charter (risk-tiered evidence, Kuldeep-sourced). Found & fixed Stage 4c scheduler defect. Ran full 8-item gap sweep; found & fixed `@PostLoad` bug in 2 entities. Generated final CURRENT_STATE.md + handoff summary.
-- 2026-07-04 (earlier): Verified 2 README "Paper-Tested" claims against real `paper_trades` rows; found credit-value error (31.5→30.9).
+- **2026-07-07:** Observed EXPIRY_DAY_STRANGLE correctly hard-skip on real expiry day due to OI-wall structural invalidity (spot moved above call wall) — confirmed working as designed, no action. Implemented periodic entry-retry mechanism for all 4 strategies (second explicit gate override this week) on new branch `feature/adding_periodic_entry_retry`: latest-entry-time now enforced everywhere, 15-min retry cadence 9:45–13:30, kept scheduler repository-free per `.clinerules` after catching an initial design violation. Fixed a hardcoded test date that silently broke as the calendar advanced. Live log review on expiry day surfaced a second retry-loop design bug (calling `runTradingCycle()` once per strategy name instead of once per cycle, causing 3x redundant API calls and misleading logs) — fixed via `StrategySelector.getSelectedStrategyName()`, with a first-pass Cline implementation rejected before merge for silently dropping the pre-flight gating it claimed to include. 209 tests throughout, pushed, not yet merged.
+- **2026-07-06:** Merged `feature/paper_trade_sit_issues` to main. Implemented LEG_BREACH (first gate override). During live market-hours testing, discovered and fixed the DTE boundary overlap and FORCE_CLOSE_EOD bugs — likely the actual explanation for Stage 4c's persistent zero-observation status. Added DTE_EXIT time-gate. README correction, `.gitattributes`, dead repo method cleanup also closed. 209 tests.
+- 2026-07-04: Adopted final evidence charter. Fixed Stage 4c scheduler defect and `@PostLoad` bug via full gap sweep.
 - 2026-07-03: Stage 4c claimed complete, 171 tests — since found incomplete.
