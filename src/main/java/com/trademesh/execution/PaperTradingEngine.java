@@ -292,7 +292,7 @@ public class PaperTradingEngine {
      * @param unrealizedPnl the current unrealized P&L
      * @param cfg           the Iron Condor strategy configuration
      * @param currentVix    the current VIX value (or -1.0 if unavailable)
-     * @param currentTime   the current time for force-close-time check
+     * @param currentTime   the current time for dte-exit-earliest-time check
      * @return true if any exit condition is met, false otherwise
      */
     Mono<Boolean> shouldExitIronCondor(PaperTrade trade, BigDecimal unrealizedPnl,
@@ -962,7 +962,7 @@ public class PaperTradingEngine {
      * @param unrealizedPnl the current unrealized P&L
      * @param cfg           the strategy configuration
      * @param currentVix    the current VIX value (or -1.0 if unavailable)
-     * @param currentTime   the current time for force-close-time check
+     * @param currentTime   the current time for dte-exit-earliest-time check
      * @return Mono emitting true if any exit condition is met, false otherwise
      */
     Mono<Boolean> shouldExitSpread(PaperTrade trade, BigDecimal unrealizedPnl,
