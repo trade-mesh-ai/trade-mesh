@@ -187,12 +187,12 @@ public class BearCallSpreadStrategy implements TradingStrategy {
         BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
                 .multiply(BigDecimal.valueOf(lotSize));
 
-        // Capital-based position sizing: compute lots from risk budget
-        // Capped by cfg.getMaxLots() as hard ceiling
-        int lots = Math.min(
-                lotSizeService.getPositionSize(maxLossPerLot),
-                cfg.getMaxLots()
-        );
+         // Capital-based position sizing with VIX scaling: compute lots from risk budget
+         // Capped by cfg.getMaxLots() as hard ceiling
+         int lots = Math.min(
+                 lotSizeService.getPositionSize(maxLossPerLot, currentVix),
+                 cfg.getMaxLots()
+         );
 
         // P&L matrix (recomputed with actual lots)
         BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));

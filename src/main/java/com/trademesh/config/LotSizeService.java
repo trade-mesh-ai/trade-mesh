@@ -84,4 +84,50 @@ public class LotSizeService {
 
         return result;
     }
+
+    /**
+     * Calculates position size with VIX-based scaling on top of capital-based sizing.
+     * <p>
+     * Formula:
+     * - baseSize = getPositionSize(maxLossPerLot) [capital-based]
+     * - multiplier = getVixSizeMultiplier(currentVix)
+     * - scaledSize = floor(baseSize × multiplier)
+     * - return max(1, scaledSize) — never zero even after scaling
+     * <p>
+     * VIX scaling tiers:
+     * - VIX > 18.0: multiplier = 0.5 (half size)
+     * - VIX ≤ 18.0: multiplier = 1.0 (full size, covers both 12-18 and <12)
+     *
+     * @param maxLossPerLot maximum loss per single lot (in rupees)
+     * @param currentVix current VIX level
+     * @return number of lots to trade with VIX scaling applied, minimum 1
+     */
+    public int getPositionSize(BigDecimal maxLossPerLot, double currentVix) {
+        int baseSize = getPositionSize(maxLossPerLot);
+        double multiplier = getVixSizeMultiplier(currentVix);
+        int scaledSize = (int) Math.floor(baseSize * multiplier);
+        int result = Math.max(1, scaledSize);
+
+        log.debug("VIX-scaled position sizing: baseSize={}, currentVix={}, multiplier={}, scaledSize={}, result={}",
+                baseSize, currentVix, multiplier, scaledSize, result);
+
+        return result;
+    }
+
+    /**
+     * Determines VIX-based position size multiplier.
+     * <p>
+     * Tiers:
+     * - VIX > 18.0: return 0.5 (reduce to half size)
+     * - VIX ≤ 18.0: return 1.0 (full size)
+     *
+     * @param currentVix current VIX level
+     * @return multiplier to apply to base position size
+     */
+    private double getVixSizeMultiplier(double currentVix) {
+        if (currentVix > 18.0) {
+            return 0.5;
+        }
+        return 1.0; // covers both 12-18 and <12 per README's spec
+    }
 }

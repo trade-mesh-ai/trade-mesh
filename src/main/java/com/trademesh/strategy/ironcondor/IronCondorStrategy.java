@@ -162,7 +162,8 @@ public class IronCondorStrategy implements TradingStrategy {
      */
     private Mono<IronCondorSignal> selectStrikesAndBuildSignal(
             OptionChain chain, MarketMetrics metrics,
-            int confidenceScore, StrategyProperties cfg) {
+            int confidenceScore, StrategyProperties cfg,
+            double currentVix) {
 
         double spotPrice = chain.getSpotPrice().doubleValue();
         LocalDate expiryDate = chain.getExpiryDate();
@@ -252,12 +253,12 @@ public class IronCondorStrategy implements TradingStrategy {
         BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
                 .multiply(BigDecimal.valueOf(lotSize));
 
-        // Capital-based position sizing: compute lots from risk budget
-        // Capped by cfg.getMaxLots() as hard ceiling
-        int lots = Math.min(
-                lotSizeService.getPositionSize(maxLossPerLot),
-                cfg.getMaxLots()
-        );
+         // Capital-based position sizing with VIX scaling: compute lots from risk budget
+         // Capped by cfg.getMaxLots() as hard ceiling
+         int lots = Math.min(
+                 lotSizeService.getPositionSize(maxLossPerLot, currentVix),
+                 cfg.getMaxLots()
+         );
 
         // P&L matrix (recomputed with actual lots)
         BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
@@ -448,7 +449,7 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         .build());
                                             }
 
-                                            return selectStrikesAndBuildSignal(chain, metrics, score, cfg)
+                                            return selectStrikesAndBuildSignal(chain, metrics, score, cfg, currentVix)
                                                     .map(signal -> {
                                                         // Build metadata map with P&L matrix and market context
                                                         java.util.Map<String, String> metadata = new java.util.HashMap<>();
