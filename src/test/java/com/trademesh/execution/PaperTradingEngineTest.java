@@ -48,7 +48,7 @@ class PaperTradingEngineTest {
 
     @BeforeEach
     void setUp() {
-        today = LocalDate.of(2026, 7, 6); // Monday
+        today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         expiryDate = LocalDate.of(2026, 7, 9); // Thursday (3 trading days away)
 
         // Create a trade with one leg
