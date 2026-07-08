@@ -46,11 +46,17 @@ public class TradingScheduler {
      * - *: month (any)
      * - MON-FRI: day of week (Monday to Friday)
      */
-    @Scheduled(cron = "0 0 9 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 20 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void dailySafetyNetCheck() {
-        tradingOrchestrator.runDteExitSafetyNetCheck()
-                .doOnSuccess(count -> log.info("DTE safety net check completed, closed {} positions", count))
-                .doOnError(e -> log.error("Error in DTE safety net check: {}", e.getMessage(), e))
+        marketCalendarService.isMarketOpen()
+                .filter(Boolean::booleanValue)
+                .flatMap(ignored -> Mono.fromRunnable(() -> {
+                    tradingOrchestrator.runDteExitSafetyNetCheck()
+                            .doOnSuccess(count -> log.info("DTE safety net check completed, closed {} positions", count))
+                            .doOnError(e -> log.error("Error in DTE safety net check: {}", e.getMessage(), e))
+                            .subscribe(ignored2 -> {
+                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
+                }))
                 .subscribe(ignored -> {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
