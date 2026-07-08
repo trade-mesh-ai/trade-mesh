@@ -50,13 +50,9 @@ public class TradingScheduler {
     public void dailySafetyNetCheck() {
         marketCalendarService.isMarketOpen()
                 .filter(Boolean::booleanValue)
-                .flatMap(ignored -> Mono.fromRunnable(() -> {
-                    tradingOrchestrator.runDteExitSafetyNetCheck()
-                            .doOnSuccess(count -> log.info("DTE safety net check completed, closed {} positions", count))
-                            .doOnError(e -> log.error("Error in DTE safety net check: {}", e.getMessage(), e))
-                            .subscribe(ignored2 -> {
-                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-                }))
+                .flatMap(ignored -> tradingOrchestrator.runDteExitSafetyNetCheck())
+                .doOnSuccess(count -> log.info("DTE safety net check completed, closed {} positions", count))
+                .doOnError(e -> log.error("Error in DTE safety net check: {}", e.getMessage(), e))
                 .subscribe(ignored -> {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
@@ -106,23 +102,19 @@ public class TradingScheduler {
                 ? Mono.just(true)
                 : marketCalendarService.isMarketOpen();
 
+        log.info("Starting daily trading cycle entry");
+
         marketCheck
                 .filter(Boolean::booleanValue)
-                .flatMap(ignored -> Mono.fromRunnable(() -> {
-                    log.info("Starting daily trading cycle entry");
-
-                    tradingOrchestrator.runTradingCycle("NIFTY50")
-                            .doOnSuccess(result -> {
-                                if (result.getIsExecutable()) {
-                                    log.info("NIFTY trading cycle executed successfully");
-                                } else {
-                                    log.info("NIFTY trading cycle skipped: {}", result.getSkipReason());
-                                }
-                            })
-                            .doOnError(e -> log.error("Error in NIFTY trading cycle: {}", e.getMessage(), e))
-                            .subscribe(ignored2 -> {
-                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-                }))
+                .flatMap(ignored -> tradingOrchestrator.runTradingCycle("NIFTY50"))
+                .doOnSuccess(result -> {
+                    if (result.getIsExecutable()) {
+                        log.info("NIFTY trading cycle executed successfully");
+                    } else {
+                        log.info("NIFTY trading cycle skipped: {}", result.getSkipReason());
+                    }
+                })
+                .doOnError(e -> log.error("Error in NIFTY trading cycle: {}", e.getMessage(), e))
                 .subscribe(ignored -> {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
@@ -144,19 +136,15 @@ public class TradingScheduler {
      */
     @Scheduled(cron = "0 15 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledDailyExit() {
+        log.info("Forcing exit of EXPIRY_DAY_STRANGLE positions at 3:15 PM");
+
         marketCalendarService.isMarketOpen()
                 .filter(Boolean::booleanValue)
-                .flatMap(ignored -> Mono.fromRunnable(() -> {
-                    log.info("Forcing exit of EXPIRY_DAY_STRANGLE positions at 3:15 PM");
-
-                    tradingOrchestrator.exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE")
-                            .doOnSuccess(count -> {
-                                log.info("Closed {} EXPIRY_DAY_STRANGLE positions at daily exit", count);
-                            })
-                            .doOnError(e -> log.error("Error closing EXPIRY_DAY_STRANGLE positions: {}", e.getMessage(), e))
-                            .subscribe(ignored2 -> {
-                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-                }))
+                .flatMap(ignored -> tradingOrchestrator.exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE"))
+                .doOnSuccess(count -> {
+                    log.info("Closed {} EXPIRY_DAY_STRANGLE positions at daily exit", count);
+                })
+                .doOnError(e -> log.error("Error closing EXPIRY_DAY_STRANGLE positions: {}", e.getMessage(), e))
                 .subscribe(ignored -> {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
@@ -176,17 +164,13 @@ public class TradingScheduler {
      */
     @Scheduled(cron = "0 45 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledDailyReport() {
+        log.info("Generating daily P&L report");
+
         marketCalendarService.isMarketOpen()
                 .filter(Boolean::booleanValue)
-                .flatMap(ignored -> Mono.fromRunnable(() -> {
-                    log.info("Generating daily P&L report");
-
-                    dailyReportService.generateDailyReport()
-                            .doOnSuccess(report -> log.info("Daily report generated and sent"))
-                            .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e))
-                            .subscribe(ignored2 -> {
-                            }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
-                }))
+                .flatMap(ignored -> dailyReportService.generateDailyReport())
+                .doOnSuccess(report -> log.info("Daily report generated and sent"))
+                .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e))
                 .subscribe(ignored -> {
                 }, e -> log.error("Unhandled error in reactive chain: {}", e.getMessage(), e));
     }
