@@ -200,14 +200,4 @@ public class MaxPainCalculatorService {
         });
     }
 
-    /**
-     * Gets the lot size for a given symbol.
-     * Falls back to 1 if symbol is not configured.
-     *
-     * @param symbol trading symbol
-     * @return lot size for the symbol
-     */
-    private int getLotSize(String symbol) {
-        return lotSizeService.getLotSize(symbol);
-    }
 }
