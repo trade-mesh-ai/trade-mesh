@@ -1,5 +1,8 @@
 package com.trademesh.intelligence;
 
+import com.trademesh.alert.Alert;
+import com.trademesh.alert.AlertType;
+import com.trademesh.alert.TelegramNotificationBot;
 import com.trademesh.intelligence.vix.VixAlertService;
 import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +35,7 @@ public class IntelligenceScheduler {
     private final MarketIntelligenceService marketIntelligenceService;
     private final VixAlertService vixAlertService;
     private final TokenAvailabilityTracker tokenTracker;
+    private final TelegramNotificationBot telegramNotificationBot;
 
     // ─── State tracking for condition changes ──────────────────────────────────────
     private MarketCondition previousConditionNifty50 = null;
@@ -97,12 +101,8 @@ public class IntelligenceScheduler {
                                 intelligence.summary()
                         );
 
-                        return sendConditionChangeAlert(alertMessage)
-                                .doOnSuccess(success -> {
-                                    if (success) {
-                                        log.info("Condition change alert sent for {}", symbol);
-                                    }
-                                })
+                        return sendConditionChangeAlert(symbol, alertMessage)
+                                .doOnSuccess(v -> log.info("Condition change alert sent for {}", symbol))
                                 .then(Mono.fromRunnable(() -> setPreviousCondition(symbol, currentCondition)));
                     } else {
                         // Update previous condition even if no change
@@ -130,25 +130,18 @@ public class IntelligenceScheduler {
     /**
      * Sends a Telegram alert for market condition changes.
      *
+     * @param symbol the trading symbol
      * @param message the alert message
-     * @return Mono<Boolean> true if sent successfully
+     * @return Mono<Void> completion signal
      */
-    private Mono<Boolean> sendConditionChangeAlert(String message) {
-        // Use VixAlertService's Telegram capability
-        // Since VixAlertService.sendTelegramAlert is private, we'll use a workaround
-        // by creating a temporary VixAlert and processing it
+    Mono<Void> sendConditionChangeAlert(String symbol, String message) {
+        Alert alert = Alert.builder()
+                .type(AlertType.SIGNAL_GENERATED)
+                .tradingSymbol(symbol)
+                .message(message)
+                .build();
 
-        return Mono.fromCallable(() -> {
-            try {
-                // Send via WebClient directly (similar to VixAlertService)
-                log.info("Sending condition change alert: {}", message);
-                // In production, this would use WebClient to send to Telegram
-                return true;
-            } catch (Exception e) {
-                log.error("Failed to send condition change alert: {}", e.getMessage());
-                return false;
-            }
-        });
+        return telegramNotificationBot.sendAlert(alert);
     }
 
     /**
