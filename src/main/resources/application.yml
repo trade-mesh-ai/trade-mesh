@@ -132,6 +132,10 @@ trading:
   lot-sizes:
     NIFTY50: 65
     NIFTYBANK: 30
+  # Capital-based position sizing (this branch only)
+  # TODO: Replace with real values from Kuldeep before meaningful use
+  account-capital: 100000         # Total trading account capital in rupees
+  risk-percent-per-trade: 2.0     # Risk per trade as percentage (e.g., 2.0 for 2%)
   paper:
     enabled: true
 

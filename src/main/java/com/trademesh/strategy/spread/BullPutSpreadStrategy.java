@@ -122,18 +122,17 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     .build());
         }
 
-        // Strike selection
-        // Strike-selection DTE (calendar days — matches /365.0
-        // calendar-year denominator, same convention as
-        // IronCondorStrategy.selectStrikesAndBuildSignal)
-        int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
-        double tte = calendarDte / 365.0;
-        double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
-        int wingWidth = cfg.getExtraInt("wing-width", 100);
-        int lotSize = lotSizeService.getLotSize("NIFTY50");
-        int lots = cfg.getMaxLots();
+         // Strike selection
+         // Strike-selection DTE (calendar days — matches /365.0
+         // calendar-year denominator, same convention as
+         // IronCondorStrategy.selectStrikesAndBuildSignal)
+         int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
+         double tte = calendarDte / 365.0;
+         double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
+         int wingWidth = cfg.getExtraInt("wing-width", 100);
+         int lotSize = lotSizeService.getLotSize("NIFTY50");
 
-        // Find short PUT strike (below spot, closest OTM with delta <= targetDelta)
+         // Find short PUT strike (below spot, closest OTM with delta <= targetDelta)
         OptionStrike shortPutStrike = chain.getStrikes().stream()
                 .filter(s -> s.getStrikePrice().doubleValue() < spotPrice)
                 .sorted((a, b) -> b.getStrikePrice().compareTo(a.getStrikePrice()))
@@ -183,10 +182,20 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     .build());
         }
 
-        // P&L matrix
+        // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
+                .multiply(BigDecimal.valueOf(lotSize));
+
+        // Capital-based position sizing: compute lots from risk budget
+        // Capped by cfg.getMaxLots() as hard ceiling
+        int lots = Math.min(
+                lotSizeService.getPositionSize(maxLossPerLot),
+                cfg.getMaxLots()
+        );
+
+        // P&L matrix (recomputed with actual lots)
         BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
-        BigDecimal maxLoss = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
-                .multiply(BigDecimal.valueOf(lotSize * lots));
+        BigDecimal maxLoss = maxLossPerLot.multiply(BigDecimal.valueOf(lots));
         BigDecimal breakeven = shortPutStrikePrice.subtract(netCredit);
 
         // Build trade legs

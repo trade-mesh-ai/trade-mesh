@@ -173,15 +173,14 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
-        double tte = dte / 365.0;
-        double atmIv = metrics.getCurrentAtmIv() != null ?
-                metrics.getCurrentAtmIv().doubleValue() : 15.0;
-        double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
-        int wingWidth = cfg.getExtraInt("wing-width", 200);
-        int lotSize = lotSizeService.getLotSize("NIFTY50");
-        int lots = cfg.getMaxLots();
+         double tte = dte / 365.0;
+         double atmIv = metrics.getCurrentAtmIv() != null ?
+                 metrics.getCurrentAtmIv().doubleValue() : 15.0;
+         double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
+         int wingWidth = cfg.getExtraInt("wing-width", 200);
+         int lotSize = lotSizeService.getLotSize("NIFTY50");
 
-        // Find short CALL strike (first strike with delta <= targetDelta, above spot)
+         // Find short CALL strike (first strike with delta <= targetDelta, above spot)
         OptionStrike callStrike = chain.getStrikes().stream()
                 .filter(s -> s.getStrikePrice().doubleValue() > spotPrice)
                 .sorted((a, b) -> a.getStrikePrice().compareTo(b.getStrikePrice()))
@@ -249,10 +248,20 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
-        // P&L matrix
+        // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
+                .multiply(BigDecimal.valueOf(lotSize));
+
+        // Capital-based position sizing: compute lots from risk budget
+        // Capped by cfg.getMaxLots() as hard ceiling
+        int lots = Math.min(
+                lotSizeService.getPositionSize(maxLossPerLot),
+                cfg.getMaxLots()
+        );
+
+        // P&L matrix (recomputed with actual lots)
         BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
-        BigDecimal maxLoss = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
-                .multiply(BigDecimal.valueOf(lotSize * lots));
+        BigDecimal maxLoss = maxLossPerLot.multiply(BigDecimal.valueOf(lots));
         BigDecimal upperBreakeven = shortCallStrike.add(netCredit);
         BigDecimal lowerBreakeven = shortPutStrike.subtract(netCredit);
         BigDecimal riskRewardRatio = maxLoss.signum() > 0 ?
