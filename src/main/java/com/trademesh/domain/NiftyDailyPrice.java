@@ -85,16 +85,6 @@ public class NiftyDailyPrice implements Persistable<UUID> {
     @Column("created_at")
     private LocalDateTime createdAt;
 
-    @Override
-    public UUID getId() {
-        return id;
-    }
-
-    @Override
-    public boolean isNew() {
-        return isNew;
-    }
-
     /**
      * Factory method to create a new NiftyDailyPrice entity.
      * Sets isNew=true to indicate this is a new record not yet persisted.
@@ -106,5 +96,15 @@ public class NiftyDailyPrice implements Persistable<UUID> {
         price.isNew = true;
         price.id = UUID.randomUUID();
         return price;
+    }
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
     }
 }

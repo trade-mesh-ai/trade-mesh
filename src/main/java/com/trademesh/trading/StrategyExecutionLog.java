@@ -90,16 +90,6 @@ public class StrategyExecutionLog implements Persistable<UUID> {
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Override
-    public UUID getId() {
-        return id;
-    }
-
-    @Override
-    public boolean isNew() {
-        return isNew;
-    }
-
     /**
      * Factory method to create a new StrategyExecutionLog entity.
      * Sets isNew=true to indicate this is a new record not yet persisted.
@@ -111,5 +101,15 @@ public class StrategyExecutionLog implements Persistable<UUID> {
         log.isNew = true;
         log.id = UUID.randomUUID();
         return log;
+    }
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
     }
 }

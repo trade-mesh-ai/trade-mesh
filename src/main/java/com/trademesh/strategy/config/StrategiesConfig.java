@@ -13,7 +13,7 @@ import java.util.List;
  * Unified configuration for all trading strategies.
  * Binds to the top-level strategies: list from application.yml.
  * Provides centralized access to strategy configurations.
- *
+ * <p>
  * Validates DTE configuration at startup to prevent misconfiguration:
  * - dte-min must be strictly greater than dte-exit-threshold
  * - Fails fast with IllegalStateException if validation fails
