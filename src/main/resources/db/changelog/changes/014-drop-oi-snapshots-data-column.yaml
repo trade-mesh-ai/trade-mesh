@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 014-drop-oi-snapshots-data-column
+      author: trade-mesh
+      comment: "Drop oi_snapshots.data column - write-only, zero read callers confirmed via codebase grep, already flagged non-critical in migrations 012/013"
+      changes:
+        - sql:
+            sql: |
+              ALTER TABLE oi_snapshots DROP COLUMN data;
+            splitStatements: false

@@ -68,13 +68,6 @@ public class OIAnalysis {
     private String marketBias;
 
     /**
-     * Full analysis data serialized as JSON.
-     */
-    @JsonIgnore
-    @Column("data")
-    private String data;
-
-    /**
      * Timestamp when this analysis was performed.
      */
     @Column("recorded_at")

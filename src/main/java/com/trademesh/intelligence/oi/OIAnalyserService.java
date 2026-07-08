@@ -141,7 +141,6 @@ public class OIAnalyserService {
 
             // Serialize full analysis to JSON
             try {
-                analysis.setData(objectMapper.writeValueAsString(analysis));
                 analysis.setTopCallWallsJson(objectMapper.writeValueAsString(topCallWalls));
                 analysis.setTopPutWallsJson(objectMapper.writeValueAsString(topPutWalls));
             } catch (Exception e) {
