@@ -49,7 +49,7 @@ public class VixHistory {
                 .vixValue(vixData.getCurrentVix())
                 .vixLevel(vixData.getVixLevel().name())
                 .changePercent(vixData.getChangePercent())
-                .recordedAt(Instant.now())
+                .recordedAt(vixData.getFetchedAt())
                 .build();
     }
 }
