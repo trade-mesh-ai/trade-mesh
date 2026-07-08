@@ -130,7 +130,7 @@ public class IntelligenceScheduler {
     /**
      * Sends a Telegram alert for market condition changes.
      *
-     * @param symbol the trading symbol
+     * @param symbol  the trading symbol
      * @param message the alert message
      * @return Mono<Void> completion signal
      */

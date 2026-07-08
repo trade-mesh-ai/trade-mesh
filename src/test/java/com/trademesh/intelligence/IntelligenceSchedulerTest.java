@@ -55,7 +55,7 @@ class IntelligenceSchedulerTest {
     /**
      * Test: sendConditionChangeAlert() invokes telegramNotificationBot.sendAlert()
      * with a properly constructed Alert object.
-     *
+     * <p>
      * Verifies:
      * 1. telegramNotificationBot.sendAlert() is called exactly once
      * 2. The Alert has type SIGNAL_GENERATED
@@ -71,8 +71,8 @@ class IntelligenceSchedulerTest {
 
         // Act & Assert
         StepVerifier.create(
-                intelligenceScheduler.sendConditionChangeAlert(symbol, message)
-        )
+                        intelligenceScheduler.sendConditionChangeAlert(symbol, message)
+                )
                 .verifyComplete();
 
         // Verify telegramNotificationBot.sendAlert() was called
@@ -93,7 +93,7 @@ class IntelligenceSchedulerTest {
 
     /**
      * Test: sendConditionChangeAlert() with NIFTYBANK symbol.
-     *
+     * <p>
      * Verifies the method works correctly with different symbols.
      */
     @Test
@@ -105,8 +105,8 @@ class IntelligenceSchedulerTest {
 
         // Act & Assert
         StepVerifier.create(
-                intelligenceScheduler.sendConditionChangeAlert(symbol, message)
-        )
+                        intelligenceScheduler.sendConditionChangeAlert(symbol, message)
+                )
                 .verifyComplete();
 
         // Verify the correct symbol was passed
@@ -122,7 +122,7 @@ class IntelligenceSchedulerTest {
 
     /**
      * Test: sendConditionChangeAlert() returns Mono<Void> that completes successfully.
-     *
+     * <p>
      * Verifies the reactive chain completes without error.
      */
     @Test
@@ -134,15 +134,15 @@ class IntelligenceSchedulerTest {
 
         // Act & Assert
         StepVerifier.create(
-                intelligenceScheduler.sendConditionChangeAlert(symbol, message)
-        )
+                        intelligenceScheduler.sendConditionChangeAlert(symbol, message)
+                )
                 .expectComplete()
                 .verify();
     }
 
     /**
      * Test: sendConditionChangeAlert() propagates errors from telegramNotificationBot.
-     *
+     * <p>
      * Verifies error handling in the reactive chain.
      */
     @Test
@@ -158,8 +158,8 @@ class IntelligenceSchedulerTest {
 
         // Act & Assert
         StepVerifier.create(
-                intelligenceScheduler.sendConditionChangeAlert(symbol, message)
-        )
+                        intelligenceScheduler.sendConditionChangeAlert(symbol, message)
+                )
                 .expectError(RuntimeException.class)
                 .verify();
     }
