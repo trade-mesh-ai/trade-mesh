@@ -52,7 +52,7 @@ public class VixScheduler {
      * </ol>
      */
     @Scheduled(cron = "${intelligence.vix.fetch-interval-cron:0 */5 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
-    public void fetchVixData() {
+    void fetchVixData() {
 
         if (!tokenTracker.isTokenAvailable()) {
             log.warn("[VixScheduler] Zerodha token unavailable. Skipping VIX fetch.");
@@ -105,7 +105,13 @@ public class VixScheduler {
      * </ol>
      */
     @Scheduled(cron = "${intelligence.vix.persist-interval-cron:0 */15 9-15 ? * MON-FRI}", zone = "Asia/Kolkata")
-    public void persistVixData() {
+    void persistVixData() {
+
+        if (!tokenTracker.isTokenAvailable()) {
+            log.warn("[VixScheduler] Zerodha token unavailable. Skipping VIX persistence.");
+            return;
+        }
+
         log.debug("Starting VIX persistence task");
 
         vixMonitorService.fetchAndSave()
