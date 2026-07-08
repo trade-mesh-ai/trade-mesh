@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Service for fetching NIFTY50 historical OHLC data from Kite Connect API.
@@ -83,7 +84,7 @@ public class KiteHistoricalService {
                                     return Flux.empty();
                                 }
                                 return Flux.fromIterable(response.getData().getCandles())
-                                        .map(this::parseCandle);
+                                        .flatMap(candle -> Mono.justOrEmpty(parseCandle(candle)));
                             });
                 });
     }
@@ -96,7 +97,7 @@ public class KiteHistoricalService {
      * @param candle the candle array
      * @return NiftyDailyPrice entity with isNew=true
      */
-    private NiftyDailyPrice parseCandle(List<?> candle) {
+    NiftyDailyPrice parseCandle(List<?> candle) {
         if (candle.size() < 6) {
             log.warn("Invalid candle format: expected at least 6 elements, got {}", candle.size());
             return null;
