@@ -57,6 +57,7 @@ public class IvHistoryService {
      * SAVE method: Calculates ATM IV and persists to database if not already recorded today.
      * Implements idempotency: if a record already exists for the symbol and today's date,
      * logs a debug message and returns empty.
+     * Checks idempotency FIRST to short-circuit expensive API calls.
      *
      * @param symbol the trading symbol (e.g., "NIFTY50")
      * @return Mono emitting the saved IvHistory, or empty if already recorded today
@@ -64,38 +65,36 @@ public class IvHistoryService {
     public Mono<IvHistory> calculateAndSaveAtmIv(String symbol) {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
-        return calculateAtmIv(symbol)
-                .flatMap(ivHistory -> {
-                    // Check if IV already recorded for this symbol today
-                    return repository.existsBySymbolAndTradeDate(symbol, today)
-                            .flatMap(exists -> {
-                                if (exists) {
-                                    log.debug("IV already recorded for {} today, skipping", symbol);
-                                    return Mono.empty();
-                                } else {
-                                    // Create a new record using factory method and populate fields
-                                    IvHistory newRecord = IvHistory.createNew();
-                                    newRecord.setSymbol(ivHistory.getSymbol());
-                                    newRecord.setAtmStrike(ivHistory.getAtmStrike());
-                                    newRecord.setAtmIv(ivHistory.getAtmIv());
-                                    newRecord.setCallIv(ivHistory.getCallIv());
-                                    newRecord.setPutIv(ivHistory.getPutIv());
-                                    newRecord.setSpotPrice(ivHistory.getSpotPrice());
-                                    newRecord.setExpiryDate(ivHistory.getExpiryDate());
-                                    newRecord.setTradeDate(today);
-                                    newRecord.setRecordedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
+        return repository.existsBySymbolAndTradeDate(symbol, today)
+                .flatMap(exists -> {
+                    if (exists) {
+                        log.debug("IV already recorded for {} today, skipping", symbol);
+                        return Mono.empty();
+                    }
+                    return calculateAtmIv(symbol)
+                            .flatMap(ivHistory -> {
+                                // Create a new record using factory method and populate fields
+                                IvHistory newRecord = IvHistory.createNew();
+                                newRecord.setSymbol(ivHistory.getSymbol());
+                                newRecord.setAtmStrike(ivHistory.getAtmStrike());
+                                newRecord.setAtmIv(ivHistory.getAtmIv());
+                                newRecord.setCallIv(ivHistory.getCallIv());
+                                newRecord.setPutIv(ivHistory.getPutIv());
+                                newRecord.setSpotPrice(ivHistory.getSpotPrice());
+                                newRecord.setExpiryDate(ivHistory.getExpiryDate());
+                                newRecord.setTradeDate(today);
+                                newRecord.setRecordedAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
 
-                                    // Save to database
-                                    return repository.save(newRecord)
-                                            .doOnSuccess(saved -> log.info(
-                                                    "ATM IV recorded for {}: atmIv={}%, callIv={}%, putIv={}%, atmStrike={}",
-                                                    symbol,
-                                                    saved.getAtmIv(),
-                                                    saved.getCallIv(),
-                                                    saved.getPutIv(),
-                                                    saved.getAtmStrike()
-                                            ));
-                                }
+                                // Save to database
+                                return repository.save(newRecord)
+                                        .doOnSuccess(saved -> log.info(
+                                                "ATM IV recorded for {}: atmIv={}%, callIv={}%, putIv={}%, atmStrike={}",
+                                                symbol,
+                                                saved.getAtmIv(),
+                                                saved.getCallIv(),
+                                                saved.getPutIv(),
+                                                saved.getAtmStrike()
+                                        ));
                             });
                 });
     }
