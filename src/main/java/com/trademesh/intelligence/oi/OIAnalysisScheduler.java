@@ -25,6 +25,8 @@ import static com.trademesh.config.ApplicationConstants.SYMBOLS;
 @RequiredArgsConstructor
 public class OIAnalysisScheduler {
 
+    private static final String SCHEDULER_NAME = "OIAnalysisScheduler";
+
     private final OptionChainService optionChainService;
     private final OIAnalyserService oiAnalyserService;
     private final TokenAvailabilityTracker tokenTracker;
@@ -47,7 +49,20 @@ public class OIAnalysisScheduler {
 
         for (String symbol : SYMBOLS) {
             captureAnalysis(symbol)
-                    .doOnError(e -> log.error("Failed to capture OI analysis for {}: {}", symbol, e.getMessage()))
+                    .doOnError(e -> {
+                        if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                            tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+                        } else {
+                            log.error("Failed to capture OI analysis for {}: {}", symbol, e.getMessage());
+                        }
+                    })
+                    .onErrorResume(e -> {
+                        if (e instanceof IllegalStateException && e.getMessage().contains("No Zerodha access token")) {
+                            log.debug("OI analysis capture failed due to missing token, continuing with next symbol");
+                            return Mono.empty();
+                        }
+                        return Mono.error(e);
+                    })
                     .subscribe();
         }
     }
