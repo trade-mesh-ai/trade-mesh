@@ -64,6 +64,13 @@ Each item above was independently re-verified via grep/direct code inspection be
 ## Open / Unverified
 
 - **Stage 4c still has zero live/runtime observation of a position surviving a trading-day boundary.** Design is now correct (FORCE_CLOSE_EOD + DTE boundary fixes on main). One BEAR_CALL_SPREAD position this session held 3h43m intraday (10:30 AM–2:13 PM, closed via TARGET_HIT) — a genuine multi-hour hold, but same-day, not yet an overnight/trading-day-boundary crossing. No open position exists as of this point in the session. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary.
+- **Standing gate recalibrated (2026-07-08):** the Stage 4c gate was originally treated as a blanket block on all new development until live confirmation. Recalibrated to be scoped correctly to its actual justification (avoiding confounded root-cause analysis if Stage 4c's exit behavior breaks while unobserved). **The gate now applies only to code touching:**
+    - `markToMarket()`
+    - `isDteExitDue()`
+    - `shouldExitIronCondor()` / `shouldExitSpread()`
+    - `FORCE_CLOSE_EOD` / `DTE_EXIT` logic
+
+  Everything else (entry-side logic, position sizing, strike selection, non-exit-path features) proceeds normally without requiring an explicit override — it was never really in scope of the original risk, just swept up under an overly broad rule. Branch strategy (feature branches vs. main) provides additional safety where useful, independent of this gate. Rationale for the recalibration: Iron Condor may not fire for weeks (IVR still immature until Aug 1, PCR not yet contributing to confidence scoring), spread strategies may take 3-6 days depending on market conditions, and blocking all independent work on that timeline has no real safety benefit.
 - Zerodha token refresh remains manual (~6 AM) — accepted operational reality.
 
 ## Tracked gaps (logged, not scheduled)
