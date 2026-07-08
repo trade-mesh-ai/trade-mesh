@@ -68,8 +68,8 @@ public class MarketCalendarService {
         // Check if holiday
         Set<LocalDate> yearHolidays = NSE_HOLIDAYS.get(date.getYear());
         if (yearHolidays == null) {
-            log.warn("NSE holidays not configured for year {}, assuming {} is a trading day", date.getYear(), date);
-            return true;
+            log.error("NSE holidays not configured for year {} — failing safe by treating {} as NOT a trading day. Update NSE_HOLIDAYS map for this year.", date.getYear(), date);
+            return false;
         }
 
         return !yearHolidays.contains(date);
