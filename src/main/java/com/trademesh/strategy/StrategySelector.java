@@ -93,6 +93,20 @@ public class StrategySelector {
     }
 
     /**
+     * Gets the name of the strategy that would be selected for the given market intelligence.
+     *
+     * <p>Used by callers that need to know which strategy will be evaluated before
+     * calling evaluateSelectedStrategy(). Useful for pre-flight checks and logging.
+     *
+     * @param intel market intelligence data
+     * @return Mono emitting Optional with strategy name, or empty if no strategy applicable
+     */
+    public Mono<Optional<String>> getSelectedStrategyName(MarketIntelligence intel) {
+        return selectStrategy(intel)
+                .map(optionalStrategy -> optionalStrategy.map(TradingStrategy::getName));
+    }
+
+    /**
      * Evaluates the selected strategy for the given market intelligence.
      *
      * <p>Process:

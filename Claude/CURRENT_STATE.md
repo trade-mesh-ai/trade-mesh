@@ -1,79 +1,88 @@
 # TradeMesh — Current State
 
-**Last updated:** 2026-07-08 (Wednesday — live P&L netting bug found and fixed during retry-mechanism observation)
+**Last updated:** 2026-07-05 (Sunday, code-review session)
 
 ## Source-of-truth rule
 Most recent verified evidence > this file > README.md narrative.
 
-## Branch state
-- `feature/paper_trade_sit_issues` — **merged to main.** Contains: LEG_BREACH, DTE boundary fix, DTE_EXIT time-gate, FORCE_CLOSE_EOD removal.
-- `feature/adding_periodic_entry_retry` — **merged to main.** Contains: latest-entry-time enforcement, periodic entry retry scheduler, retry-loop single-call fix, stale Javadoc cleanup. Merge rationale documented below.
-- `feature/issue_in_pnl_calulation` — new branch, pushed, **not yet merged.** Contains: live P&L netting bug fix (see below). Recommended for prompt merge — actively misreported P&L on a currently-open live position.
-
-## Verified, stable (merged to main)
+## Verified, stable
 
 | Stage | What it does | Evidence |
 |---|---|---|
-| Stage 1–4b | Entry DTE, VIX panic, DTE-exit staging, clock fix, position cap | Verified, unchanged |
-| Stage 4c scheduler | `exitPositionsForStrategy("NIFTY50","EXPIRY_DAY_STRANGLE")` | Fixed 2026-07-04 |
-| @PostLoad fix | 2 entities corrected | Fixed 2026-07-04 |
-| **LEG_BREACH** | IRON_CONDOR/BULL_PUT_SPREAD/BEAR_CALL_SPREAD, EXPIRY_DAY_STRANGLE excluded. Reactive, Redis spot (`price:NIFTY50`), no `.block()`. **Implemented ahead of Stage 4c's first live observation — Kuldeep's explicit override, risk logged.** | 2026-07-06, 185 tests |
-| **DTE boundary overlap fix** | `dte-min` was `<=` `dte-exit-threshold` for all three strategies — self-closing bug. Fixed: dte-min now 2/2/3. `@PostConstruct` startup validation added (fails fast on violation). | 2026-07-06, 209 tests |
-| **DTE_EXIT time-gate** | `dte-exit-earliest-time` (default "10:00") — DTE_EXIT no longer fires in the first minute of the threshold day. | 2026-07-06, 209 tests |
-| **FORCE_CLOSE_EOD removed (IRON_CONDOR/spreads)** | Was silently active (config-gated for IRON_CONDOR, hardcoded for spreads), contradicting README, force-closing all three daily regardless of DTE. **Likely the actual reason Stage 4c had zero live observation.** Removed. EXPIRY_DAY_STRANGLE confirmed unaffected (separate scheduler path). | 2026-07-06, 209 tests |
+| Stage 1 | Entry DTE, trading-day based | Verified |
+| Stage 3 | VIX panic exit, 3 strategies | 8/8 tests |
+| Stage 4a | DTE-based exit (dormant staging) | 13/13 tests |
+| Clock fix | `LocalTime` param, no Spring bean | Verified |
+| Stage 4b | Position cap + date-scoping fix | Verified |
+| Stage 4c scheduler | `scheduledDailyExit()` → `exitPositionsForStrategy("NIFTY50","EXPIRY_DAY_STRANGLE")`. `exitAllPositions()` has zero production callers. | Fixed 2026-07-04 — real diff, grep, 174 tests (3 new, negative assertions). |
+| @PostLoad fix | `NiftyDailyPrice` & `StrategyExecutionLog`: `isNew` now defaults `false`, `@PostLoad` removed, `createNew()` factory added, 3 call sites updated. | Fixed 2026-07-04 — real diff, 174 tests unchanged. |
 
-## New this session (2026-07-07) — pending merge on `feature/adding_periodic_entry_retry`
+## Closed this session (2026-07-05)
 
-**Periodic entry retry, all 4 strategies.** New automated layer, added ahead of Stage 4c's first live observation — **second explicit gate override this week** (LEG_BREACH was the first). Risk logged: confounds root-causing if something breaks post-observation; accepted per Kuldeep.
+- **Dead repository method removed:** `existsByStrategyNameAndTradeDateAndStatus` deleted from `PaperTradeRepository`. Confirmed via full-codebase grep — zero matches anywhere. `existsByStrategyNameAndStatus` (the actually-used method) untouched.
 
-- **Latest-entry-time now enforced** for BULL_PUT_SPREAD, BEAR_CALL_SPREAD, IRON_CONDOR (EXPIRY_DAY_STRANGLE already had this check). Previously configured in `application.yml` but never read by 3 of 4 strategies.
-- **`scheduledEntryRetry()`** added to `TradingScheduler`, cron `0 45,0,15,30 9-13 * * MON-FRI` — re-attempts entry every 15 min, 9:45 AM–1:30 PM, only when no open position exists for that strategy and current time is before its `latest-entry-time`.
-- **Architecture correction applied during review:** initial Cline proposal injected `PaperTradeRepository` directly into `TradingScheduler`, violating `.clinerules` ("never inject repositories directly into schedulers"). Corrected: added `TradingOrchestrator.hasOpenPositionForStrategy()` (reuses existing `existsByStrategyNameAndStatus()`), `TradingScheduler` stays repository-free.
-- Reuses existing `runTradingCycle()` / `StrategySelector` / `RiskManager.isWithinConcurrentPositionLimit()` — no duplicated logic, concurrent-position cap confirmed to gate every retry attempt.
-- **Found and fixed in passing:** `PaperTradingEngineTest.java` had a hardcoded `today = LocalDate.of(2026, 7, 6)` — silently correct only while wall-clock date matched, broke the moment the calendar advanced past July 6. Fixed to `LocalDate.now(ZoneId.of("Asia/Kolkata"))`.
-- **Retry-loop design bug found and fixed same day, via live expiry-day log review:** first implementation of `executeEntryRetry()` looped over all 4 strategy names and called `runTradingCycle("NIFTY50")` once per name — but `runTradingCycle()` is condition-driven via `StrategySelector`, which always picks exactly one strategy regardless of the loop variable. Result: 3 redundant Kite API calls + intelligence fetches per retry cycle, and misleading logs (all 4 strategies reported the same outcome under different names). Confirmed live on 2026-07-07 (expiry day) — retry logs showed IRON_CONDOR/BULL_PUT_SPREAD/BEAR_CALL_SPREAD/EXPIRY_DAY_STRANGLE all logging identical "Premium too low" skip reasons, when only EXPIRY_DAY_STRANGLE should have been evaluated at all that day. Fixed: `StrategySelector.getSelectedStrategyName()` added to resolve the actual selected strategy from one fresh intelligence fetch; pre-flight checks (open-position, latest-entry-time) now applied to that one resolved strategy only; `runTradingCycle()` called exactly once per cycle. A first-pass implementation attempt silently dropped the pre-flight gating entirely (called `runTradingCycle()` unconditionally with dead/no-op code) — caught before merge via evidence review, not accepted on Cline's narrative alone.
-- 209 tests, BUILD SUCCESSFUL, pushed to `feature/adding_periodic_entry_retry`. **Not yet merged to main.**
+## Open / Unverified — Stage 4c live observation
 
-## New this session (2026-07-08) — live P&L netting bug, pending merge on `feature/issue_in_pnl_calulation`
+- Stage 4c has **zero live/runtime observation**. Design correct (2026-07-04 fix), but no position has yet held overnight under it. No open position exists as of this session. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary — not a calendar date.
+- **Standing gate unchanged:** no new automated layers until Stage 4c's first live trading-day-boundary crossing is confirmed.
+- Zerodha token refresh is manual (~6 AM), dependent on Kuldeep's availability — accepted operational reality, not a defect.
 
-**Real bug found while observing the live BEAR_CALL_SPREAD position opened via the retry mechanism this morning (entered 10:30 AM via `scheduledEntryRetry()` — confirms the retry-loop fix works correctly in live conditions: exactly one strategy logged, correct pre-flight gating).**
+## Tracked gaps — found this session (2026-07-05 code review), none actioned, none touch the Stage 4c gate
 
-- `GET /trading/positions/open` showed `unrealizedPnl: -3.35` (stored, correct) vs `liveUnrealizedPnl: -86.15` (live-calculated, wrong) for the same open position — a ~25x divergence.
-- Root cause: `calculateSpreadCurrentValue()`, `calculateIronCondorCurrentValue()`, and `calculateDefaultCurrentValue()` (all three, same bug pattern) were **unconditionally summing every leg's LTP** regardless of SELL/BUY direction — instead of netting (SELL adds, BUY subtracts), matching the already-correct convention used in `calculateIronCondorPnl()`/`calculateSpreadPnl()`. This inflated `currentValue`, which inflated the derived `liveUnrealizedPnl = entryCredit - currentValue` into a much larger (more negative) number than the correctly-calculated stored P&L.
-- **This was live and actively misreporting P&L on the real open position at the time it was found** — not a theoretical bug caught in review.
-- Fixed all three methods to use the correct signed-netting logic, verified against `calculateIronCondorPnl()`'s real, working implementation (confirmed via direct code inspection, not assumption, after two rounds of Cline reasoning from first principles instead of checking).
-- Added dedicated test coverage (`PaperTradingEngineCurrentValueTest.java`) with concrete buggy-vs-correct value assertions for all three methods; changed their visibility from `private` to package-private to allow direct testing (matches existing `isDteExitDue()` precedent).
-- **Confirmed fix works in practice**, not just tests: same open position later showed `unrealizedPnl: 2.4` and `liveUnrealizedPnl: 2.4` — matching exactly, after the local fix was applied and the running instance restarted.
-- Recurring issue caught again during this fix: the hardcoded test date in `PaperTradingEngineTest.java` had reverted to `LocalDate.of(2026, 7, 6)` — traced to this being a different feature branch than where the earlier fix landed, not a real regression. Fixed again on this branch; underlying lesson (a fix applied on one branch doesn't exist on siblings branched before that commit) logged as a process note, not a code issue.
-- 221 tests, BUILD SUCCESSFUL, pushed to `feature/issue_in_pnl_calulation`. **Not yet merged — recommended for prompt merge given the bug's live impact on a currently-observed position, ahead of the retry-mechanism branch's slower-arrival tradeoff reasoning used previously.**
+All Tier 1 unless noted. Evidence commands given where already run; others are proposed for whenever Kuldeep wants to action them.
 
-## Live paper-trading observations (2026-07-06 Monday, 2026-07-07 Tuesday/expiry day)
+1. **`KiteHistoricalService.fetchHistoricalOHLC()` — missing null filter.** `parseCandle()` can return `null` on a malformed candle; no `.filter(Objects::nonNull)` after `.map(this::parseCandle)`. Confirmed via grep — zero `filter` calls in file. Risk: a single malformed candle from Kite silently poisons the Flux and NPEs downstream in `saveIfNotExists()`, killing the rest of a historical bootstrap batch. **Tier 3** (touches DB write path) despite being a one-line fix — evidence: diff + grep confirming filter added, re-run of bootstrap endpoint.
 
-- Manually triggered `/trading/run/NIFTY50` in real market hours multiple times across two sessions. This is what originally surfaced the DTE boundary + FORCE_CLOSE_EOD bugs (July 6) and confirmed EXPIRY_DAY strategy's OI-wall structural-validity hard-skip is working correctly (July 7 — spot moved above the call wall mid-morning, correctly triggered the existing "OI walls structurally invalid" skip per Bug 8's safety gate).
-- `/intelligence/{symbol}/summary` Support/Resistance/MaxPain briefly collapsed to identical values for NIFTY50 — investigated, confirmed cache-timing artifact (5-min TTL), not a bug. No code change.
-- `/admin/test/{strategy}-evaluate` endpoints confirmed to correctly bypass `StrategySelector`'s condition gate by design (isolated diagnostics) — both spreads showing `isExecutable:true` simultaneously from these endpoints is expected; real entry path (`/trading/run/{symbol}`) correctly selects one strategy.
-- Confirmed `scheduledDailyEntry()` cron is `0 30 9 * * MON-FRI` (9:30 AM) in production — a temporary local test change to `0 40 11...` was reverted before session end, never committed.
+2. **`IvHistoryService.calculateAndSaveAtmIv()` — idempotency check runs after the expensive fetch, not before.** Calls `calculateAtmIv()` (which fetches full option chain) before checking `existsBySymbolAndTradeDate()`. Wasteful when IV already recorded for today, not incorrect. Fix: reorder the check first.
 
-## Open / Unverified
+3. **`OIAnalysisScheduler` — missing `trackTokenMissing()` call.** Unlike `MaxPainScheduler` and `IntelligenceScheduler`, `captureAnalysis()` has no `onErrorResume`/`doOnError` block registering token failures with `TokenAvailabilityTracker`. Inconsistent sibling pattern across three near-identical schedulers.
 
-- **Stage 4c still has zero live/runtime observation of a position surviving a trading-day boundary** — design is now correct for the first time (FORCE_CLOSE_EOD + DTE boundary fixes on main). No open position exists as of session end. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary.
-- **Merge decision made:** `feature/adding_periodic_entry_retry` will be merged to main. Rationale: without the retry mechanism, entries only happen once daily at 9:30 AM and may miss the window entirely on any given day — this slows arrival of Stage 4c's first observation rather than protecting it. The two features (entry retry, exit timing) don't interact with each other's core logic, so merging doesn't confound root-causing between them. Same evidence discipline applies to whatever happens next regardless of branch state.
-- Zerodha token refresh remains manual (~6 AM) — accepted operational reality.
+4. **`OIAnalysis.data` column — dead, write-only, and buggy.** Confirmed via grep: zero callers of `getData()` anywhere in codebase. Duplicates `topCallWallsJson`/`topPutWallsJson` with a third, incomplete copy (serialization-order bug means `data` is set before the wall JSON fields are populated). Two prior migrations (012, 013) already flagged this column as "supplementary, not critical." **Recommendation: drop column, not fix the bug** — remove `data` field, `@Column("data")`, and `analysis.setData(...)` call from `OIAnalyserService`; add Liquibase migration `014-drop-oi-snapshots-data-column.yaml`. Batch with dead-method-style cleanup.
 
-## Tracked gaps (logged, not scheduled)
+5. **`MarkToMarketScheduler` — missing token availability guard.** Confirmed via grep: zero matches for `tokenTracker`/`TokenAvailabilityTracker` in `PaperTradingEngine.java`. Every other scheduler (`IntelligenceScheduler`, `IvHistoryScheduler`, `MaxPainScheduler`, `OIAnalysisScheduler`, `VixScheduler.fetchVixData`) checks token availability before Kite calls; this one doesn't, per `.clinerules`.
 
-- No exit path places a real Kite order — all exits remain DB-only. Address only when live trading becomes active.
-- Two stale Javadoc comments in `PaperTradingEngine.java` still reference "force-close-time check" after removal — Tier 1, cosmetic, not yet done.
-- Leftover unused mock fields from this week's test-fixing iterations — cosmetic, Tier 1, safe anytime.
+6. **`VixScheduler.persistVixData()` — missing token guard.** Same class of gap as #5; `fetchVixData()` on the same class has the guard, `persistVixData()` doesn't. Low real risk (internally handled via `onErrorResume` in `VixMonitorService`), but inconsistent.
+
+7. **`VixMonitorService.fetchAndSave()` can persist a stale cached VIX value under a fresh timestamp.** `fetchAndSave()` → `fetchCurrentVix()` reads cache first (5-min TTL); persisted at 15-min intervals, so a value up to 5 minutes stale can be written with `recorded_at = Instant.now()`, implying freshness it doesn't have. Acceptable given the interval design; not urgent.
+
+8. **`MaxPainCalculatorService` — dead redundant private `getLotSize()` wrapper.** Duplicates the inline `lotSizeService.getLotSize(symbol)` call already used in `performCalculation()`. Unused elsewhere in the file. Cosmetic.
+
+9. **`dailySafetyNetCheck()` cron mistimed for live mode.** Fires 9:00 AM, before NSE open (9:15 AM) — cannot place a corrective exit order at that time; harmless in paper mode (no real order ever fires). Correct fix is **not** moving to 9:15/9:16 (creates a race with `MarkToMarketScheduler`'s first ticks acting on the same positions). Target: **~9:20 AM**, giving the primary mark-to-market cycle 5 clean ticks first, preserving the safety net as genuinely redundant rather than competing. Also missing the `marketCalendarService.isMarketOpen()` filter that the other three `TradingScheduler` methods have — runs unconditionally on any weekday including holidays. Explicitly considered and rejected: removing the method entirely — it's the only backstop against a silent primary-mechanism failure (same failure class as the already-caught Stage 4c scheduler bug). Batch this fix with the live-order-placement design cycle — same exit path, same review pass.
+
+10. **`MarketCalendarService.isTradingDay()` fails open on missing year data.** If a year isn't in the hardcoded `NSE_HOLIDAYS` map (e.g. 2027 arrives and nobody's updated the file), the method returns `true` with only a WARN log — silently treating every NSE holiday as a trading day. Storage location (static map vs. YAML vs. DB) was evaluated and is **not** the fix — annual maintenance is unavoidable regardless of where the data lives, and a DB/YAML migration adds cost (round-trips or config-binding overhead) for ~12 rows/year with no live-mode benefit today. **Actual fix:** change the fallback to fail safe (`return false` + ERROR log/alert) instead of failing open. Harmless in paper mode; **must fix before live go-live** since it directly gates order-placement timing. Practical mitigation: annual reminder to add next year's holiday set before December.
+
+11. **`TradingScheduler` — double-subscribe pattern.** `executeDailyEntry`, `scheduledDailyExit`, `scheduledDailyReport` each wrap an inner `.subscribe()` inside `Mono.fromRunnable(...)` which is itself inside an outer `.subscribe()`. Functionally harmless (both complete correctly) but unnecessarily complex — three near-identical instances. Readability cleanup candidate, not a bug, not urgent.
+
+## Full gap-sweep results (2026-07-04, 8 items, all closed)
+
+1. TODOs — 4 found, all legitimate/intentional (SignalService ML inference, TickerService WebSocket integration, TradingOrchestrator VIX-freshness architectural note) — not bugs, no action.
+2. `generateIntelligence` vs `generateFreshIntelligence` — confirmed correct: entry path uses fresh; `monitorOpenPositions` uses cached, with explicit comment flagging as intentional pending VIX/regime-based exits.
+3. `.block()` — zero matches (one grep hit was a comment, not real code).
+4. `@PostLoad` — 2 matches, real bug, fixed.
+5. `existsByStrategyNameAndTradeDateAndStatus` — dead code, confirmed zero callers 2026-07-04, **removed 2026-07-05**.
+6. `exitAllPositions` callers — zero production callers, confirmed post-fix.
+7. Hardcoded lot sizes in strategy package — zero matches, clean.
+8. Test-count-vs-comment mismatch — none.
+
+## Tracked gaps — carried forward, not scheduled
+
+- **LEG_BREACH exit check is stubbed, not implemented.** Confirmed via sed/grep: comment only, no logic. README lists it as active exit priority for IRON_CONDOR/spreads; it is not. Rejected for implementation now — new automated layer, blocked by standing Stage 4c gate. **Scheduled: implement immediately after Stage 4c's first live trading-day-boundary crossing is confirmed**, full JUnit coverage, same review rigor. README correction still pending.
+- **`OrderExecutionService` — confirmed dead code, zero production callers.** Not a bug; premature Phase 4 scaffolding sitting unused. No action until live trading's dedicated design cycle opens. Do not extend further until then.
+- No exit path anywhere places a real Kite order — all exits (including today's fixes) only write to the database. Address only when live trading becomes an active initiative; requires its own dedicated design cycle (order placement, confirmation/retry, alerting, timing across every exit path).
+- Mixed line-endings (CRLF creeping into Cline diffs) — not urgent, consider `.gitattributes` normalization at some point.
 
 ## Evidence standard (unchanged)
-Risk-tiered, evidence always from Kuldeep, not Cline. Tier 1: one targeted command. Tier 3 (entry/exit, scheduler, DB writes): diff + grep + test names/counts. Narrative without real command output rejected at any tier — reconfirmed repeatedly this week; several "done" reports from Cline were incomplete or fabricated (missed call sites, unused imports, mismatched Mockito matchers, stale hardcoded test dates) and only caught because build/test evidence was demanded before acceptance.
+
+Risk-tiered, evidence always from Kuldeep, not Cline:
+- **Tier 1** (config, docs, logging, read-only, cosmetic): one targeted piece of evidence.
+- **Tier 3** (P&L, entry/exit, scheduler wiring, lot size, cache freshness, DB writes): diff of changed methods, targeted grep for "only caller"/"doesn't exist elsewhere" claims, specific test names with old→new count.
+- Narrative instead of real command output is rejected at any tier.
+- Kuldeep's override right: if a risk is explicitly acknowledged and Kuldeep says "proceed anyway," document the risk in one line and proceed without further resistance. Paper mode accepts higher risk than live mode — calibrate accordingly.
 
 ## No open Cline task right now
 
-## Session changelog (most recent 5)
-- **2026-07-08:** Live retry-mechanism observation confirmed working correctly (single strategy selected, correct pre-flight gating, BEAR_CALL_SPREAD entered cleanly at 10:30 AM). Discovered and fixed a real live P&L netting bug while monitoring that same open position: `calculateSpreadCurrentValue()`/`calculateIronCondorCurrentValue()`/`calculateDefaultCurrentValue()` summed leg LTPs instead of signed-netting by SELL/BUY direction, causing `liveUnrealizedPnl` to diverge wildly (-86.15 vs correct -3.35) from the correctly-calculated stored value. Fixed all three methods, added dedicated test coverage, confirmed the fix live against the same position (values now match exactly). 221 tests, pushed, not yet merged.
-- **2026-07-07:** Observed EXPIRY_DAY_STRANGLE correctly hard-skip on real expiry day due to OI-wall structural invalidity (spot moved above call wall) — confirmed working as designed, no action. Implemented periodic entry-retry mechanism for all 4 strategies (second explicit gate override this week) on new branch `feature/adding_periodic_entry_retry`: latest-entry-time now enforced everywhere, 15-min retry cadence 9:45–13:30, kept scheduler repository-free per `.clinerules` after catching an initial design violation. Fixed a hardcoded test date that silently broke as the calendar advanced. Live log review on expiry day surfaced a second retry-loop design bug (calling `runTradingCycle()` once per strategy name instead of once per cycle, causing 3x redundant API calls and misleading logs) — fixed via `StrategySelector.getSelectedStrategyName()`, with a first-pass Cline implementation rejected before merge for silently dropping the pre-flight gating it claimed to include. 209 tests throughout, pushed, not yet merged.
-- **2026-07-06:** Merged `feature/paper_trade_sit_issues` to main. Implemented LEG_BREACH (first gate override). During live market-hours testing, discovered and fixed the DTE boundary overlap and FORCE_CLOSE_EOD bugs — likely the actual explanation for Stage 4c's persistent zero-observation status. Added DTE_EXIT time-gate. README correction, `.gitattributes`, dead repo method cleanup also closed. 209 tests.
-- 2026-07-04: Adopted final evidence charter. Fixed Stage 4c scheduler defect and `@PostLoad` bug via full gap sweep.
+## Session changelog (most recent 6)
+- 2026-07-05: Full code-review pass across execution, intelligence (market intelligence, IV, max pain, OI, VIX), and trading-scheduler packages. Confirmed removal of dead repository method. Found and logged 11 new tracked gaps (Tier 1/3), all deliberately not actioned — none touch the Stage 4c gate. Notable: identified and corrected own initial recommendation on `dailySafetyNetCheck` retiming (9:15 rejected due to race with MarkToMarketScheduler; 9:20 is correct). Rejected proposal to remove `dailySafetyNetCheck()` entirely. Rejected YAML/DB migration for NSE holiday storage as solving the wrong problem; identified actual defect (fail-open fallback) instead.
+- 2026-07-04: Adopted final charter (risk-tiered evidence, Kuldeep-sourced). Found & fixed Stage 4c scheduler defect. Ran full 8-item gap sweep; found & fixed `@PostLoad` bug in 2 entities. Closed all 8 sweep items. Generated CURRENT_STATE.md + handoff summary.
+- 2026-07-04 (earlier): Verified 2 README "Paper-Tested" claims against real `paper_trades` rows; found credit-value error (31.5→30.9).
 - 2026-07-03: Stage 4c claimed complete, 171 tests — since found incomplete.
