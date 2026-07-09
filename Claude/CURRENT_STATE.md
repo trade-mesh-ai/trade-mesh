@@ -1,14 +1,15 @@
 # TradeMesh — Current State
 
-**Last updated:** 2026-07-08 (Wednesday — live P&L netting bug found and fixed during retry-mechanism observation)
+**Last updated:** 2026-07-09 (Thursday — position sizing branch: capital-based, VIX-scaled, confidence-scaled sizing for Iron Condor)
 
 ## Source-of-truth rule
 Most recent verified evidence > this file > README.md narrative.
 
 ## Branch state
 - `feature/paper_trade_sit_issues` — **merged to main.** Contains: LEG_BREACH, DTE boundary fix, DTE_EXIT time-gate, FORCE_CLOSE_EOD removal.
-- `feature/adding_periodic_entry_retry` — **merged to main.** Contains: latest-entry-time enforcement, periodic entry retry scheduler, retry-loop single-call fix, stale Javadoc cleanup. Merge rationale documented below.
-- `feature/issue_in_pnl_calulation` — pushed, **not yet merged.** Contains: live P&L netting bug fix, plus 11 validated code-review gaps from a separate July 5 review session (see below). Currently being merged with `main` to reconcile with the retry-mechanism work.
+- `feature/adding_periodic_entry_retry` — **merged to main.** Contains: latest-entry-time enforcement, periodic entry retry scheduler, retry-loop single-call fix, stale Javadoc cleanup.
+- `feature/issue_in_pnl_calulation` — **merged to main.** Contains: live P&L netting bug fix, plus 11 validated code-review gaps from a separate July 5 review session.
+- `feature/position_sizing_vix_lot_multiplier` — new branch, **not yet merged, deliberately kept off main.** Contains capital-based, VIX-scaled, and confidence-scaled position sizing for Iron Condor (capital+VIX only for the two spreads). See full summary below.
 
 ## Verified, stable (merged to main)
 
@@ -22,8 +23,47 @@ Most recent verified evidence > this file > README.md narrative.
 | **DTE_EXIT time-gate** | `dte-exit-earliest-time` (default "10:00") — DTE_EXIT no longer fires in the first minute of the threshold day. | 2026-07-06, 209 tests |
 | **FORCE_CLOSE_EOD removed (IRON_CONDOR/spreads)** | Was silently active (config-gated for IRON_CONDOR, hardcoded for spreads), contradicting README, force-closing all three daily regardless of DTE. **Likely the actual reason Stage 4c had zero live observation.** Removed. EXPIRY_DAY_STRANGLE confirmed unaffected (separate scheduler path). | 2026-07-06, 209 tests |
 | **Periodic entry retry** | Latest-entry-time now enforced for all 4 strategies; `scheduledEntryRetry()` re-attempts entry every 15 min, 9:45 AM–1:30 PM, gated on no-open-position + before-latest-entry-time. Retry-loop design bug (once-per-strategy-name instead of once-per-cycle) found live on expiry day and fixed via `StrategySelector.getSelectedStrategyName()`. | 2026-07-07, 209 tests |
+| **Live P&L netting fix** | `calculateSpreadCurrentValue()`/`calculateIronCondorCurrentValue()`/`calculateDefaultCurrentValue()` were unconditionally summing leg LTPs instead of signed-netting by SELL/BUY direction — fixed. | 2026-07-08, 255 tests |
+| **11 validated code-review gaps** | Null-candle Reactor bug, IV idempotency ordering, OI/VIX/MTM scheduler token handling, dead column/wrapper removal, stale VIX timestamp, safety-net timing, calendar fail-safe fix, double-subscribe cleanup — see 2026-07-08 changelog entry for full detail. | 2026-07-08, 255 tests |
 
-## New this session (2026-07-08) — live P&L netting bug + 11 validated code-review gaps, on `feature/issue_in_pnl_calulation`
+## Standing gate recalibration (2026-07-08/09) — governs how newer work was approved
+
+The Stage 4c gate was originally a blanket block on all new development pending live confirmation. Recalibrated: **the gate now applies only to code touching `markToMarket()`, `isDteExitDue()`, `shouldExitIronCondor()`/`shouldExitSpread()`, and `FORCE_CLOSE_EOD`/`DTE_EXIT` logic.** Entry-side work (including all position-sizing work below) proceeds normally without requiring an explicit override, since it was never really in scope of the original confounding-root-cause risk. Rationale: Iron Condor may not fire for weeks (IVR immature until Aug 1), spreads may take 3-6 days depending on market conditions, and blocking independent entry-side work on that timeline had no real safety benefit.
+
+## `feature/position_sizing_vix_lot_multiplier` — full summary (2026-07-09)
+
+**Starting point:** all four strategies traded a hardcoded `max-lots: 1` regardless of account capital, market volatility, or trade quality — explicitly flagged in README's own Phase 3 roadmap as needing capital-based sizing eventually. This branch built that out in three layers, for Iron Condor and (partially) the two spreads.
+
+### Layer 1 — Capital-based sizing (all three defined-risk strategies: Iron Condor, Bull Put Spread, Bear Call Spread)
+
+Found and fixed a real circular-dependency bug in passing: the existing `maxLoss = (wingWidth - netCredit) × lotSize × lots` formula couldn't be evaluated before `lots` was known, but `lots` was being derived *from* `maxLoss` in the new design. Fixed by separating `maxLossPerLot` (risk of one lot, computable immediately after `netCredit`) from the final `maxLoss` (computed *after* `lots` is determined). Added `LotSizeService.getPositionSize(BigDecimal maxLossPerLot)`: `lots = floor((accountCapital × riskPercent) / maxLossPerLot)`, floored at 1, capped at `cfg.getMaxLots()` (which now serves as a safety ceiling, not the source of truth). New top-level config: `trading.account-capital`, `trading.risk-percent-per-trade` (placeholder values — need real numbers from Kuldeep before this is meaningful). `ExpiryDayStrategy` explicitly excluded — it's a naked strangle with no `wingWidth`-bounded max loss, needs its own design discussion (see Tracked Gaps).
+
+### Layer 2 — VIX-based sizing (Iron Condor, Bull Put Spread, Bear Call Spread)
+
+New `getPositionSize(maxLossPerLot, currentVix)` overload: VIX>18 scales to 0.5x, VIX≤18 stays full size, floored at 1 lot even after scaling. Required threading `currentVix` as a new parameter into `IronCondorStrategy.selectStrikesAndBuildSignal()` — it was declared in `evaluate()`'s outer lambda but that method is a separate private method with its own scope, discovered only after a real compile error (assumed-in-scope claims should always be verified, not trusted).
+
+**The accompanying integration test (`IronCondorStrategyVixScalingTest`) required five distinct rounds of real debugging** before passing — a good case study in not accepting "should work" reasoning:
+1. A wall-clock-dependent hardcoded `latestEntryTime: "15:00"` in the test's mock config caused every test to fail if run after 3 PM (same bug class as two earlier date-hardcoding incidents this session).
+2. The mock option chain's uniform flat LTPs produced exactly zero net credit, correctly rejected by the strategy's min-credit gate — invisible until Standard Output logs were actually read.
+3. The initial strike range (±500 from spot) was too narrow for the delta-based strike selector to find a valid far-OTM short strike at all.
+4. A stale cached HTML test report was mistakenly read as current output, showing an unrelated "3 open positions" message from a different test run — resolved by re-running fresh via `--info` console output instead of trusting the report file.
+5. Once real strikes were known (`shortCall=50600, shortPut=49500` via temporary debug logging) and a correct LTP formula was hand-derived, the final failure was a `BigDecimal` scale mismatch in Mockito's exact-match stubbing (`new BigDecimal("10920")` ≠ `10920.0` under `.equals()`) — fixed by matching the literal's scale to what the real code produces.
+
+**Lesson reinforced:** every one of these was found by reading actual Standard Output/debug logs, never by hand-calculation alone — hand-calculated "should be X" values were wrong or unverifiable at least three separate times in this one test's history.
+
+### Layer 3 — Confidence-based sizing (Iron Condor only)
+
+New `getPositionSize(maxLossPerLot, currentVix, confidenceScore, minScore)` 4-arg overload, composing VIX-scaling and confidence-scaling multiplicatively. Formula: `multiplier = clamp(0.5 + (score - minScore) / (2 × (100 - minScore)), 0.5, 1.0)` — continuous, not stepped, and scales relative to whatever `min-score` is actually configured rather than a hardcoded 60.
+
+**Discovered a real, separate architectural gap in the process:** `BullPutSpreadStrategy`/`BearCallSpreadStrategy` have no confidence-scoring mechanism at all (hardcoded `Confidence.MEDIUM` label, no computed score, no `min-score` gate) — confirmed this should exist for them too (the "not every valid setup is equally good" rationale is structure-agnostic), but building it requires real design work, not a copy of Iron Condor's formula: IVR/IV-HV transfer unchanged, ATR% likely needs a different threshold (one-sided vs two-sided breach risk), PCR's interpretation needs to flip from "penalize extremity" to "reward directional agreement," and a new trend-strength factor is likely needed since Iron Condor has no equivalent. Deliberately deferred as its own dedicated session (see Tracked Gaps).
+
+### Principle established: sizing-vs-scoring double-count
+
+While building Layer 3, identified that VIX was being used **three times simultaneously**: hard entry gate (`max-vix`), a confidence-score input (max 15/100 points), and now a sizing multiplier — with the compounding effect between the scoring and sizing treatments never deliberately chosen, just an artifact of building two features independently. **Established principle: a factor may have a hard gate plus at most ONE graded mechanism (confidence-score input OR sizing multiplier, not both).** Acted on it immediately: removed VIX from Iron Condor's confidence score entirely (was max 15 of 100; remaining IVR+IV/HV+ATR%+PCR = max 85), recalibrated `min-score` from 60 to 51 (preserving the 60% pass bar against the new ceiling, Option B — no reweighting of the other four factors' existing point values). Cleaned up a resulting dead `vixData` parameter on `calculateConfidenceScore()` as a byproduct. Added dedicated `IronCondorConfidenceScoreTest.java` — this specific method had zero direct unit test coverage before, only incidental values from unrelated integration tests. **Standing reminder logged for future work: when an ATR%-based sizing multiplier is eventually added, remove ATR% from the confidence score in the same change, following this identical pattern** — don't let it become a second unprincipled double-count.
+
+**Final state: 292 tests, BUILD SUCCESSFUL throughout, every production-code claim independently re-verified via grep/direct code inspection or debug logging before acceptance — several Cline "done" reports during this branch were incomplete or based on unverified hand-calculations and required correction (missing test coverage caught twice, a wrong assumed method-scope claim, guessed confidence-score replacement values that turned out numerically correct by chance but were rightly not trusted without verification).**
+
+## P&L netting bug and 11 validated code-review gaps (2026-07-08, merged to main)
 
 **Real bug found while observing the live BEAR_CALL_SPREAD position opened via the retry mechanism this morning (entered 10:30 AM via `scheduledEntryRetry()` — confirms the retry-loop fix works correctly in live conditions: exactly one strategy logged, correct pre-flight gating).**
 
@@ -51,7 +91,7 @@ Most recent verified evidence > this file > README.md narrative.
 
 Each item above was independently re-verified via grep/direct code inspection before fixing — not accepted on the other session's narrative alone, consistent with this session's standing evidence discipline. Several Cline "done" reports during this work were rejected and required rework (missing test coverage on the first pass for at least 4 of the 11 items; a wrong-file mixup on item 8; a fire-and-forget test-timing bug on item 5 traced to hardcoded wall-clock time).
 
-255 tests, BUILD SUCCESSFUL throughout, all 11 items + the P&L fix committed individually and pushed to `feature/issue_in_pnl_calulation`. **Currently merging `main` into this branch to reconcile with the retry-mechanism work** (this branch predates that merge — branched from `7dd6710`, before `main`'s `1fa8907` retry-mechanism merge commit).
+255 tests, BUILD SUCCESSFUL throughout, all 11 items + the P&L fix committed individually. Branch merged with `main` (reconciling with the retry-mechanism work from the same day, since this branch predated that merge) and subsequently merged to `main` itself.
 
 ## Live paper-trading observations (2026-07-06 Monday, 2026-07-07 Tuesday/expiry day)
 
@@ -64,13 +104,6 @@ Each item above was independently re-verified via grep/direct code inspection be
 ## Open / Unverified
 
 - **Stage 4c still has zero live/runtime observation of a position surviving a trading-day boundary.** Design is now correct (FORCE_CLOSE_EOD + DTE boundary fixes on main). One BEAR_CALL_SPREAD position this session held 3h43m intraday (10:30 AM–2:13 PM, closed via TARGET_HIT) — a genuine multi-hour hold, but same-day, not yet an overnight/trading-day-boundary crossing. No open position exists as of this point in the session. Real validation trigger = next time a DTE-governed strategy opens a position and survives a trading-day boundary.
-- **Standing gate recalibrated (2026-07-08):** the Stage 4c gate was originally treated as a blanket block on all new development until live confirmation. Recalibrated to be scoped correctly to its actual justification (avoiding confounded root-cause analysis if Stage 4c's exit behavior breaks while unobserved). **The gate now applies only to code touching:**
-  - `markToMarket()`
-  - `isDteExitDue()`
-  - `shouldExitIronCondor()` / `shouldExitSpread()`
-  - `FORCE_CLOSE_EOD` / `DTE_EXIT` logic
-
-  Everything else (entry-side logic, position sizing, strike selection, non-exit-path features) proceeds normally without requiring an explicit override — it was never really in scope of the original risk, just swept up under an overly broad rule. Branch strategy (feature branches vs. main) provides additional safety where useful, independent of this gate. Rationale for the recalibration: Iron Condor may not fire for weeks (IVR still immature until Aug 1, PCR not yet contributing to confidence scoring), spread strategies may take 3-6 days depending on market conditions, and blocking all independent work on that timeline has no real safety benefit.
 - Zerodha token refresh remains manual (~6 AM) — accepted operational reality.
 
 ## Tracked gaps (logged, not scheduled)
@@ -88,9 +121,10 @@ Risk-tiered, evidence always from Kuldeep, not Cline. Tier 1: one targeted comma
 
 ## No open Cline task right now
 
-## Session changelog (most recent 6)
+## Session changelog (most recent 7)
 
-- **2026-07-08:** Live retry-mechanism observation confirmed working correctly (single strategy selected, correct pre-flight gating, BEAR_CALL_SPREAD entered cleanly at 10:30 AM, later closed via TARGET_HIT after a 3h43m hold). Discovered and fixed a real live P&L netting bug while monitoring that same open position across all three current-value calculation methods. Separately validated and fixed all 11 gaps from an independent July 5 code-review session — real bugs across token handling, dead code, timestamp accuracy, scheduler timing, and a genuinely subtle Reactor null-handling defect; also found and fixed a previously-undiscovered no-op Telegram alert stub in passing. 255 tests, all committed individually, pushed to `feature/issue_in_pnl_calulation`, now merging `main` to reconcile with the retry-mechanism work merged there earlier the same day.
+- **2026-07-09:** Built three-layer position sizing for Iron Condor (capital-based, VIX-scaled, confidence-scaled) plus capital+VIX sizing for both spreads, on new branch `feature/position_sizing_vix_lot_multiplier` — recalibrated the Stage 4c gate first to confirm this entry-side work was never actually in its scope. Found and fixed a real circular-dependency bug in the existing maxLoss formula in passing. Established a durable principle (no factor should be both a confidence-score input and a sizing multiplier) and applied it immediately by removing VIX from Iron Condor's confidence score, recalibrating min-score 60→51. Discovered two significant new architectural gaps in the process (ExpiryDayStrategy has no sizing-compatible risk formula; the two spread strategies have no confidence-scoring mechanism at all) and logged both rather than scope-creeping into fixing them. The VIX-scaling integration test required five genuinely separate rounds of debugging (wall-clock time gate, unrealistic mock LTPs, too-narrow strike range, a misleading stale test report, a BigDecimal scale mismatch) — none solvable by hand-calculation alone, all resolved by reading real Standard Output. 292 tests, BUILD SUCCESSFUL throughout, kept deliberately off main.
+- **2026-07-08:** Live retry-mechanism observation confirmed working correctly (single strategy selected, correct pre-flight gating, BEAR_CALL_SPREAD entered cleanly at 10:30 AM, later closed via TARGET_HIT after a 3h43m hold). Discovered and fixed a real live P&L netting bug while monitoring that same open position across all three current-value calculation methods. Separately validated and fixed all 11 gaps from an independent July 5 code-review session — real bugs across token handling, dead code, timestamp accuracy, scheduler timing, and a genuinely subtle Reactor null-handling defect; also found and fixed a previously-undiscovered no-op Telegram alert stub in passing. 255 tests. Branch reconciled with `main` (which had received the retry-mechanism merge earlier the same day) and merged to `main`.
 - **2026-07-07:** Observed EXPIRY_DAY_STRANGLE correctly hard-skip on real expiry day due to OI-wall structural invalidity (spot moved above call wall) — confirmed working as designed, no action. Implemented periodic entry-retry mechanism for all 4 strategies (second explicit gate override this week): latest-entry-time now enforced everywhere, 15-min retry cadence 9:45–13:30, kept scheduler repository-free per `.clinerules` after catching an initial design violation. Live log review on expiry day surfaced a retry-loop design bug (calling `runTradingCycle()` once per strategy name instead of once per cycle) — fixed via `StrategySelector.getSelectedStrategyName()`. Merged to main. 209 tests.
 - **2026-07-06:** Merged `feature/paper_trade_sit_issues` to main. Implemented LEG_BREACH (first gate override). During live market-hours testing, discovered and fixed the DTE boundary overlap and FORCE_CLOSE_EOD bugs — likely the actual explanation for Stage 4c's persistent zero-observation status. Added DTE_EXIT time-gate. README correction, `.gitattributes`, dead repo method cleanup also closed. 209 tests.
 - 2026-07-04: Adopted final evidence charter. Fixed Stage 4c scheduler defect and `@PostLoad` bug via full gap sweep.
