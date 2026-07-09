@@ -227,7 +227,7 @@ trading-strategies:
       wing-width: 200
       strike-step: 50
       min-credit-pct: 0.15
-      min-score: 60
+      min-score: 51
       ivr-min: 20.0
       ivr-max: 80.0
       iv-hv-ratio-min: 1.1

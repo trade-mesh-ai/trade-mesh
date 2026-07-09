@@ -72,10 +72,11 @@ public class IronCondorStrategy implements TradingStrategy {
     }
 
     /**
-     * Calculates confidence score based on market metrics and VIX data.
-     * Scores IVR, IV/HV ratio, ATR%, VIX, and PCR to determine entry confidence.
+     * Calculates confidence score based on market metrics.
+     * Scores IVR, IV/HV ratio, ATR%, and PCR to determine entry confidence (4 factors, max 85 points).
+     * VIX is handled separately via hard entry gate (max-vix) and sizing multiplier, not confidence score.
      */
-    private int calculateConfidenceScore(MarketMetrics metrics, VixData vixData) {
+    int calculateConfidenceScore(MarketMetrics metrics) {
         int score = 0;
 
         // IVR scoring
@@ -102,17 +103,6 @@ public class IronCondorStrategy implements TradingStrategy {
             else score -= 20; // penalty for high ATR
         }
 
-        // VIX scoring
-        if (vixData != null) {
-            double vix = vixData.getCurrentVix();
-            if (vix >= 12 && vix < 16) score += 15;      // ideal
-            else if (vix >= 16 && vix <= 20) score += 5;  // acceptable
-            else if (vix > 20) score -= 50;               // hard penalty
-            // vix < 12 → 0 pts (too calm, low premium)
-        } else {
-            log.debug("VIX unavailable for scoring");
-        }
-
         // PCR scoring
         if (metrics.getPcr() != null) {
             double pcr = metrics.getPcr().doubleValue();
@@ -122,9 +112,8 @@ public class IronCondorStrategy implements TradingStrategy {
             log.debug("PCR scoring: pcr={}, contribution={}", pcr, (pcr >= 0.8 && pcr <= 1.2) ? 15 : 0);
         }
 
-        log.debug("Iron Condor confidence score: IVR={}, IV/HV={}, ATR%={}, VIX={}, PCR={}, total={}",
+        log.debug("Iron Condor confidence score: IVR={}, IV/HV={}, ATR%={}, PCR={}, total={}",
                 metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(),
-                vixData != null ? vixData.getCurrentVix() : "N/A",
                 metrics.getPcr(), score);
 
         return score;
@@ -174,14 +163,14 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
-         double tte = dte / 365.0;
-         double atmIv = metrics.getCurrentAtmIv() != null ?
-                 metrics.getCurrentAtmIv().doubleValue() : 15.0;
-         double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
-         int wingWidth = cfg.getExtraInt("wing-width", 200);
-         int lotSize = lotSizeService.getLotSize("NIFTY50");
+        double tte = dte / 365.0;
+        double atmIv = metrics.getCurrentAtmIv() != null ?
+                metrics.getCurrentAtmIv().doubleValue() : 15.0;
+        double targetDelta = cfg.getExtraDouble("target-delta", 0.18);
+        int wingWidth = cfg.getExtraInt("wing-width", 200);
+        int lotSize = lotSizeService.getLotSize("NIFTY50");
 
-         // Find short CALL strike (first strike with delta <= targetDelta, above spot)
+        // Find short CALL strike (first strike with delta <= targetDelta, above spot)
         OptionStrike callStrike = chain.getStrikes().stream()
                 .filter(s -> s.getStrikePrice().doubleValue() > spotPrice)
                 .sorted((a, b) -> a.getStrikePrice().compareTo(b.getStrikePrice()))
@@ -249,17 +238,17 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
-         // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
-                 .multiply(BigDecimal.valueOf(lotSize));
+        // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
+                .multiply(BigDecimal.valueOf(lotSize));
 
-          // Capital-based position sizing with VIX and confidence scaling: compute lots from risk budget
-          // Capped by cfg.getMaxLots() as hard ceiling
-          int minScore = cfg.getExtraInt("min-score", 60);
-          int lots = Math.min(
-                  lotSizeService.getPositionSize(maxLossPerLot, currentVix, confidenceScore, minScore),
-                  cfg.getMaxLots()
-          );
+        // Capital-based position sizing with VIX and confidence scaling: compute lots from risk budget
+        // Capped by cfg.getMaxLots() as hard ceiling
+        int minScore = cfg.getExtraInt("min-score", 51);
+        int lots = Math.min(
+                lotSizeService.getPositionSize(maxLossPerLot, currentVix, confidenceScore, minScore),
+                cfg.getMaxLots()
+        );
 
         // P&L matrix (recomputed with actual lots)
         BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
@@ -422,9 +411,9 @@ public class IronCondorStrategy implements TradingStrategy {
                                             .build());
                                 }
 
-                                // Confidence score — now pass vixData
-                                int score = calculateConfidenceScore(metrics, vixData);
-                                int minScore = cfg.getExtraInt("min-score", 60);
+                                // Confidence score
+                                int score = calculateConfidenceScore(metrics);
+                                int minScore = cfg.getExtraInt("min-score", 51);
                                 log.info("Iron Condor confidence score: {}/{}", score, minScore);
 
                                 if (score < minScore) {

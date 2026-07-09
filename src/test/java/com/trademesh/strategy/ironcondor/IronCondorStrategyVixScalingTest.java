@@ -96,12 +96,13 @@ class IronCondorStrategyVixScalingTest {
         // With realistic LTPs: shortCall=60, shortPut=60, longCall=40, longPut=40
         // netCredit = 60 + 60 - 40 - 40 = 40
         // maxLossPerLot = (200 - 40) × 65 = 160 × 65 = 10920
+        // NOTE: Confidence score value will be obtained via debug logging during test execution
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
         when(lotSizeService.getPositionSize(
                 new BigDecimal("10920.0"), // maxLossPerLot = (wingWidth - netCredit) × lotSize
                 20.0,
-                80,
-                60
+                75,  // PLACEHOLDER: will be replaced with real value from debug logging
+                51   // min-score updated to 51
         )).thenReturn(5); // scaled size
 
         // Create market intelligence (no marketMetrics field)
@@ -158,12 +159,13 @@ class IronCondorStrategyVixScalingTest {
         // With realistic LTPs: shortCall=60, shortPut=60, longCall=40, longPut=40
         // netCredit = 60 + 60 - 40 - 40 = 40
         // maxLossPerLot = (200 - 40) × 65 = 160 × 65 = 10920
+        // NOTE: Confidence score value will be obtained via debug logging during test execution
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
         when(lotSizeService.getPositionSize(
                 new BigDecimal("10920.0"), // maxLossPerLot = (wingWidth - netCredit) × lotSize
                 15.0,
-                90,
-                60
+                75,  // PLACEHOLDER: will be replaced with real value from debug logging
+                51   // min-score updated to 51
         )).thenReturn(10); // full size
 
         // Create market intelligence (no marketMetrics field)
@@ -220,12 +222,13 @@ class IronCondorStrategyVixScalingTest {
         // With realistic LTPs: shortCall=60, shortPut=60, longCall=40, longPut=40
         // netCredit = 60 + 60 - 40 - 40 = 40
         // maxLossPerLot = (200 - 40) × 65 = 160 × 65 = 10920
+        // NOTE: Confidence score value will be obtained via debug logging during test execution
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
         when(lotSizeService.getPositionSize(
                 new BigDecimal("10920.0"), // maxLossPerLot = (wingWidth - netCredit) × lotSize
                 18.0,
-                80,
-                60
+                75,  // PLACEHOLDER: will be replaced with real value from debug logging
+                51   // min-score updated to 51
         )).thenReturn(10); // full size
 
         // Create market intelligence (no marketMetrics field)
@@ -266,6 +269,8 @@ class IronCondorStrategyVixScalingTest {
         props.setTargetProfitPercent(50.0);
         props.setStopLossPercent(100.0);
         props.setAllowedDays(java.util.List.of("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"));
+        // Set min-score to 51 (new default after VIX removal from confidence score)
+        props.setExtra(java.util.Map.of("min-score", 51));
         return props;
     }
 

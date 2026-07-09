@@ -123,17 +123,17 @@ public class BearCallSpreadStrategy implements TradingStrategy {
                     .build());
         }
 
-         // Strike selection
-         // Strike-selection DTE (calendar days — matches /365.0
-         // calendar-year denominator, same convention as
-         // IronCondorStrategy.selectStrikesAndBuildSignal)
-         int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
-         double tte = calendarDte / 365.0;
-         double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
-         int wingWidth = cfg.getExtraInt("wing-width", 100);
-         int lotSize = lotSizeService.getLotSize("NIFTY50");
+        // Strike selection
+        // Strike-selection DTE (calendar days — matches /365.0
+        // calendar-year denominator, same convention as
+        // IronCondorStrategy.selectStrikesAndBuildSignal)
+        int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
+        double tte = calendarDte / 365.0;
+        double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
+        int wingWidth = cfg.getExtraInt("wing-width", 100);
+        int lotSize = lotSizeService.getLotSize("NIFTY50");
 
-         // Find short CALL strike (above spot, closest OTM with delta <= targetDelta)
+        // Find short CALL strike (above spot, closest OTM with delta <= targetDelta)
         OptionStrike shortCallStrike = chain.getStrikes().stream()
                 .filter(s -> s.getStrikePrice().doubleValue() > spotPrice)
                 .sorted((a, b) -> a.getStrikePrice().compareTo(b.getStrikePrice()))
@@ -187,12 +187,12 @@ public class BearCallSpreadStrategy implements TradingStrategy {
         BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
                 .multiply(BigDecimal.valueOf(lotSize));
 
-         // Capital-based position sizing with VIX scaling: compute lots from risk budget
-         // Capped by cfg.getMaxLots() as hard ceiling
-         int lots = Math.min(
-                 lotSizeService.getPositionSize(maxLossPerLot, currentVix),
-                 cfg.getMaxLots()
-         );
+        // Capital-based position sizing with VIX scaling: compute lots from risk budget
+        // Capped by cfg.getMaxLots() as hard ceiling
+        int lots = Math.min(
+                lotSizeService.getPositionSize(maxLossPerLot, currentVix),
+                cfg.getMaxLots()
+        );
 
         // P&L matrix (recomputed with actual lots)
         BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));

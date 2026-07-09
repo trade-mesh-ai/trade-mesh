@@ -99,7 +99,7 @@ public class LotSizeService {
      * - VIX ≤ 18.0: multiplier = 1.0 (full size, covers both 12-18 and <12)
      *
      * @param maxLossPerLot maximum loss per single lot (in rupees)
-     * @param currentVix current VIX level
+     * @param currentVix    current VIX level
      * @return number of lots to trade with VIX scaling applied, minimum 1
      */
     public int getPositionSize(BigDecimal maxLossPerLot, double currentVix) {
@@ -114,76 +114,76 @@ public class LotSizeService {
         return result;
     }
 
-     /**
-      * Determines VIX-based position size multiplier.
-      * <p>
-      * Tiers:
-      * - VIX > 18.0: return 0.5 (reduce to half size)
-      * - VIX ≤ 18.0: return 1.0 (full size)
-      *
-      * @param currentVix current VIX level
-      * @return multiplier to apply to base position size
-      */
-     private double getVixSizeMultiplier(double currentVix) {
-         if (currentVix > 18.0) {
-             return 0.5;
-         }
-         return 1.0; // covers both 12-18 and <12 per README's spec
-     }
+    /**
+     * Determines VIX-based position size multiplier.
+     * <p>
+     * Tiers:
+     * - VIX > 18.0: return 0.5 (reduce to half size)
+     * - VIX ≤ 18.0: return 1.0 (full size)
+     *
+     * @param currentVix current VIX level
+     * @return multiplier to apply to base position size
+     */
+    private double getVixSizeMultiplier(double currentVix) {
+        if (currentVix > 18.0) {
+            return 0.5;
+        }
+        return 1.0; // covers both 12-18 and <12 per README's spec
+    }
 
-     /**
-      * Calculates position size with both VIX-based and confidence-based scaling.
-      * <p>
-      * Formula:
-      * - vixScaledSize = getPositionSize(maxLossPerLot, currentVix) [VIX-scaled]
-      * - confidenceMultiplier = getConfidenceSizeMultiplier(confidenceScore, minScore)
-      * - scaledSize = floor(vixScaledSize × confidenceMultiplier)
-      * - return max(1, scaledSize) — never zero even after scaling
-      * <p>
-      * Confidence scaling adapts to configured min-score per strategy:
-      * - score = minScore: multiplier = 0.5 (half size)
-      * - score = 100: multiplier = 1.0 (full size)
-      * - score between minScore and 100: linear interpolation
-      *
-      * @param maxLossPerLot maximum loss per single lot (in rupees)
-      * @param currentVix current VIX level
-      * @param confidenceScore confidence score (0-100)
-      * @param minScore minimum confidence score threshold for this strategy
-      * @return number of lots to trade with both VIX and confidence scaling applied, minimum 1
-      */
-     public int getPositionSize(BigDecimal maxLossPerLot, double currentVix, int confidenceScore, int minScore) {
-         int vixScaledSize = getPositionSize(maxLossPerLot, currentVix);
-         double confidenceMultiplier = getConfidenceSizeMultiplier(confidenceScore, minScore);
-         int scaledSize = (int) Math.floor(vixScaledSize * confidenceMultiplier);
-         int result = Math.max(1, scaledSize);
+    /**
+     * Calculates position size with both VIX-based and confidence-based scaling.
+     * <p>
+     * Formula:
+     * - vixScaledSize = getPositionSize(maxLossPerLot, currentVix) [VIX-scaled]
+     * - confidenceMultiplier = getConfidenceSizeMultiplier(confidenceScore, minScore)
+     * - scaledSize = floor(vixScaledSize × confidenceMultiplier)
+     * - return max(1, scaledSize) — never zero even after scaling
+     * <p>
+     * Confidence scaling adapts to configured min-score per strategy:
+     * - score = minScore: multiplier = 0.5 (half size)
+     * - score = 100: multiplier = 1.0 (full size)
+     * - score between minScore and 100: linear interpolation
+     *
+     * @param maxLossPerLot   maximum loss per single lot (in rupees)
+     * @param currentVix      current VIX level
+     * @param confidenceScore confidence score (0-100)
+     * @param minScore        minimum confidence score threshold for this strategy
+     * @return number of lots to trade with both VIX and confidence scaling applied, minimum 1
+     */
+    public int getPositionSize(BigDecimal maxLossPerLot, double currentVix, int confidenceScore, int minScore) {
+        int vixScaledSize = getPositionSize(maxLossPerLot, currentVix);
+        double confidenceMultiplier = getConfidenceSizeMultiplier(confidenceScore, minScore);
+        int scaledSize = (int) Math.floor(vixScaledSize * confidenceMultiplier);
+        int result = Math.max(1, scaledSize);
 
-         log.debug("Confidence-scaled position sizing: vixScaledSize={}, confidenceScore={}, minScore={}, multiplier={}, scaledSize={}, result={}",
-                 vixScaledSize, confidenceScore, minScore, confidenceMultiplier, scaledSize, result);
+        log.debug("Confidence-scaled position sizing: vixScaledSize={}, confidenceScore={}, minScore={}, multiplier={}, scaledSize={}, result={}",
+                vixScaledSize, confidenceScore, minScore, confidenceMultiplier, scaledSize, result);
 
-         return result;
-     }
+        return result;
+    }
 
-     /**
-      * Determines confidence-based position size multiplier.
-      * <p>
-      * Formula: multiplier = clamp(0.5 + (score - minScore) / (2.0 * (100 - minScore)), 0.5, 1.0)
-      * <p>
-      * Scaling:
-      * - score = minScore: multiplier = 0.5 (half size)
-      * - score = 100: multiplier = 1.0 (full size)
-      * - score between minScore and 100: linear interpolation
-      * <p>
-      * Guard: if minScore >= 100, returns 1.0 to avoid division by zero.
-      *
-      * @param score confidence score (0-100)
-      * @param minScore minimum confidence score threshold
-      * @return multiplier to apply to VIX-scaled position size
-      */
-     private double getConfidenceSizeMultiplier(int score, int minScore) {
-         if (minScore >= 100) {
-             return 1.0; // guard against division by zero if min-score is misconfigured at/above 100
-         }
-         double raw = 0.5 + (score - minScore) / (2.0 * (100 - minScore));
-         return Math.max(0.5, Math.min(1.0, raw));
-     }
+    /**
+     * Determines confidence-based position size multiplier.
+     * <p>
+     * Formula: multiplier = clamp(0.5 + (score - minScore) / (2.0 * (100 - minScore)), 0.5, 1.0)
+     * <p>
+     * Scaling:
+     * - score = minScore: multiplier = 0.5 (half size)
+     * - score = 100: multiplier = 1.0 (full size)
+     * - score between minScore and 100: linear interpolation
+     * <p>
+     * Guard: if minScore >= 100, returns 1.0 to avoid division by zero.
+     *
+     * @param score    confidence score (0-100)
+     * @param minScore minimum confidence score threshold
+     * @return multiplier to apply to VIX-scaled position size
+     */
+    private double getConfidenceSizeMultiplier(int score, int minScore) {
+        if (minScore >= 100) {
+            return 1.0; // guard against division by zero if min-score is misconfigured at/above 100
+        }
+        double raw = 0.5 + (score - minScore) / (2.0 * (100 - minScore));
+        return Math.max(0.5, Math.min(1.0, raw));
+    }
 }
