@@ -99,7 +99,9 @@ class IronCondorStrategyVixScalingTest {
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
         when(lotSizeService.getPositionSize(
                 new BigDecimal("10920.0"), // maxLossPerLot = (wingWidth - netCredit) × lotSize
-                20.0 // VIX
+                20.0,
+                80,
+                60
         )).thenReturn(5); // scaled size
 
         // Create market intelligence (no marketMetrics field)
@@ -159,7 +161,9 @@ class IronCondorStrategyVixScalingTest {
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
         when(lotSizeService.getPositionSize(
                 new BigDecimal("10920.0"), // maxLossPerLot = (wingWidth - netCredit) × lotSize
-                15.0 // VIX
+                15.0,
+                90,
+                60
         )).thenReturn(10); // full size
 
         // Create market intelligence (no marketMetrics field)
@@ -219,7 +223,9 @@ class IronCondorStrategyVixScalingTest {
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
         when(lotSizeService.getPositionSize(
                 new BigDecimal("10920.0"), // maxLossPerLot = (wingWidth - netCredit) × lotSize
-                18.0 // VIX at boundary
+                18.0,
+                80,
+                60
         )).thenReturn(10); // full size
 
         // Create market intelligence (no marketMetrics field)

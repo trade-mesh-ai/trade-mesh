@@ -246,9 +246,9 @@ trading-strategies:
 
 # ─── 8. Risk Management ──────────────────────────────────────────────────────
 risk:
-  max-position-size-per-symbol: 5
+  max-position-size-per-symbol: 20
   daily-loss-limit-percent: 2.0
-  max-sector-exposure: 50000
+  max-sector-exposure: 2000000
   min-margin-buffer-percent: 10
   max-concurrent-open-positions: 3
   position-sizing:
