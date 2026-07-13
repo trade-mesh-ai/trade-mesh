@@ -51,7 +51,7 @@ public class DailyReportService {
      * @param trades list of closed trades for the day
      * @return DailyReportMetrics with all calculated values; never null
      */
-    DailyReportMetrics computeMetrics(List<PaperTrade> trades) {
+    public DailyReportMetrics computeMetrics(List<PaperTrade> trades) {
         DailyReportMetrics metrics = new DailyReportMetrics();
 
         if (trades.isEmpty()) {
@@ -120,10 +120,15 @@ public class DailyReportService {
                 .map(this::computeMetrics);
     }
 
+
     /**
      * Generates and sends the daily trading report.
      * <p>
      * Aggregates all trades from today and sends a comprehensive summary via Telegram.
+     * Combines three independent queries:
+     * - Trades entered today (via tradeDate)
+     * - Trades closed today (via exitTime)
+     * - Count of all currently open trades
      *
      * @return Mono emitting void
      */
@@ -131,17 +136,101 @@ public class DailyReportService {
         log.info("Generating daily trading report");
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        LocalDateTime todayStart = today.atStartOfDay();
+        LocalDateTime todayEnd = today.atTime(23, 59, 59);
 
-        return getMetricsForDate(today)
-                .flatMap(metrics -> {
-                    if (metrics.totalTrades == 0) {
-                        log.info("No trades executed today");
+        // Query 1: Count trades entered today (any status)
+        Mono<Long> enteredTodayCount = paperTradeRepository.findByTradeDate(today)
+                .count()
+                .doOnNext(count -> log.debug("Trades entered today: {}", String.valueOf(count)));
+
+        // Query 2: Fetch trades closed today (by exitTime, any entry date)
+        Mono<List<PaperTrade>> closedTodayTrades = paperTradeRepository
+                .findByStatusAndExitTimeBetween(TradeStatus.CLOSED, todayStart, todayEnd)
+                .collectList()
+                .doOnNext(trades -> log.debug("Trades closed today: {}", trades.size()));
+
+        // Query 3: Count all currently open trades (any entry date)
+        Mono<Long> openTradesCount = paperTradeRepository.countByStatus(TradeStatus.OPEN)
+                .doOnNext(count -> log.debug("Currently open trades: {}", String.valueOf(count)));
+
+        // Combine all three queries
+        return Mono.zip(enteredTodayCount, closedTodayTrades, openTradesCount)
+                .flatMap(tuple -> {
+                    long enteredToday = tuple.getT1();
+                    List<PaperTrade> closedTodayList = tuple.getT2();
+                    long openCount = tuple.getT3();
+
+                    if (closedTodayList.isEmpty()) {
+                        log.info("No trades closed today");
                         return sendNoTradesAlert();
                     }
 
-                    return sendDailyReport(metrics);
+                    DailyReportMetrics metrics = computeMetrics(closedTodayList);
+                    return sendDailyReportWithCounts(metrics, enteredToday, openCount, closedTodayList.size());
                 })
                 .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e));
+    }
+
+    /**
+     * Sends the daily report via Telegram with independent trade counts.
+     * <p>
+     * Reports three independent statistics:
+     * - Entered today: trades that entered on this date (any status)
+     * - Currently open: all open trades (any entry date)
+     * - Closed today: trades that closed on this date (any entry date)
+     *
+     * @param metrics aggregated metrics from closed trades
+     * @param enteredToday count of trades entered today
+     * @param openCount count of all currently open trades
+     * @param closedTodayCount count of trades closed today
+     * @return Mono emitting void
+     */
+    private Mono<Void> sendDailyReportWithCounts(DailyReportMetrics metrics, long enteredToday, long openCount, int closedTodayCount) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        String emoji = metrics.totalPnl >= 0 ? "📊" : "📉";
+
+        String message = String.format(
+                "%s <b>Daily Report - %s</b>\n\n" +
+                        "<b>Trade Activity</b>\n" +
+                        "Entered today: <b>%d</b> | Currently open: <b>%d</b> | Closed today: <b>%d</b>\n\n" +
+                        "<b>Closed Trades Summary</b>\n" +
+                        "Total: <b>%d</b>\n" +
+                        "Wins: <b>%d</b> | Losses: <b>%d</b>\n" +
+                        "Win Rate: <b>%.1f%%</b>\n\n" +
+                        "<b>P&L (from closed trades)</b>\n" +
+                        "Total: <b>%.2f pts</b> (₹ <b>%.2f</b>)\n" +
+                        "Best: <b>%.2f pts</b> (₹ <b>%.2f</b>) - %s\n" +
+                        "Worst: <b>%.2f pts</b> (₹ <b>%.2f</b>) - %s",
+                emoji,
+                today,
+                enteredToday,
+                openCount,
+                closedTodayCount,
+                metrics.totalTrades,
+                metrics.winningTrades,
+                metrics.losingTrades,
+                metrics.winRate,
+                metrics.totalPnl,
+                metrics.totalPnlAmount,
+                metrics.bestTrade != null ? metrics.bestTrade.getRealizedPnl() : 0,
+                metrics.bestPnlAmount,
+                metrics.bestTrade != null ? metrics.bestTrade.getStrategyName() : "N/A",
+                metrics.worstTrade != null ? metrics.worstTrade.getRealizedPnl() : 0,
+                metrics.worstPnlAmount,
+                metrics.worstTrade != null ? metrics.worstTrade.getStrategyName() : "N/A"
+        );
+
+        Alert alert = Alert.builder()
+                .type(AlertType.SIGNAL_GENERATED)
+                .tradingSymbol("DAILY_REPORT")
+                .message(message)
+                .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
+                .build();
+
+        return telegramNotificationBot.sendAlert(alert)
+                .doOnSuccess(v -> log.info("Daily report sent successfully"))
+                .doOnError(e -> log.error("Error sending daily report: {}", e.getMessage(), e));
     }
 
     /**
@@ -200,7 +289,7 @@ public class DailyReportService {
     private Mono<Void> sendNoTradesAlert() {
         String message = String.format(
                 "📊 <b>Daily Report - %s</b>\n\n" +
-                        "No trades executed today.\n" +
+                        "No trades closed today.\n" +
                         "Market conditions were not favorable for trading.",
                 LocalDate.now(ZoneId.of("Asia/Kolkata"))
         );
