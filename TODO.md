@@ -1,45 +1,15 @@
-Here's an honest status of where TradeMesh stands and what's genuinely next:
+Nothing urgent is queued — here's the actual state of things and the real options in front of you:
 
----
+**Waiting on time, not code:**
+- Stage 4c's first live overnight observation — no engineering work left to do, just needs a DTE-governed position to survive a trading-day boundary. Still on local, restarts daily — worth revisiting whether you want to solve that infrastructure problem now that position-sizing work is done, since it's the actual blocker to ever observing this.
 
-## This Week's Priority — Live Validation
+**Logged, real, deliberately deferred (in priority order I'd suggest):**
+1. **Merge `feature/position_sizing_vix_lot_multiplier` to main** — 292 tests, thoroughly verified, no reason to leave it sitting on a branch unless you want more live observation on it first.
+2. **Confidence-scoring for Bull Put Spread / Bear Call Spread** — real gap, needs a genuine design pass (PCR flips meaning, ATR% threshold changes, possible new trend-strength factor).
+3. **ExpiryDayStrategy position sizing** — needs a different risk-per-lot formula (margin-based or stop-loss-implied, no `wingWidth` to lean on).
+4. **Strategy-name/symbol hardcoding refactor** — large, cross-cutting, correctly deferred twice now.
+5. **Live trading integration design** — order placement, confirmation/retry, reconciliation; explicitly logged as its own dedicated session, not incremental work.
 
-**Wednesday July 2 — First Iron Condor attempt**
-- DTE = 6 days to July 8 expiry
-- Authenticate before 9:25 AM so `iv_history` captures today's ATM IV
-- Watch logs at 9:30 AM for confidence score
-- Share logs here and we'll diagnose together
+**Not logged, worth asking:** do you want to merge the position-sizing branch now, or let it accumulate more real trading days on the branch first before trusting it on main?
 
-**Tuesday July 8 — Second expiry day**
-- First real test of the corrected ATR-scaled strike selection
-- Validate that strikes are now OTM and structurally sound
-
----
-
-## Development — Nothing Urgent
-
-Honestly, TradeMesh is in a good state right now. The four bugs fixed yesterday were the right things to fix before going further. I'd resist the urge to keep building features until you have a week of live validation data showing:
-
-1. Does Iron Condor fire on sideways days?
-2. Do strikes look correct with the ATR-scaled logic?
-3. Does mark-to-market track all 4 legs correctly?
-4. Does the exit fire correctly (target/SL/force close)?
-
-**Don't build more until you know the existing pipeline works end-to-end on a real trading week.**
-
----
-
-## After One Week of Validation
-
-If everything looks clean, natural next steps are:
-
-| Item | Why |
-|---|---|
-| VIX-based exit condition | Currently TODO in Iron Condor mark-to-market |
-| PCR data collection | Currently 0 pts in confidence scoring |
-| IVR building | Auto-resolves after 30 days of iv_history |
-| Dynamic lot sizing | Currently fixed at 1 lot |
-
----
-
-**My honest recommendation for today:** rest. Authenticate tomorrow morning before 9:25 AM, keep logs open, and share what happens. That's the most valuable thing you can do for TradeMesh right now — not write more code.
+Where do you want to go?
