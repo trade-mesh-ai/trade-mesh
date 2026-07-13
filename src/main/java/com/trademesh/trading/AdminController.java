@@ -1,5 +1,8 @@
 package com.trademesh.trading;
 
+import com.trademesh.domain.NiftyDailyPrice;
+import com.trademesh.domain.NiftyDailyPriceRepository;
+import com.trademesh.intelligence.AtrPercentilesResponse;
 import com.trademesh.intelligence.KiteHistoricalService;
 import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.intelligence.NiftyDailyPriceService;
@@ -45,6 +48,7 @@ public class AdminController {
     private final BullPutSpreadStrategy bullPutSpreadStrategy;
     private final BearCallSpreadStrategy bearCallSpreadStrategy;
     private final ExpiryDayStrategy expiryDayStrategy;
+    private final NiftyDailyPriceRepository niftyDailyPriceRepository;
 
     /**
      * Bootstrap endpoint to fetch historical NIFTY50 OHLC data from Kite Connect
@@ -333,5 +337,169 @@ public class AdminController {
                     errorResponse.put("message", e.getMessage());
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
                 });
+    }
+
+    /**
+     * TEMPORARY DIAGNOSTIC ENDPOINT — One-time ATR% percentile analysis.
+     * <p>
+     * Computes ATR% percentile distribution from all historical NIFTY50 daily price data.
+     * This endpoint will be removed once the analysis is complete.
+     * <p>
+     * Calculation steps:
+     * 1. Fetch all nifty_daily_prices ordered by trade_date ascending
+     * 2. Compute True Range for each day (from day 2 onward):
+     *    TR = max(high - low, abs(high - prevClose), abs(low - prevClose))
+     * 3. Compute 14-day rolling ATR for each day (starting from day 15):
+     *    ATR14 = average of TR values from days [N-13, N]
+     * 4. Compute ATR% for each day: (ATR14 / close) * 100
+     * 5. Collect all ATR% values, sort, and compute percentiles
+     * <p>
+     * Example: {@code GET /admin/diagnostic/atr-percentiles}
+     *
+     * @return Mono emitting ResponseEntity with AtrPercentilesResponse containing
+     *         percentile distribution (p10, p25, p40, p50, p60, p75, p90) plus min/max/count
+     */
+    @Operation(summary = "TEMPORARY: Compute ATR% percentile distribution (diagnostic endpoint)")
+    @GetMapping(value = "/diagnostic/atr-percentiles", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Object>> computeAtrPercentiles() {
+
+        log.info("TEMPORARY DIAGNOSTIC: Computing ATR% percentile distribution from historical data");
+
+        return niftyDailyPriceRepository.findAll()
+                .collectList()
+                .map(prices -> {
+                    log.debug("Fetched {} price records for ATR% analysis", prices.size());
+
+                    if (prices.size() < 15) {
+                        log.warn("Insufficient data: need at least 15 records, got {}", prices.size());
+                        Map<String, Object> errorResponse = new HashMap<>();
+                        errorResponse.put("error", "Insufficient data");
+                        errorResponse.put("message", "Need at least 15 price records to compute ATR14");
+                        errorResponse.put("available", prices.size());
+                        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body((Object) errorResponse);
+                    }
+
+                    // Compute True Range for each day (from index 1 onward)
+                    double[] trValues = new double[prices.size() - 1];
+                    for (int i = 1; i < prices.size(); i++) {
+                        NiftyDailyPrice curr = prices.get(i);
+                        NiftyDailyPrice prev = prices.get(i - 1);
+
+                        java.math.BigDecimal high = curr.getHigh();
+                        java.math.BigDecimal low = curr.getLow();
+                        java.math.BigDecimal prevClose = prev.getClose();
+
+                        // TR = max(high - low, abs(high - prevClose), abs(low - prevClose))
+                        double tr1 = high.subtract(low).doubleValue();
+                        double tr2 = high.subtract(prevClose).abs().doubleValue();
+                        double tr3 = low.subtract(prevClose).abs().doubleValue();
+
+                        trValues[i - 1] = Math.max(tr1, Math.max(tr2, tr3));
+                    }
+
+                    // Compute ATR% for each day (starting from day 15, index 14)
+                    java.util.List<java.math.BigDecimal> atrPercentiles = new java.util.ArrayList<>();
+
+                    for (int dayIndex = 14; dayIndex < prices.size(); dayIndex++) {
+                        // Collect TR values for the 14-day window [dayIndex-13, dayIndex]
+                        double atrSum = 0;
+                        for (int i = dayIndex - 13; i <= dayIndex; i++) {
+                            atrSum += trValues[i - 1];  // trValues[i-1] contains TR for day i
+                        }
+                        double atr14 = atrSum / 14.0;
+
+                        // Compute ATR% = (ATR14 / close) * 100
+                        java.math.BigDecimal close = prices.get(dayIndex).getClose();
+                        if (close.signum() > 0) {
+                            java.math.BigDecimal atrPct = java.math.BigDecimal.valueOf(atr14)
+                                    .divide(close, 6, java.math.RoundingMode.HALF_UP)
+                                    .multiply(java.math.BigDecimal.valueOf(100))
+                                    .setScale(4, java.math.RoundingMode.HALF_UP);
+                            atrPercentiles.add(atrPct);
+                        }
+                    }
+
+                    log.debug("Computed {} ATR% values", atrPercentiles.size());
+
+                    if (atrPercentiles.isEmpty()) {
+                        log.warn("No valid ATR% values computed");
+                        Map<String, Object> errorResponse = new HashMap<>();
+                        errorResponse.put("error", "No valid ATR% values");
+                        errorResponse.put("message", "Could not compute ATR% for any day");
+                        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse);
+                    }
+
+                    // Sort ATR% values for percentile calculation
+                    java.util.Collections.sort(atrPercentiles);
+
+                    // Calculate percentiles
+                    java.math.BigDecimal min = atrPercentiles.get(0);
+                    java.math.BigDecimal max = atrPercentiles.get(atrPercentiles.size() - 1);
+                    java.math.BigDecimal p10 = percentile(atrPercentiles, 10);
+                    java.math.BigDecimal p25 = percentile(atrPercentiles, 25);
+                    java.math.BigDecimal p40 = percentile(atrPercentiles, 40);
+                    java.math.BigDecimal p50 = percentile(atrPercentiles, 50);
+                    java.math.BigDecimal p60 = percentile(atrPercentiles, 60);
+                    java.math.BigDecimal p75 = percentile(atrPercentiles, 75);
+                    java.math.BigDecimal p90 = percentile(atrPercentiles, 90);
+
+                    AtrPercentilesResponse response = AtrPercentilesResponse.builder()
+                            .count(atrPercentiles.size())
+                            .min(min)
+                            .p10(p10)
+                            .p25(p25)
+                            .p40(p40)
+                            .p50(p50)
+                            .p60(p60)
+                            .p75(p75)
+                            .p90(p90)
+                            .max(max)
+                            .build();
+
+                    log.info("ATR% percentile analysis complete: count={}, min={}, p50={}, max={}",
+                            response.getCount(), response.getMin(), response.getP50(), response.getMax());
+
+                    return ResponseEntity.ok((Object) response);
+                })
+                .<ResponseEntity<?>>onErrorResume(e -> {
+                    log.error("Error computing ATR% percentiles: {}", e.getMessage(), e);
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("error", "Error computing ATR% percentiles");
+                    errorResponse.put("message", e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body((Object) errorResponse));
+                });
+    }
+
+    /**
+     * Helper method to calculate percentile from a sorted list of BigDecimal values.
+     * Uses linear interpolation for non-integer percentile positions.
+     *
+     * @param sortedValues sorted list of BigDecimal values (must be sorted ascending)
+     * @param percentile   percentile to calculate (0-100)
+     * @return BigDecimal value at the given percentile
+     */
+    private java.math.BigDecimal percentile(java.util.List<java.math.BigDecimal> sortedValues, double percentile) {
+        if (sortedValues.isEmpty()) {
+            return java.math.BigDecimal.ZERO;
+        }
+
+        double index = (percentile / 100.0) * (sortedValues.size() - 1);
+        int lower = (int) Math.floor(index);
+        int upper = (int) Math.ceil(index);
+
+        if (lower == upper) {
+            return sortedValues.get(lower);
+        }
+
+        // Linear interpolation between lower and upper values
+        java.math.BigDecimal lowerValue = sortedValues.get(lower);
+        java.math.BigDecimal upperValue = sortedValues.get(upper);
+        double fraction = index - lower;
+
+        java.math.BigDecimal result = lowerValue.multiply(java.math.BigDecimal.valueOf(1 - fraction))
+                .add(upperValue.multiply(java.math.BigDecimal.valueOf(fraction)))
+                .setScale(4, java.math.RoundingMode.HALF_UP);
+
+        return result;
     }
 }

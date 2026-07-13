@@ -466,8 +466,8 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         metadata.put("dte", String.valueOf(signal.getDte()));
                                                         metadata.put("currentAtmIv", signal.getCurrentAtmIv() != null ? signal.getCurrentAtmIv().toString() : "0");
 
-                                                        Confidence confidence = score >= 70 ? Confidence.HIGH
-                                                                : score >= 50 ? Confidence.MEDIUM
+                                                        Confidence confidence = score >= 60 ? Confidence.HIGH
+                                                                : score >= 43 ? Confidence.MEDIUM
                                                                   : Confidence.LOW;
                                                         return StrategyResult.builder()
                                                                 .signal(com.trademesh.strategy.TradeSignal.builder()

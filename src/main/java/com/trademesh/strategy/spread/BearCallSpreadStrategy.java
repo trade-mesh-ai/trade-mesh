@@ -3,6 +3,7 @@ package com.trademesh.strategy.spread;
 import com.trademesh.config.LotSizeService;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
+import com.trademesh.intelligence.MarketMetrics;
 import com.trademesh.intelligence.MarketMetricsService;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
 import com.trademesh.strategy.StrategyConfig;
@@ -65,6 +66,54 @@ public class BearCallSpreadStrategy implements TradingStrategy {
         return strategiesConfig.getStrategy("BEAR_CALL_SPREAD");
     }
 
+    /**
+     * Calculates confidence score based on market metrics.
+     * Scores IVR, IV/HV ratio, ATR%, and PCR to determine entry confidence (4 factors, max 85 points).
+     * VIX is handled separately via hard entry gate (max-vix) and sizing multiplier, not confidence score.
+     */
+    int calculateConfidenceScore(MarketMetrics metrics) {
+        int score = 0;
+
+        // IVR scoring
+        if (metrics.getIvr() != null) {
+            double ivr = metrics.getIvr().doubleValue();
+            if (ivr >= 20 && ivr < 50) score += 20;
+            else if (ivr >= 50 && ivr < 65) score += 30;
+            else if (ivr >= 65 && ivr <= 80) score += 15;
+        }
+
+        // IV/HV ratio scoring
+        if (metrics.getIvHvRatio() != null) {
+            double ratio = metrics.getIvHvRatio().doubleValue();
+            if (ratio >= 1.3) score += 20;
+            else if (ratio >= 1.1) score += 10;
+        }
+
+        // ATR% scoring (spread-specific bands: delta-ratio scaled)
+        if (metrics.getAtrPct() != null) {
+            double atrPct = metrics.getAtrPct().doubleValue();
+            if (atrPct < 0.36) score += 15;
+            else if (atrPct < 0.48) score += 20;
+            else if (atrPct < 0.60) score += 10;
+        }
+
+        // PCR scoring (Bear Call specific: rewards high PCR)
+        if (metrics.getPcr() != null) {
+            double pcr = metrics.getPcr().doubleValue();
+            if (pcr > 1.2) score += 15;
+            else if (pcr >= 1.0) score += 8;
+
+            log.debug("PCR scoring (Bear Call): pcr={}, contribution={}", pcr,
+                    pcr > 1.2 ? 15 : (pcr >= 1.0 ? 8 : 0));
+        }
+
+        log.debug("Bear Call Spread confidence score: IVR={}, IV/HV={}, ATR%={}, PCR={}, total={}",
+                metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(),
+                metrics.getPcr(), score);
+
+        return score;
+    }
+
     @Override
     public Mono<StrategyResult> evaluate(MarketIntelligence intelligence) {
         StrategyProperties cfg = config();
@@ -105,6 +154,18 @@ public class BearCallSpreadStrategy implements TradingStrategy {
         // Fetch market metrics and continue with strike selection
         return marketMetricsService.calculateMetrics(intelligence.getSymbol())
                 .flatMap(metrics -> {
+                    // Confidence score
+                    int score = calculateConfidenceScore(metrics);
+                    int minScore = cfg.getExtraInt("min-score", 51);
+                    log.info("Bear Call Spread confidence score: {}/{}", score, minScore);
+
+                    if (score < minScore) {
+                        return Mono.just(StrategyResult.builder()
+                                .isExecutable(false)
+                                .skipReason("Confidence score " + score + " below minimum " + minScore)
+                                .build());
+                    }
+
                     // Get data from MarketIntelligence directly
                     double spotPrice = intelligence.getSpotPrice();
                     OptionChain chain = intelligence.getOptionChain();
@@ -243,6 +304,11 @@ public class BearCallSpreadStrategy implements TradingStrategy {
                     metadata.put("longCallLtp", longCallLtp.toString());
                     metadata.put("dte", String.valueOf(dte));
                     metadata.put("currentVix", String.valueOf(currentVix));
+                    metadata.put("confidenceScore", String.valueOf(score));
+
+                    Confidence confidence = score >= 60 ? Confidence.HIGH
+                            : score >= 43 ? Confidence.MEDIUM
+                            : Confidence.LOW;
 
                     return Mono.just(StrategyResult.builder()
                             .signal(com.trademesh.strategy.TradeSignal.builder()
@@ -253,8 +319,8 @@ public class BearCallSpreadStrategy implements TradingStrategy {
                                     .expectedCredit(netCredit.doubleValue())
                                     .maxLoss(maxLoss.doubleValue())
                                     .reason("Bear Call Spread: " + shortCallStrikePrice + "CE / " +
-                                            longCallStrikePrice + "CE | Credit: " + netCredit)
-                                    .confidence(Confidence.MEDIUM)
+                                            longCallStrikePrice + "CE | Credit: " + netCredit + " | Score: " + score)
+                                    .confidence(confidence)
                                     .metadata(metadata)
                                     .build())
                             .isExecutable(true)

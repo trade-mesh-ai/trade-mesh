@@ -124,21 +124,33 @@ class IronCondorConfidenceScoreTest {
         assertEquals(20, score, "ATR% in 0.6-0.8 range should yield +20");
     }
 
-    /**
-     * Test 6: Null metrics should not crash; missing factors contribute 0.
-     * Expected: 0 (all null).
-     */
-    @Test
-    void testConfidenceScore_AllNullMetrics_Returns0() {
-        MarketMetrics metrics = MarketMetrics.builder()
-                .ivr(null)
-                .ivHvRatio(null)
-                .atrPct(null)
-                .pcr(null)
-                .build();
+     /**
+      * Test 6: Null metrics should not crash; missing factors contribute 0.
+      * Expected: 0 (all null).
+      */
+     @Test
+     void testConfidenceScore_AllNullMetrics_Returns0() {
+         MarketMetrics metrics = MarketMetrics.builder()
+                 .ivr(null)
+                 .ivHvRatio(null)
+                 .atrPct(null)
+                 .pcr(null)
+                 .build();
 
-        int score = strategy.calculateConfidenceScore(metrics);
+         int score = strategy.calculateConfidenceScore(metrics);
 
-        assertEquals(0, score, "All null metrics should yield 0");
-    }
+         assertEquals(0, score, "All null metrics should yield 0");
+     }
+
+      @Test
+      void testConfidenceScore_KnownCombination_ProducesCorrectScore() {
+          MarketMetrics metrics = MarketMetrics.builder()
+                  .ivr(BigDecimal.valueOf(55.0))
+                  .ivHvRatio(BigDecimal.valueOf(1.5))
+                  .atrPct(BigDecimal.valueOf(0.5))
+                  .pcr(null)
+                  .build();
+          int score = strategy.calculateConfidenceScore(metrics);
+          assertEquals(65, score, "Known combination (IVR=55, IVHV=1.5, ATR%=0.5, PCR=null) produces score 65");
+      }
 }
