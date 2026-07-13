@@ -155,6 +155,8 @@ No HTML tags in Javadoc.
 - Unit tests required for business logic
 - Integration tests for controllers and repositories
 - Never skip tests to make build pass — fix the actual issue
+- Run diagnostic/debug commands directly and simply — one focused command per question, not chained multi-stage filter pipelines. If output needs isolating, narrow the test scope (--tests "ClassName.methodName") rather than filtering broad output after the fact.
+- If a command produces an unexpected result (empty output, no match, silent failure), the next action must be diagnosis, not retry: state a specific hypothesis for why the result was unexpected, then check exactly one thing to test that hypothesis. Never run a second variant of the same command hoping different filtering produces a different result. If two consecutive diagnosis attempts don't resolve the confusion, stop and report the unexplained behavior honestly rather than continuing to retry.
 
 ## What NOT to do (confirmed production bugs — never repeat)
 - Never use @PostLoad in R2DBC entities
@@ -167,6 +169,7 @@ No HTML tags in Javadoc.
 - Never add a fixed-offset widening to OI-wall strikes — 
   use ATR-scaled boundary with principled fallback (Option C)
 - Never cache trade-decision intelligence — use generateFreshIntelligence()
+- Never hand-calculate expected test values without verifying against real computed output first (debug print + isolated run) — repeated arithmetic errors in test fixtures this session cost multiple debugging rounds each time this was skipped.
 
 ## Important
 These rules represent confirmed production bugs
