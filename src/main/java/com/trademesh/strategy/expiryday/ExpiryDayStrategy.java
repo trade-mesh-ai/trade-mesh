@@ -1,5 +1,6 @@
 package com.trademesh.strategy.expiryday;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
@@ -40,10 +41,13 @@ public class ExpiryDayStrategy implements TradingStrategy {
 
     private final StrategiesConfig strategiesConfig;
     private final MarketMetricsService marketMetricsService;
+    private final LotSizeService lotSizeService;
 
-    public ExpiryDayStrategy(StrategiesConfig strategiesConfig, MarketMetricsService marketMetricsService) {
+    public ExpiryDayStrategy(StrategiesConfig strategiesConfig, MarketMetricsService marketMetricsService,
+                             LotSizeService lotSizeService) {
         this.strategiesConfig = strategiesConfig;
         this.marketMetricsService = marketMetricsService;
+        this.lotSizeService = lotSizeService;
     }
 
     /**
@@ -229,27 +233,27 @@ public class ExpiryDayStrategy implements TradingStrategy {
         BigDecimal oiCallWall = intelligence.getOiAnalysis().getMaxCallOIStrike();
         BigDecimal oiPutWall = intelligence.getOiAnalysis().getMaxPutOIStrike();
 
-        BigDecimal callStrike = oiCallWall;
-        BigDecimal putStrike = oiPutWall;
+         BigDecimal callStrike = oiCallWall;
+         BigDecimal putStrike = oiPutWall;
 
-        // This check is missing entirely:
-        if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
+         // This check is missing entirely:
+         if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
             log.warn("OI walls structurally invalid relative to spot — " +
                     "callStrike={}, putStrike={}, spot={}", callStrike, putStrike, spotPrice);
             return null;
         }
 
-        // --- ATR-scaled minimum distance (fail fast if unavailable) ---
-        double atr14 = metrics.getAtr14() != null ? metrics.getAtr14().doubleValue() : 0.0;
-        double atrMultiplier = strategyConfig().getExtraDouble("min-distance-atr-multiplier", 0.4);
+         // --- ATR-scaled minimum distance (fail fast if unavailable) ---
+         double atr14 = metrics.getAtr14() != null ? metrics.getAtr14().doubleValue() : 0.0;
+         double atrMultiplier = strategyConfig().getExtraDouble("min-distance-atr-multiplier", 0.4);
 
-        if (atr14 <= 0) {
+         if (atr14 <= 0) {
             log.warn("ATR14 unavailable, cannot calculate safety distance — skipping");
             return null;
         }
 
-        BigDecimal minDistance = BigDecimal.valueOf(atr14 * atrMultiplier);
-        int strikeStep = 50; // NIFTY strike step
+         BigDecimal minDistance = BigDecimal.valueOf(atr14 * atrMultiplier);
+         int strikeStep = 50; // NIFTY strike step
 
         // --- Compute ATR-scaled boundary strikes (round to valid strike step) ---
         BigDecimal boundaryCall = roundUpToStep(spotPrice.add(minDistance), strikeStep);
@@ -290,6 +294,9 @@ public class ExpiryDayStrategy implements TradingStrategy {
     /**
      * Builds trade legs from selected strikes and option chain data.
      * Returns TradeLegsResult with legs and total credit, or null if unable to build.
+     *
+     * Capital-based position sizing: computes maxLossPerLot from totalCredit and
+     * stop-loss-percent, then derives lot count via LotSizeService before building legs.
      *
      * @param intelligence    market intelligence data
      * @param strikeSelection selected strikes
@@ -334,6 +341,27 @@ public class ExpiryDayStrategy implements TradingStrategy {
             return null;
         }
 
+        // ─── CAPITAL-BASED POSITION SIZING ───────────────────────────────────────────
+        // Compute totalCredit FIRST (before building legs)
+        BigDecimal totalCredit = callLTP.add(putLTP);
+
+        // Compute maxLossPerLot in rupees: totalCredit × (stopLossPercent / 100) × lotSize
+        double stopLossPercent = strategyConfig().getStopLossPercent();
+        int lotSize = lotSizeService.getLotSize(intelligence.getSymbol());
+        BigDecimal maxLossPerLot = totalCredit
+                .multiply(BigDecimal.valueOf(stopLossPercent / 100.0))
+                .multiply(BigDecimal.valueOf(lotSize));
+
+        // Compute lots using capital-based sizing (1-arg overload, no VIX/confidence scaling)
+        int computedLots = lotSizeService.getPositionSize(maxLossPerLot);
+        int lots = Math.min(computedLots, strategyConfig().getMaxLots());
+
+        log.debug("ExpiryDayStrangle position sizing: totalCredit={}, stopLossPercent={}, " +
+                        "lotSize={}, maxLossPerLot={}, computedLots={}, finalLots={}",
+                totalCredit, stopLossPercent, lotSize, maxLossPerLot,
+                computedLots, lots);
+
+        // ─── BUILD LEGS WITH COMPUTED LOT COUNT ──────────────────────────────────────
         // Build legs
         TradeLeg callLeg = TradeLeg.builder()
                 .instrument(buildInstrumentName(intelligence.getSymbol(), expiryDate,
@@ -342,7 +370,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .optionType(OptionType.CE)
                 .strikePrice(strikeSelection.getCallStrike().doubleValue())
                 .expiryDate(expiryDate)
-                .quantity(strategyConfig().getMaxLots())
+                .quantity(lots)
                 .limitPrice(callLTP.doubleValue())
                 .legType(LegType.ENTRY)
                 .build();
@@ -354,15 +382,12 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .optionType(OptionType.PE)
                 .strikePrice(strikeSelection.getPutStrike().doubleValue())
                 .expiryDate(expiryDate)
-                .quantity(strategyConfig().getMaxLots())
+                .quantity(lots)
                 .limitPrice(putLTP.doubleValue())
                 .legType(LegType.ENTRY)
                 .build();
 
-        // Calculate total credit
-        Double totalCredit = callLTP.add(putLTP).doubleValue();
-
-        return new TradeLegsResult(callLeg, putLeg, totalCredit);
+        return new TradeLegsResult(callLeg, putLeg, totalCredit.doubleValue());
     }
 
     /**
