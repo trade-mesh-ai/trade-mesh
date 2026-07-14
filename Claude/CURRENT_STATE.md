@@ -13,7 +13,7 @@ Most recent verified evidence > this file > README.md narrative.
 - `feature/spread_confidence_scoring` — **merged to main.**
 - `feature/spread_trend_strength_factor` — **merged to main.**
 - `feature/daily_report_endpoint_fix` — **merged to main.**
-- `feature/expiry_day_position_sizing` — **complete, 357 tests, BUILD SUCCESSFUL, pushed, not yet merged.** Capital-based (stop-loss-implied) sizing for `ExpiryDayStrategy` — the last of the four strategies to get real position sizing. See full summary below.
+- `feature/expiry_day_position_sizing` — **merged to main.** Capital-based (stop-loss-implied) sizing for `ExpiryDayStrategy` — the last of the four strategies to get real position sizing.
 
 ## Verified, stable (merged to main)
 

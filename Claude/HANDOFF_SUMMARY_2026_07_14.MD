@@ -1,0 +1,47 @@
+# TradeMesh — Handoff Summary
+
+**Session end:** 2026-07-14 (evening). For full detail, see `Claude/CURRENT_STATE.md` — this file is a quick-start briefing only.
+
+## Everything is merged and stable — no open threads
+
+Unlike prior handoffs, there is **nothing broken, nothing half-finished, and no open Cline task** at this point. All seven feature branches worked on today are merged to `main`:
+
+1. Spread confidence-scoring (all 5 factors: IVR, IV/HV, ATR%, PCR, trend-strength) for both spread strategies
+2. A real Iron Condor confidence-threshold recalibration bug, found and fixed in passing
+3. Two separate Daily Report bugs (Telegram-alert path, then the `/trading/report/today` REST endpoint), both root-caused and fixed
+4. The `atrPercentile` methodology bug (smoothed-vs-raw comparison mismatch), root-caused and fixed
+5. `ExpiryDayStrategy` position sizing — capital-based, stop-loss-implied — the last of the four strategies to get real position sizing
+
+**356 tests passing on `main`**, confirmed via a clean full build. Live production has also been spot-checked directly (via `curl` and by reading the actual Telegram alert content) and confirmed working correctly — this is not just "tests pass," it's verified real-world behavior.
+
+## What's next: a full design review, before live trading integration begins
+
+Kuldeep has explicitly said he does not fully trust `README.md` or `CURRENT_STATE.md` as sources of truth for the *design* (as opposed to implementation details) and wants a structured, top-to-bottom review of TradeMesh's overall architecture before live trading work starts. This is deliberately **not** a code-correctness review (that's what this whole session already did, extensively) — it's a review of whether the underlying design is coherent and sound as a system.
+
+**Proposed structure for the review** (agreed in principle, not yet started):
+
+1. **Capital & risk architecture** — how sizing, risk limits, and capital allocation work *together* across all four strategies as a system, not just individually. Does a coherent, system-wide risk budget exist, or does each strategy size independently with no cross-strategy awareness? (`RiskManager`'s concurrent-position cap is the one known system-wide check — is that the whole risk model or a partial one?)
+2. **Strategy selection & market-regime logic** — is `StrategySelector`'s mapping from market condition to strategy choice a deliberate, sound design, or an unexamined assumption?
+3. **The paper-to-live transition design** — probably the most important section given the stated goal. Does the current architecture (`PaperTradingEngine`, the known `closeTrade()` DB-only gap, the already-rejected flag-toggle approach for live/paper) actually support a clean transition, or does it have hidden assumptions that only work because nothing real is at stake yet?
+4. **Failure-mode design** — is failure handling (token expiry, Redis down, scheduler overlap, a strategy erroring mid-evaluation) a deliberate, consistent principle across the system, or ad-hoc per component?
+5. **Data & state model** — is `PaperTrade`'s shape, and the read/write patterns around it, actually right for what live trading will need? (The `tradeDate`-vs-`exitTime` distinction found today was a real design gap in this area, not just a bug — worth revisiting with that lens.)
+
+**Tool decision made:** Claude Code, not Cline, for this specific review — reasoned as a better fit since the task is reading/reasoning across the codebase rather than the tight implement-build-fix loop Cline was used for all session. Cline remains the right tool once the review surfaces concrete implementation work.
+
+**Kuldeep is starting a new chat/session for this review** — this session's context is not expected to carry over. Point the new session at `Claude/CURRENT_STATE.md` and `README.md` first for a starting map, but treat both with real skepticism (verify against actual code) per Kuldeep's explicit instruction, same evidence-first discipline this whole session has used throughout.
+
+## Standing principles to keep applying (carried forward, don't re-litigate)
+
+- **Stage 4c gate is recalibrated**: only applies to code touching `markToMarket()`, `isDteExitDue()`, `shouldExitIronCondor()`/`shouldExitSpread()`, `FORCE_CLOSE_EOD`/`DTE_EXIT` logic. Entry-side and reporting work proceeds normally, no override needed.
+- **Sizing-vs-scoring double-count principle**: a factor may have a hard gate plus at most one graded mechanism (confidence score OR sizing multiplier, not both). If ATR%-based sizing is ever added, remove ATR% from confidence scoring in the same change.
+- **Evidence discipline**: never accept a "done"/"all tests pass" claim without the actual raw build output and test count pasted directly. This caught real, repeated problems this session.
+- **Two cost-control rules** (in `.clinerules` and `CURRENT_STATE.md`): two distinct root causes on the same test/method → stop and rebuild, don't patch a third symptom. Verify exact assertion values via debug output before writing them, always.
+- **Branch discipline**: new work on a new feature branch, never directly on `main`.
+
+## Real, deliberately-deferred gaps (not urgent, don't lose track of them)
+
+- **Should `ExpiryDayStrangle` be hedged?** Real, substantive question raised and reasoned through today (bounded loss + margin relief vs. reduced premium capture). Recommendation given: yes, hedge it eventually, but sequence it *after* Stage 4c's first live observation, not immediately — this is a strategy-redesign, not a quick fix. Not started.
+- **Confidence-scoring formula retuning** — several band boundaries (spread ATR% bands, PCR's zero-not-negative disagreement case, trend-strength thresholds) are reasoned first-principles estimates, not empirically validated. Flagged for retuning after 4-6 weeks of real trade observation once enough data exists.
+- Strategy names and symbols are hardcoded as string literals throughout — real technical debt, large cross-cutting refactor, correctly deferred multiple times now.
+- The app still runs locally and restarts daily — the actual practical blocker to Stage 4c's live boundary-crossing ever being observed. No decision made yet on fixing this.
+- Live trading integration (real Kite order placement) — all exits remain DB-only currently. Its own future dedicated design session — likely to be informed directly by whatever the upcoming design review surfaces.
