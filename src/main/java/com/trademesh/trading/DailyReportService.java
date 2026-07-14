@@ -120,15 +120,59 @@ public class DailyReportService {
                 .map(this::computeMetrics);
     }
 
+    /**
+     * Retrieves today's status summary with three independent counts and P&L metrics.
+     * <p>
+     * Combines three independent queries:
+     * - Trades entered today (via tradeDate, any status)
+     * - Trades closed today (via exitTime, any entry date)
+     * - All currently open trades (via status, any entry date)
+     * <p>
+     * Also includes aggregated P&L metrics from closed trades.
+     * This is the single source of truth for daily status reporting.
+     *
+     * @param date the trading date
+     * @return Mono emitting DailyStatusSummary with all counts and metrics
+     */
+    public Mono<DailyStatusSummary> getTodayStatusSummary(LocalDate date) {
+        LocalDateTime dateStart = date.atStartOfDay();
+        LocalDateTime dateEnd = date.atTime(23, 59, 59);
+
+        // Query 1: Count trades entered on this date (any status)
+        Mono<Long> enteredTodayCount = paperTradeRepository.findByTradeDate(date)
+                .count()
+                .doOnNext(count -> log.debug("getTodayStatusSummary: trades entered on {}: {}", date, count));
+
+        // Query 2: Fetch trades closed on this date (by exitTime, any entry date)
+        Mono<List<PaperTrade>> closedTodayTrades = paperTradeRepository
+                .findByStatusAndExitTimeBetween(TradeStatus.CLOSED, dateStart, dateEnd)
+                .collectList()
+                .doOnNext(trades -> log.debug("getTodayStatusSummary: trades closed on {}: {}", date, trades.size()));
+
+        // Query 3: Count all currently open trades (any entry date)
+        Mono<Long> openTradesCount = paperTradeRepository.countByStatus(TradeStatus.OPEN)
+                .doOnNext(count -> log.debug("getTodayStatusSummary: currently open trades: {}", count));
+
+        // Combine all three queries with metrics computation
+        return Mono.zip(enteredTodayCount, closedTodayTrades, openTradesCount)
+                .map(tuple -> {
+                    long enteredToday = tuple.getT1();
+                    List<PaperTrade> closedTodayList = tuple.getT2();
+                    long openCount = tuple.getT3();
+
+                    DailyReportMetrics metrics = computeMetrics(closedTodayList);
+                    return new DailyStatusSummary(enteredToday, openCount, closedTodayList.size(), metrics);
+                })
+                .doOnNext(summary -> log.info("getTodayStatusSummary for {}: entered={}, open={}, closed={}, closedMetrics.totalTrades={}",
+                        date, summary.enteredToday(), summary.openCount(), summary.closedTodayCount(), summary.metrics().totalTrades));
+    }
+
 
     /**
      * Generates and sends the daily trading report.
      * <p>
      * Aggregates all trades from today and sends a comprehensive summary via Telegram.
-     * Combines three independent queries:
-     * - Trades entered today (via tradeDate)
-     * - Trades closed today (via exitTime)
-     * - Count of all currently open trades
+     * Uses getTodayStatusSummary() as the single source of truth for daily counts.
      *
      * @return Mono emitting void
      */
@@ -136,38 +180,15 @@ public class DailyReportService {
         log.info("Generating daily trading report");
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        LocalDateTime todayStart = today.atStartOfDay();
-        LocalDateTime todayEnd = today.atTime(23, 59, 59);
 
-        // Query 1: Count trades entered today (any status)
-        Mono<Long> enteredTodayCount = paperTradeRepository.findByTradeDate(today)
-                .count()
-                .doOnNext(count -> log.debug("Trades entered today: {}", String.valueOf(count)));
-
-        // Query 2: Fetch trades closed today (by exitTime, any entry date)
-        Mono<List<PaperTrade>> closedTodayTrades = paperTradeRepository
-                .findByStatusAndExitTimeBetween(TradeStatus.CLOSED, todayStart, todayEnd)
-                .collectList()
-                .doOnNext(trades -> log.debug("Trades closed today: {}", trades.size()));
-
-        // Query 3: Count all currently open trades (any entry date)
-        Mono<Long> openTradesCount = paperTradeRepository.countByStatus(TradeStatus.OPEN)
-                .doOnNext(count -> log.debug("Currently open trades: {}", String.valueOf(count)));
-
-        // Combine all three queries
-        return Mono.zip(enteredTodayCount, closedTodayTrades, openTradesCount)
-                .flatMap(tuple -> {
-                    long enteredToday = tuple.getT1();
-                    List<PaperTrade> closedTodayList = tuple.getT2();
-                    long openCount = tuple.getT3();
-
-                    if (closedTodayList.isEmpty()) {
+        return getTodayStatusSummary(today)
+                .flatMap(summary -> {
+                    if (summary.closedTodayCount() == 0) {
                         log.info("No trades closed today");
                         return sendNoTradesAlert();
                     }
 
-                    DailyReportMetrics metrics = computeMetrics(closedTodayList);
-                    return sendDailyReportWithCounts(metrics, enteredToday, openCount, closedTodayList.size());
+                    return sendDailyReportWithCounts(summary.metrics(), summary.enteredToday(), summary.openCount(), summary.closedTodayCount());
                 })
                 .doOnError(e -> log.error("Error generating daily report: {}", e.getMessage(), e));
     }
@@ -305,6 +326,22 @@ public class DailyReportService {
                 .doOnSuccess(v -> log.info("No trades alert sent"))
                 .doOnError(e -> log.error("Error sending no trades alert: {}", e.getMessage(), e));
     }
+
+    /**
+     * Public record bundling daily status summary with P&L metrics.
+     * <p>
+     * Combines three independent daily counts with closed-trade P&L metrics:
+     * - enteredToday: trades that entered on this date (any status)
+     * - openCount: all currently open trades (any entry date)
+     * - closedTodayCount: trades that closed on this date (any entry date)
+     * - metrics: aggregated P&L from closed trades
+     */
+    public record DailyStatusSummary(
+            long enteredToday,
+            long openCount,
+            int closedTodayCount,
+            DailyReportMetrics metrics
+    ) {}
 
     /**
      * Package-private nested class holding aggregated daily trading metrics.

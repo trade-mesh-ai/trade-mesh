@@ -218,10 +218,11 @@ public class TradingController {
      * Retrieves today's trading summary.
      * <p>
      * Returns aggregated metrics for all trades executed today:
-     * - Total trades, wins, losses
-     * - Total P&L
-     * - Best and worst trades
-     * - Win rate percentage
+     * - Entered today, currently open, closed today (three independent counts)
+     * - For closed trades: wins, losses, total P&L, best/worst trades, win rate
+     * <p>
+     * If all three counts are zero (no activity), returns a simple "no trades" message.
+     * Otherwise, returns the full breakdown including the three counts.
      *
      * @return Mono emitting ResponseEntity with daily summary
      */
@@ -232,42 +233,58 @@ public class TradingController {
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
-        return dailyReportService.getMetricsForDate(today)
-                .map(metrics -> {
+        return dailyReportService.getTodayStatusSummary(today)
+                .map(summary -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("date", today);
 
-                    if (metrics.totalTrades == 0) {
-                        response.put("totalTrades", 0);
+                    // If all three counts are zero, show the simple "no trades" message
+                    if (summary.enteredToday() == 0 && summary.openCount() == 0 && summary.closedTodayCount() == 0) {
+                        response.put("enteredToday", 0);
+                        response.put("currentlyOpen", 0);
+                        response.put("closedToday", 0);
                         response.put("message", "No trades executed today");
                         log.info("No trades found for today");
                         return ResponseEntity.ok(response);
                     }
 
-                    response.put("totalTrades", metrics.totalTrades);
-                    response.put("winningTrades", metrics.winningTrades);
-                    response.put("losingTrades", metrics.losingTrades);
-                    response.put("winRate", String.format("%.1f%%", metrics.winRate));
-                    response.put("totalPnl", String.format("%.2f pts", metrics.totalPnl));
-                    response.put("totalPnlAmount", String.format("₹ %.2f", metrics.totalPnlAmount));
+                    // Otherwise, show the full breakdown with all three counts
+                    response.put("enteredToday", summary.enteredToday());
+                    response.put("currentlyOpen", summary.openCount());
+                    response.put("closedToday", summary.closedTodayCount());
 
-                    if (metrics.bestTrade != null) {
-                        Map<String, Object> bestInfo = new HashMap<>();
-                        bestInfo.put("strategy", metrics.bestTrade.getStrategyName());
-                        bestInfo.put("pnl", String.format("%.2f pts", metrics.bestTrade.getRealizedPnl()));
-                        bestInfo.put("pnlAmount", String.format("₹ %.2f", metrics.bestPnlAmount));
-                        response.put("bestTrade", bestInfo);
+                    DailyReportService.DailyReportMetrics metrics = summary.metrics();
+
+                    // Include closed-trade metrics only if there are closed trades
+                    if (metrics.totalTrades > 0) {
+                        response.put("closedTradesSummary", new HashMap<String, Object>() {{
+                            put("totalTrades", metrics.totalTrades);
+                            put("winningTrades", metrics.winningTrades);
+                            put("losingTrades", metrics.losingTrades);
+                            put("winRate", String.format("%.1f%%", metrics.winRate));
+                            put("totalPnl", String.format("%.2f pts", metrics.totalPnl));
+                            put("totalPnlAmount", String.format("₹ %.2f", metrics.totalPnlAmount));
+
+                            if (metrics.bestTrade != null) {
+                                Map<String, Object> bestInfo = new HashMap<>();
+                                bestInfo.put("strategy", metrics.bestTrade.getStrategyName());
+                                bestInfo.put("pnl", String.format("%.2f pts", metrics.bestTrade.getRealizedPnl()));
+                                bestInfo.put("pnlAmount", String.format("₹ %.2f", metrics.bestPnlAmount));
+                                put("bestTrade", bestInfo);
+                            }
+
+                            if (metrics.worstTrade != null) {
+                                Map<String, Object> worstInfo = new HashMap<>();
+                                worstInfo.put("strategy", metrics.worstTrade.getStrategyName());
+                                worstInfo.put("pnl", String.format("%.2f pts", metrics.worstTrade.getRealizedPnl()));
+                                worstInfo.put("pnlAmount", String.format("₹ %.2f", metrics.worstPnlAmount));
+                                put("worstTrade", worstInfo);
+                            }
+                        }});
                     }
 
-                    if (metrics.worstTrade != null) {
-                        Map<String, Object> worstInfo = new HashMap<>();
-                        worstInfo.put("strategy", metrics.worstTrade.getStrategyName());
-                        worstInfo.put("pnl", String.format("%.2f pts", metrics.worstTrade.getRealizedPnl()));
-                        worstInfo.put("pnlAmount", String.format("₹ %.2f", metrics.worstPnlAmount));
-                        response.put("worstTrade", worstInfo);
-                    }
-
-                    log.info("Today's report: {} trades, {} wins, {} losses, P&L: {}", metrics.totalTrades, metrics.winningTrades, metrics.losingTrades, metrics.totalPnl);
+                    log.info("Today's report: entered={}, open={}, closed={}, closedMetrics.totalTrades={}",
+                            summary.enteredToday(), summary.openCount(), summary.closedTodayCount(), metrics.totalTrades);
                     return ResponseEntity.ok(response);
                 })
                 .onErrorResume(e -> {
