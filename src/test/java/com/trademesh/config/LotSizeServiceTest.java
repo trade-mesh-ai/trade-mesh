@@ -1,6 +1,5 @@
 package com.trademesh.config;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -8,7 +7,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import java.math.BigDecimal;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Unit tests for LotSizeService capital-based position sizing.
@@ -191,111 +190,111 @@ class LotSizeServiceTest {
         assertEquals(20, scaledSize);
     }
 
-     @Test
-     void testGetPositionSize_VixScaling_JustAbove18() {
-         // Test boundary: VIX = 18.01 should trigger 0.5 multiplier
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 100 → baseSize = 2,000 / 100 = 20
-         // With VIX=18.01: multiplier = 0.5, scaledSize = floor(20 * 0.5) = 10
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
-         int scaledSize = lotSizeService.getPositionSize(maxLossPerLot, 18.01);
-         assertEquals(10, scaledSize);
-     }
+    @Test
+    void testGetPositionSize_VixScaling_JustAbove18() {
+        // Test boundary: VIX = 18.01 should trigger 0.5 multiplier
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 100 → baseSize = 2,000 / 100 = 20
+        // With VIX=18.01: multiplier = 0.5, scaledSize = floor(20 * 0.5) = 10
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
+        int scaledSize = lotSizeService.getPositionSize(maxLossPerLot, 18.01);
+        assertEquals(10, scaledSize);
+    }
 
-     // ===== Confidence-based position sizing tests =====
+    // ===== Confidence-based position sizing tests =====
 
-     @Test
-     void testGetConfidenceSizeMultiplier_AtMinScore() {
-         // score = minScore → multiplier = 0.5
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 100 → baseSize = 20
-         // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
-         // Confidence: score=60, minScore=60 → multiplier = 0.5
-         // Final: floor(20 * 0.5) = 10
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 60, 60);
-         assertEquals(10, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_AtMinScore() {
+        // score = minScore → multiplier = 0.5
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 100 → baseSize = 20
+        // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
+        // Confidence: score=60, minScore=60 → multiplier = 0.5
+        // Final: floor(20 * 0.5) = 10
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 60, 60);
+        assertEquals(10, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_AtMaxScore() {
-         // score = 100 → multiplier = 1.0
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 100 → baseSize = 20
-         // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
-         // Confidence: score=100, minScore=60 → multiplier = 1.0
-         // Final: floor(20 * 1.0) = 20
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 100, 60);
-         assertEquals(20, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_AtMaxScore() {
+        // score = 100 → multiplier = 1.0
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 100 → baseSize = 20
+        // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
+        // Confidence: score=100, minScore=60 → multiplier = 1.0
+        // Final: floor(20 * 1.0) = 20
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 100, 60);
+        assertEquals(20, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_Midpoint() {
-         // score = 80, minScore = 60 → midpoint between min and 100
-         // Formula: 0.5 + (80 - 60) / (2.0 * (100 - 60)) = 0.5 + 20/80 = 0.5 + 0.25 = 0.75
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 100 → baseSize = 20
-         // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
-         // Confidence: score=80, minScore=60 → multiplier = 0.75
-         // Final: floor(20 * 0.75) = 15
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 80, 60);
-         assertEquals(15, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_Midpoint() {
+        // score = 80, minScore = 60 → midpoint between min and 100
+        // Formula: 0.5 + (80 - 60) / (2.0 * (100 - 60)) = 0.5 + 20/80 = 0.5 + 0.25 = 0.75
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 100 → baseSize = 20
+        // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
+        // Confidence: score=80, minScore=60 → multiplier = 0.75
+        // Final: floor(20 * 0.75) = 15
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 80, 60);
+        assertEquals(15, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_DivisionByZeroGuard() {
-         // minScore = 100 → guard returns 1.0
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 100 → baseSize = 20
-         // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
-         // Confidence: minScore=100 → guard returns 1.0
-         // Final: floor(20 * 1.0) = 20
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 50, 100);
-         assertEquals(20, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_DivisionByZeroGuard() {
+        // minScore = 100 → guard returns 1.0
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 100 → baseSize = 20
+        // VIX: 15 → multiplier = 1.0, vixScaledSize = 20
+        // Confidence: minScore=100 → guard returns 1.0
+        // Final: floor(20 * 1.0) = 20
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(100);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0, 50, 100);
+        assertEquals(20, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_CompoundedVixAndConfidence() {
-         // Test compounding: baseSize=10, VIX=20 (0.5x) → 5, confidence=70/minScore=60 (0.625x) → floor(5×0.625)=3
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 200 → baseSize = 2,000 / 200 = 10
-         // VIX: 20 → multiplier = 0.5, vixScaledSize = floor(10 * 0.5) = 5
-         // Confidence: score=70, minScore=60 → multiplier = 0.5 + (70-60)/(2.0*(100-60)) = 0.5 + 10/80 = 0.625
-         // Final: floor(5 * 0.625) = 3
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(200);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 20.0, 70, 60);
-         assertEquals(3, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_CompoundedVixAndConfidence() {
+        // Test compounding: baseSize=10, VIX=20 (0.5x) → 5, confidence=70/minScore=60 (0.625x) → floor(5×0.625)=3
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 200 → baseSize = 2,000 / 200 = 10
+        // VIX: 20 → multiplier = 0.5, vixScaledSize = floor(10 * 0.5) = 5
+        // Confidence: score=70, minScore=60 → multiplier = 0.5 + (70-60)/(2.0*(100-60)) = 0.5 + 10/80 = 0.625
+        // Final: floor(5 * 0.625) = 3
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(200);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 20.0, 70, 60);
+        assertEquals(3, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_FloorsAtOne() {
-         // Even when compounded multiplier would produce 0, result should be 1
-         // Capital: 100,000, Risk: 2% = 2,000 risk budget
-         // maxLossPerLot: 10,000 → baseSize = 2,000 / 10,000 = 0.2 → 0 (rounded DOWN) → max(1, 0) = 1
-         // VIX: 20 → multiplier = 0.5, vixScaledSize = floor(1 * 0.5) = 0 → max(1, 0) = 1
-         // Confidence: score=60, minScore=60 → multiplier = 0.5
-         // Final: floor(1 * 0.5) = 0 → max(1, 0) = 1
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(10000);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 20.0, 60, 60);
-         assertEquals(1, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_FloorsAtOne() {
+        // Even when compounded multiplier would produce 0, result should be 1
+        // Capital: 100,000, Risk: 2% = 2,000 risk budget
+        // maxLossPerLot: 10,000 → baseSize = 2,000 / 10,000 = 0.2 → 0 (rounded DOWN) → max(1, 0) = 1
+        // VIX: 20 → multiplier = 0.5, vixScaledSize = floor(1 * 0.5) = 0 → max(1, 0) = 1
+        // Confidence: score=60, minScore=60 → multiplier = 0.5
+        // Final: floor(1 * 0.5) = 0 → max(1, 0) = 1
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(10000);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 20.0, 60, 60);
+        assertEquals(1, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_RegressionOneArgOverload() {
-         // Verify 1-arg overload still works unchanged
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(1000);
-         int result = lotSizeService.getPositionSize(maxLossPerLot);
-         assertEquals(2, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_RegressionOneArgOverload() {
+        // Verify 1-arg overload still works unchanged
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(1000);
+        int result = lotSizeService.getPositionSize(maxLossPerLot);
+        assertEquals(2, result);
+    }
 
-     @Test
-     void testGetConfidenceSizeMultiplier_RegressionTwoArgOverload() {
-         // Verify 2-arg overload still works unchanged
-         BigDecimal maxLossPerLot = BigDecimal.valueOf(1000);
-         int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0);
-         assertEquals(2, result);
-     }
+    @Test
+    void testGetConfidenceSizeMultiplier_RegressionTwoArgOverload() {
+        // Verify 2-arg overload still works unchanged
+        BigDecimal maxLossPerLot = BigDecimal.valueOf(1000);
+        int result = lotSizeService.getPositionSize(maxLossPerLot, 15.0);
+        assertEquals(2, result);
+    }
 }

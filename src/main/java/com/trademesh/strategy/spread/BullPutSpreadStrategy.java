@@ -1,11 +1,7 @@
 package com.trademesh.strategy.spread;
 
 import com.trademesh.config.LotSizeService;
-import com.trademesh.intelligence.MarketCondition;
-import com.trademesh.intelligence.MarketIntelligence;
-import com.trademesh.intelligence.MarketMetrics;
-import com.trademesh.intelligence.MarketMetricsService;
-import com.trademesh.intelligence.NiftyDailyPriceService;
+import com.trademesh.intelligence.*;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
 import com.trademesh.strategy.StrategyConfig;
 import com.trademesh.strategy.StrategyResult;
@@ -208,156 +204,156 @@ public class BullPutSpreadStrategy implements TradingStrategy {
             MarketIntelligence intelligence, MarketMetrics metrics, int score,
             StrategyProperties cfg, double currentVix, int dte, OptionChain chain) {
         return Mono.defer(() -> {
-                    // Get data from MarketIntelligence directly
-                    double spotPrice = intelligence.getSpotPrice();
+            // Get data from MarketIntelligence directly
+            double spotPrice = intelligence.getSpotPrice();
 
-                    // DTE check (trading days, not calendar days)
-                    int dteMin = cfg.getExtraInt("dte-min", 1);
-                    int dteMax = cfg.getExtraInt("dte-max", 4);
-                    if (dte < dteMin || dte > dteMax) {
-                        return Mono.just(StrategyResult.builder()
-                                .isExecutable(false)
-                                .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
-                                .build());
-                    }
+            // DTE check (trading days, not calendar days)
+            int dteMin = cfg.getExtraInt("dte-min", 1);
+            int dteMax = cfg.getExtraInt("dte-max", 4);
+            if (dte < dteMin || dte > dteMax) {
+                return Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason("DTE " + dte + " outside range [" + dteMin + ", " + dteMax + "]")
+                        .build());
+            }
 
-                    // Strike selection
-                    // Strike-selection DTE (calendar days — matches /365.0
-                    // calendar-year denominator, same convention as
-                    // IronCondorStrategy.selectStrikesAndBuildSignal)
-                    int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
-                    double tte = calendarDte / 365.0;
-                    double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
-                    int wingWidth = cfg.getExtraInt("wing-width", 100);
-                    int lotSize = lotSizeService.getLotSize("NIFTY50");
+            // Strike selection
+            // Strike-selection DTE (calendar days — matches /365.0
+            // calendar-year denominator, same convention as
+            // IronCondorStrategy.selectStrikesAndBuildSignal)
+            int calendarDte = (int) ChronoUnit.DAYS.between(LocalDate.now(), chain.getExpiryDate());
+            double tte = calendarDte / 365.0;
+            double targetDelta = cfg.getExtraDouble("target-delta", 0.30);
+            int wingWidth = cfg.getExtraInt("wing-width", 100);
+            int lotSize = lotSizeService.getLotSize("NIFTY50");
 
-                    // Find short PUT strike (below spot, closest OTM with delta <= targetDelta)
-                    OptionStrike shortPutStrike = chain.getStrikes().stream()
-                            .filter(s -> s.getStrikePrice().doubleValue() < spotPrice)
-                            .sorted((a, b) -> b.getStrikePrice().compareTo(a.getStrikePrice()))
-                            .filter(s -> {
-                                double delta = ImpliedVolatilityCalculator.delta(
-                                        spotPrice, s.getStrikePrice().doubleValue(), tte,
-                                        s.getPutIV() != null && s.getPutIV().doubleValue() > 0 ?
-                                                s.getPutIV().doubleValue() : 15.0, "PE");
-                                return Math.abs(delta) <= targetDelta;
-                            })
-                            .findFirst()
-                            .orElse(null);
+            // Find short PUT strike (below spot, closest OTM with delta <= targetDelta)
+            OptionStrike shortPutStrike = chain.getStrikes().stream()
+                    .filter(s -> s.getStrikePrice().doubleValue() < spotPrice)
+                    .sorted((a, b) -> b.getStrikePrice().compareTo(a.getStrikePrice()))
+                    .filter(s -> {
+                        double delta = ImpliedVolatilityCalculator.delta(
+                                spotPrice, s.getStrikePrice().doubleValue(), tte,
+                                s.getPutIV() != null && s.getPutIV().doubleValue() > 0 ?
+                                        s.getPutIV().doubleValue() : 15.0, "PE");
+                        return Math.abs(delta) <= targetDelta;
+                    })
+                    .findFirst()
+                    .orElse(null);
 
-                    if (shortPutStrike == null) {
-                        log.warn("Unable to find short put strike with delta <= {}", targetDelta);
-                        return Mono.just(StrategyResult.builder()
-                                .isExecutable(false)
-                                .skipReason("No valid put strike found")
-                                .build());
-                    }
+            if (shortPutStrike == null) {
+                log.warn("Unable to find short put strike with delta <= {}", targetDelta);
+                return Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason("No valid put strike found")
+                        .build());
+            }
 
-                    BigDecimal shortPutStrikePrice = shortPutStrike.getStrikePrice();
-                    BigDecimal longPutStrikePrice = shortPutStrikePrice.subtract(BigDecimal.valueOf(wingWidth));
+            BigDecimal shortPutStrikePrice = shortPutStrike.getStrikePrice();
+            BigDecimal longPutStrikePrice = shortPutStrikePrice.subtract(BigDecimal.valueOf(wingWidth));
 
-                    // Get LTPs
-                    BigDecimal shortPutLtp = shortPutStrike.getPutLTP() != null ?
-                            shortPutStrike.getPutLTP() : BigDecimal.ZERO;
+            // Get LTPs
+            BigDecimal shortPutLtp = shortPutStrike.getPutLTP() != null ?
+                    shortPutStrike.getPutLTP() : BigDecimal.ZERO;
 
-                    OptionStrike longPutStrikeData = chain.getStrikes().stream()
-                            .filter(s -> s.getStrikePrice().compareTo(longPutStrikePrice) == 0)
-                            .findFirst()
-                            .orElse(null);
-                    BigDecimal longPutLtp = longPutStrikeData != null && longPutStrikeData.getPutLTP() != null ?
-                            longPutStrikeData.getPutLTP() : BigDecimal.ZERO;
+            OptionStrike longPutStrikeData = chain.getStrikes().stream()
+                    .filter(s -> s.getStrikePrice().compareTo(longPutStrikePrice) == 0)
+                    .findFirst()
+                    .orElse(null);
+            BigDecimal longPutLtp = longPutStrikeData != null && longPutStrikeData.getPutLTP() != null ?
+                    longPutStrikeData.getPutLTP() : BigDecimal.ZERO;
 
-                    // Calculate net credit
-                    BigDecimal netCredit = shortPutLtp.subtract(longPutLtp);
+            // Calculate net credit
+            BigDecimal netCredit = shortPutLtp.subtract(longPutLtp);
 
-                    // Validate minimum credit
-                    double minCreditPct = cfg.getExtraDouble("min-credit-pct", 0.10);
-                    double minCredit = wingWidth * minCreditPct;
-                    if (netCredit.doubleValue() < minCredit) {
-                        log.warn("Net credit {} is below minimum {}", netCredit, minCredit);
-                        return Mono.just(StrategyResult.builder()
-                                .isExecutable(false)
-                                .skipReason("Net credit below minimum")
-                                .build());
-                    }
+            // Validate minimum credit
+            double minCreditPct = cfg.getExtraDouble("min-credit-pct", 0.10);
+            double minCredit = wingWidth * minCreditPct;
+            if (netCredit.doubleValue() < minCredit) {
+                log.warn("Net credit {} is below minimum {}", netCredit, minCredit);
+                return Mono.just(StrategyResult.builder()
+                        .isExecutable(false)
+                        .skipReason("Net credit below minimum")
+                        .build());
+            }
 
-                    // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
-                    BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
-                            .multiply(BigDecimal.valueOf(lotSize));
+            // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
+            BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
+                    .multiply(BigDecimal.valueOf(lotSize));
 
-                    // Capital-based position sizing with VIX scaling: compute lots from risk budget
-                    // Capped by cfg.getMaxLots() as hard ceiling
-                    int lots = Math.min(
-                            lotSizeService.getPositionSize(maxLossPerLot, currentVix),
-                            cfg.getMaxLots()
-                    );
+            // Capital-based position sizing with VIX scaling: compute lots from risk budget
+            // Capped by cfg.getMaxLots() as hard ceiling
+            int lots = Math.min(
+                    lotSizeService.getPositionSize(maxLossPerLot, currentVix),
+                    cfg.getMaxLots()
+            );
 
-                    // P&L matrix (recomputed with actual lots)
-                    BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
-                    BigDecimal maxLoss = maxLossPerLot.multiply(BigDecimal.valueOf(lots));
-                    BigDecimal breakeven = shortPutStrikePrice.subtract(netCredit);
+            // P&L matrix (recomputed with actual lots)
+            BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
+            BigDecimal maxLoss = maxLossPerLot.multiply(BigDecimal.valueOf(lots));
+            BigDecimal breakeven = shortPutStrikePrice.subtract(netCredit);
 
-                    // Build trade legs
-                    List<TradeLeg> legs = new ArrayList<>();
+            // Build trade legs
+            List<TradeLeg> legs = new ArrayList<>();
 
-                    // SELL short put
-                    legs.add(TradeLeg.builder()
-                            .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), shortPutStrikePrice, OptionType.PE))
-                            .action(Action.SELL)
-                            .optionType(OptionType.PE)
-                            .strikePrice(shortPutStrikePrice.doubleValue())
-                            .expiryDate(chain.getExpiryDate())
-                            .quantity(lots)
-                            .limitPrice(shortPutLtp.doubleValue())
-                            .legType(LegType.ENTRY)
-                            .build());
+            // SELL short put
+            legs.add(TradeLeg.builder()
+                    .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), shortPutStrikePrice, OptionType.PE))
+                    .action(Action.SELL)
+                    .optionType(OptionType.PE)
+                    .strikePrice(shortPutStrikePrice.doubleValue())
+                    .expiryDate(chain.getExpiryDate())
+                    .quantity(lots)
+                    .limitPrice(shortPutLtp.doubleValue())
+                    .legType(LegType.ENTRY)
+                    .build());
 
-                    // BUY long put
-                    legs.add(TradeLeg.builder()
-                            .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), longPutStrikePrice, OptionType.PE))
-                            .action(Action.BUY)
-                            .optionType(OptionType.PE)
-                            .strikePrice(longPutStrikePrice.doubleValue())
-                            .expiryDate(chain.getExpiryDate())
-                            .quantity(lots)
-                            .limitPrice(longPutLtp.doubleValue())
-                            .legType(LegType.ENTRY)
-                            .build());
+            // BUY long put
+            legs.add(TradeLeg.builder()
+                    .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), longPutStrikePrice, OptionType.PE))
+                    .action(Action.BUY)
+                    .optionType(OptionType.PE)
+                    .strikePrice(longPutStrikePrice.doubleValue())
+                    .expiryDate(chain.getExpiryDate())
+                    .quantity(lots)
+                    .limitPrice(longPutLtp.doubleValue())
+                    .legType(LegType.ENTRY)
+                    .build());
 
-                    // Build metadata map
-                    java.util.Map<String, String> metadata = new java.util.HashMap<>();
-                    metadata.put("maxProfit", maxProfit.toString());
-                    metadata.put("maxLoss", maxLoss.toString());
-                    metadata.put("breakeven", breakeven.toString());
-                    metadata.put("netCredit", netCredit.toString());
-                    metadata.put("shortPutStrike", shortPutStrikePrice.toString());
-                    metadata.put("longPutStrike", longPutStrikePrice.toString());
-                    metadata.put("shortPutLtp", shortPutLtp.toString());
-                    metadata.put("longPutLtp", longPutLtp.toString());
-                    metadata.put("dte", String.valueOf(dte));
-                    metadata.put("currentVix", String.valueOf(currentVix));
-                    metadata.put("confidenceScore", String.valueOf(score));
+            // Build metadata map
+            java.util.Map<String, String> metadata = new java.util.HashMap<>();
+            metadata.put("maxProfit", maxProfit.toString());
+            metadata.put("maxLoss", maxLoss.toString());
+            metadata.put("breakeven", breakeven.toString());
+            metadata.put("netCredit", netCredit.toString());
+            metadata.put("shortPutStrike", shortPutStrikePrice.toString());
+            metadata.put("longPutStrike", longPutStrikePrice.toString());
+            metadata.put("shortPutLtp", shortPutLtp.toString());
+            metadata.put("longPutLtp", longPutLtp.toString());
+            metadata.put("dte", String.valueOf(dte));
+            metadata.put("currentVix", String.valueOf(currentVix));
+            metadata.put("confidenceScore", String.valueOf(score));
 
-                    Confidence confidence = score >= 60 ? Confidence.HIGH
-                            : score >= 43 ? Confidence.MEDIUM
-                            : Confidence.LOW;
+            Confidence confidence = score >= 60 ? Confidence.HIGH
+                    : score >= 43 ? Confidence.MEDIUM
+                      : Confidence.LOW;
 
-                    return Mono.just(StrategyResult.builder()
-                            .signal(com.trademesh.strategy.TradeSignal.builder()
-                                    .symbol("NIFTY50")
-                                    .strategyName(getName())
-                                    .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
-                                    .legs(legs)
-                                    .expectedCredit(netCredit.doubleValue())
-                                    .maxLoss(maxLoss.doubleValue())
-                                    .reason("Bull Put Spread: " + shortPutStrikePrice + "PE / " +
-                                            longPutStrikePrice + "PE | Credit: " + netCredit + " | Score: " + score)
-                                    .confidence(confidence)
-                                    .metadata(metadata)
-                                    .build())
-                            .isExecutable(true)
-                            .build());
-                });
+            return Mono.just(StrategyResult.builder()
+                    .signal(com.trademesh.strategy.TradeSignal.builder()
+                            .symbol("NIFTY50")
+                            .strategyName(getName())
+                            .signalType(com.trademesh.strategy.enums.SignalType.ENTER)
+                            .legs(legs)
+                            .expectedCredit(netCredit.doubleValue())
+                            .maxLoss(maxLoss.doubleValue())
+                            .reason("Bull Put Spread: " + shortPutStrikePrice + "PE / " +
+                                    longPutStrikePrice + "PE | Credit: " + netCredit + " | Score: " + score)
+                            .confidence(confidence)
+                            .metadata(metadata)
+                            .build())
+                    .isExecutable(true)
+                    .build());
+        });
     }
 
     /**

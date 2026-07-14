@@ -111,7 +111,7 @@ class SpreadStrategyMinScoreGateTest {
         // Act
         String confidence = score >= highThreshold ? "HIGH"
                 : score >= mediumThreshold ? "MEDIUM"
-                : "LOW";
+                  : "LOW";
 
         // Assert
         assertEquals("HIGH", confidence, "Score 60 should map to HIGH confidence");
@@ -131,7 +131,7 @@ class SpreadStrategyMinScoreGateTest {
         // Act
         String confidence = score >= highThreshold ? "HIGH"
                 : score >= mediumThreshold ? "MEDIUM"
-                : "LOW";
+                  : "LOW";
 
         // Assert
         assertEquals("MEDIUM", confidence, "Score 59 should map to MEDIUM confidence");
@@ -152,7 +152,7 @@ class SpreadStrategyMinScoreGateTest {
         // Act
         String confidence = score >= highThreshold ? "HIGH"
                 : score >= mediumThreshold ? "MEDIUM"
-                : "LOW";
+                  : "LOW";
 
         // Assert
         assertEquals("MEDIUM", confidence, "Score 43 should map to MEDIUM confidence");
@@ -172,7 +172,7 @@ class SpreadStrategyMinScoreGateTest {
         // Act
         String confidence = score >= highThreshold ? "HIGH"
                 : score >= mediumThreshold ? "MEDIUM"
-                : "LOW";
+                  : "LOW";
 
         // Assert
         assertEquals("LOW", confidence, "Score 42 should map to LOW confidence");

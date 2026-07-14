@@ -282,7 +282,7 @@ public class MarketMetricsService {
      * Computes the 14-day rolling ATR for a specific day index.
      * Uses the exact same averaging logic as calculateATR14().
      *
-     * @param prices list of NiftyDailyPrice records (oldest first)
+     * @param prices   list of NiftyDailyPrice records (oldest first)
      * @param dayIndex the index of the day to compute ATR14 for (must be >= 14)
      * @param trValues pre-computed True Range array for all days
      * @return ATR14 value for that day, or null if insufficient data
@@ -304,68 +304,68 @@ public class MarketMetricsService {
         return BigDecimal.valueOf(atr14Value).setScale(2, RoundingMode.HALF_UP);
     }
 
-     /**
-      * Calculates ATR percentile from 74 days of price data.
-      * Compares today's smoothed 14-day ATR against a distribution of OTHER DAYS' smoothed 14-day ATR values.
-      * This is a methodologically consistent smoothed-vs-smoothed comparison.
-      *
-      * @param prices list of 74 NiftyDailyPrice records (oldest first)
-      * @param atr14  current ATR14 value (today's smoothed ATR, computed from last 21 days)
-      * @return ATR percentile (0-100), rounded to 2 decimal places
-      */
-     BigDecimal calculateATRPercentile(List<NiftyDailyPrice> prices, BigDecimal atr14) {
-         log.debug("Calculating ATR percentile from {} price records (smoothed-vs-smoothed)", prices.size());
+    /**
+     * Calculates ATR percentile from 74 days of price data.
+     * Compares today's smoothed 14-day ATR against a distribution of OTHER DAYS' smoothed 14-day ATR values.
+     * This is a methodologically consistent smoothed-vs-smoothed comparison.
+     *
+     * @param prices list of 74 NiftyDailyPrice records (oldest first)
+     * @param atr14  current ATR14 value (today's smoothed ATR, computed from last 21 days)
+     * @return ATR percentile (0-100), rounded to 2 decimal places
+     */
+    BigDecimal calculateATRPercentile(List<NiftyDailyPrice> prices, BigDecimal atr14) {
+        log.debug("Calculating ATR percentile from {} price records (smoothed-vs-smoothed)", prices.size());
 
-         // Calculate True Range for each day (from index 1 onwards)
-         double[] trValues = new double[prices.size() - 1];
-         for (int i = 1; i < prices.size(); i++) {
-             NiftyDailyPrice curr = prices.get(i);
-             NiftyDailyPrice prev = prices.get(i - 1);
+        // Calculate True Range for each day (from index 1 onwards)
+        double[] trValues = new double[prices.size() - 1];
+        for (int i = 1; i < prices.size(); i++) {
+            NiftyDailyPrice curr = prices.get(i);
+            NiftyDailyPrice prev = prices.get(i - 1);
 
-             BigDecimal high = curr.getHigh();
-             BigDecimal low = curr.getLow();
-             BigDecimal prevClose = prev.getClose();
+            BigDecimal high = curr.getHigh();
+            BigDecimal low = curr.getLow();
+            BigDecimal prevClose = prev.getClose();
 
-             // TR = max(high - low, abs(high - prevClose), abs(low - prevClose))
-             double tr1 = high.subtract(low).doubleValue();
-             double tr2 = high.subtract(prevClose).abs().doubleValue();
-             double tr3 = low.subtract(prevClose).abs().doubleValue();
+            // TR = max(high - low, abs(high - prevClose), abs(low - prevClose))
+            double tr1 = high.subtract(low).doubleValue();
+            double tr2 = high.subtract(prevClose).abs().doubleValue();
+            double tr3 = low.subtract(prevClose).abs().doubleValue();
 
-             trValues[i - 1] = Math.max(tr1, Math.max(tr2, tr3));
-         }
+            trValues[i - 1] = Math.max(tr1, Math.max(tr2, tr3));
+        }
 
-           // Build a distribution of rolling ATR14 values for each day from day 14 onward
-           java.util.List<BigDecimal> atrDistribution = new java.util.ArrayList<>();
-            double atr14Double = atr14.doubleValue();
-           for (int dayIndex = 14; dayIndex < prices.size(); dayIndex++) {
-               BigDecimal rollingAtr14 = computeRollingATR14(prices, dayIndex, trValues);
-                if (rollingAtr14 != null) {
-                    atrDistribution.add(rollingAtr14);
-                }
-           }
+        // Build a distribution of rolling ATR14 values for each day from day 14 onward
+        java.util.List<BigDecimal> atrDistribution = new java.util.ArrayList<>();
+        double atr14Double = atr14.doubleValue();
+        for (int dayIndex = 14; dayIndex < prices.size(); dayIndex++) {
+            BigDecimal rollingAtr14 = computeRollingATR14(prices, dayIndex, trValues);
+            if (rollingAtr14 != null) {
+                atrDistribution.add(rollingAtr14);
+            }
+        }
 
-           System.out.println("DEBUG: full distribution = " + atrDistribution);
+        System.out.println("DEBUG: full distribution = " + atrDistribution);
 
-          if (atrDistribution.isEmpty()) {
-              log.warn("No valid rolling ATR14 values computed for percentile calculation");
-              return null;
-          }
+        if (atrDistribution.isEmpty()) {
+            log.warn("No valid rolling ATR14 values computed for percentile calculation");
+            return null;
+        }
 
-          // Count how many rolling ATR14 values are less than current ATR14
-          int countLessThanATR = 0;
-           for (BigDecimal atrValue : atrDistribution) {
-               double atrVal = atrValue.doubleValue();
-               if (atrVal < atr14Double) {
-                  countLessThanATR++;
-              }
-          }
+        // Count how many rolling ATR14 values are less than current ATR14
+        int countLessThanATR = 0;
+        for (BigDecimal atrValue : atrDistribution) {
+            double atrVal = atrValue.doubleValue();
+            if (atrVal < atr14Double) {
+                countLessThanATR++;
+            }
+        }
 
-         // Calculate percentile: (count less than current) / (distribution size) * 100
-         double percentile = (double) countLessThanATR / atrDistribution.size() * 100;
+        // Calculate percentile: (count less than current) / (distribution size) * 100
+        double percentile = (double) countLessThanATR / atrDistribution.size() * 100;
 
-         log.debug("ATR percentile calculated: {} (count={}, distribution_size={})", percentile, countLessThanATR, atrDistribution.size());
-         return BigDecimal.valueOf(percentile).setScale(2, RoundingMode.HALF_UP);
-     }
+        log.debug("ATR percentile calculated: {} (count={}, distribution_size={})", percentile, countLessThanATR, atrDistribution.size());
+        return BigDecimal.valueOf(percentile).setScale(2, RoundingMode.HALF_UP);
+    }
 
     /**
      * Calculates IV Rank (IVR) from IV history.

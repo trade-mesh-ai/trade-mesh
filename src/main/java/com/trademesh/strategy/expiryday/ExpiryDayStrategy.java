@@ -233,27 +233,27 @@ public class ExpiryDayStrategy implements TradingStrategy {
         BigDecimal oiCallWall = intelligence.getOiAnalysis().getMaxCallOIStrike();
         BigDecimal oiPutWall = intelligence.getOiAnalysis().getMaxPutOIStrike();
 
-         BigDecimal callStrike = oiCallWall;
-         BigDecimal putStrike = oiPutWall;
+        BigDecimal callStrike = oiCallWall;
+        BigDecimal putStrike = oiPutWall;
 
-         // This check is missing entirely:
-         if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
+        // This check is missing entirely:
+        if (callStrike.compareTo(spotPrice) <= 0 || putStrike.compareTo(spotPrice) >= 0) {
             log.warn("OI walls structurally invalid relative to spot — " +
                     "callStrike={}, putStrike={}, spot={}", callStrike, putStrike, spotPrice);
             return null;
         }
 
-         // --- ATR-scaled minimum distance (fail fast if unavailable) ---
-         double atr14 = metrics.getAtr14() != null ? metrics.getAtr14().doubleValue() : 0.0;
-         double atrMultiplier = strategyConfig().getExtraDouble("min-distance-atr-multiplier", 0.4);
+        // --- ATR-scaled minimum distance (fail fast if unavailable) ---
+        double atr14 = metrics.getAtr14() != null ? metrics.getAtr14().doubleValue() : 0.0;
+        double atrMultiplier = strategyConfig().getExtraDouble("min-distance-atr-multiplier", 0.4);
 
-         if (atr14 <= 0) {
+        if (atr14 <= 0) {
             log.warn("ATR14 unavailable, cannot calculate safety distance — skipping");
             return null;
         }
 
-         BigDecimal minDistance = BigDecimal.valueOf(atr14 * atrMultiplier);
-         int strikeStep = 50; // NIFTY strike step
+        BigDecimal minDistance = BigDecimal.valueOf(atr14 * atrMultiplier);
+        int strikeStep = 50; // NIFTY strike step
 
         // --- Compute ATR-scaled boundary strikes (round to valid strike step) ---
         BigDecimal boundaryCall = roundUpToStep(spotPrice.add(minDistance), strikeStep);
@@ -294,7 +294,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
     /**
      * Builds trade legs from selected strikes and option chain data.
      * Returns TradeLegsResult with legs and total credit, or null if unable to build.
-     *
+     * <p>
      * Capital-based position sizing: computes maxLossPerLot from totalCredit and
      * stop-loss-percent, then derives lot count via LotSizeService before building legs.
      *

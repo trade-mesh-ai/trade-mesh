@@ -108,7 +108,7 @@ class BearCallSpreadStrategyTest {
      * Test: Direction-specific scoring.
      * Bull Put rewards positive trend, Bear Call rewards negative trend.
      * Same metrics, opposite trend directions should yield opposite scores.
-     * 
+     * <p>
      * CRITICAL: PCR must be neutral for EACH strategy being tested:
      * - metricsForBullPutTest: pcr=1.5 (neutral for Bull Put, which needs pcr < 0.8 to score)
      * - metricsForBearCallTest: pcr=0.5 (neutral for Bear Call, which needs pcr > 1.2 to score)

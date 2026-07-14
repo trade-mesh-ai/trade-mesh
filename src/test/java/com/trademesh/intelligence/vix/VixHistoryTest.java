@@ -51,7 +51,7 @@ class VixHistoryTest {
         Instant now = Instant.now();
         assertNotEquals(now, vixHistory.getRecordedAt(),
                 "VixHistory.recordedAt should not be the current time");
-        
+
         // Verify the difference is approximately 5 minutes
         long secondsDifference = ChronoUnit.SECONDS.between(vixHistory.getRecordedAt(), now);
         assertEquals(300, secondsDifference, 2,

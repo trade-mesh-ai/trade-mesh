@@ -25,7 +25,7 @@ class SpreadConfidenceScoreTest {
     /**
      * Test 1: Bull Put - All factors at best band.
      * Expected: 30 (IVR) + 20 (IV/HV) + 20 (ATR%) + 15 (PCR) = 85 points.
-     *
+     * <p>
      * Best bands:
      * - IVR: 50-65 → +30
      * - IV/HV: >= 1.3 → +20
@@ -169,43 +169,43 @@ class SpreadConfidenceScoreTest {
     /**
      * Test 8: Bear Call - All factors at best band.
      * Expected: 30 (IVR) + 20 (IV/HV) + 20 (ATR%) + 15 (PCR) = 85 points.
-     *
+     * <p>
      * Best bands:
      * - IVR: 50-65 → +30
      * - IV/HV: >= 1.3 → +20
      * - ATR%: 0.36-0.48 → +20 (spread-specific)
      * - PCR: > 1.2 → +15 (Bear Call rewards high PCR)
      */
-     @Test
-     void testBearCallConfidenceScore_AllFactorsAtBestBand_Returns85() {
-         MarketMetrics metrics = MarketMetrics.builder()
-                 .ivr(BigDecimal.valueOf(55.0))      // in 50-65 range → +30
-                 .ivHvRatio(BigDecimal.valueOf(1.5)) // >= 1.3 → +20
-                 .atrPct(BigDecimal.valueOf(0.42))   // in 0.36-0.48 range → +20 (spread-specific)
-                 .pcr(BigDecimal.valueOf(1.3))       // > 1.2 → +15
-                 .build();
+    @Test
+    void testBearCallConfidenceScore_AllFactorsAtBestBand_Returns85() {
+        MarketMetrics metrics = MarketMetrics.builder()
+                .ivr(BigDecimal.valueOf(55.0))      // in 50-65 range → +30
+                .ivHvRatio(BigDecimal.valueOf(1.5)) // >= 1.3 → +20
+                .atrPct(BigDecimal.valueOf(0.42))   // in 0.36-0.48 range → +20 (spread-specific)
+                .pcr(BigDecimal.valueOf(1.3))       // > 1.2 → +15
+                .build();
 
-         int score = bearCallStrategy.calculateConfidenceScore(metrics, null);
+        int score = bearCallStrategy.calculateConfidenceScore(metrics, null);
 
-         assertEquals(85, score, "Bear Call: All factors at best band should yield max score of 85");
-     }
+        assertEquals(85, score, "Bear Call: All factors at best band should yield max score of 85");
+    }
 
-     /**
-      * Test 8b: Bear Call - Score 60 boundary test.
-      * Expected: 30 (IVR) + 20 (IV/HV) + 10 (ATR%) + 0 (PCR) = 60 points.
-      */
-     @Test
-     void testBearCallConfidenceScore_Score60_CorrectBoundary() {
-         MarketMetrics metrics = MarketMetrics.builder()
-                 .ivr(BigDecimal.valueOf(55.0))      // in 50-65 range → +30
-                 .ivHvRatio(BigDecimal.valueOf(1.5)) // >= 1.3 → +20
-                 .atrPct(BigDecimal.valueOf(0.55))   // in 0.48-0.60 range → +10
-                 .pcr(null)                          // 0
-                 .build();
+    /**
+     * Test 8b: Bear Call - Score 60 boundary test.
+     * Expected: 30 (IVR) + 20 (IV/HV) + 10 (ATR%) + 0 (PCR) = 60 points.
+     */
+    @Test
+    void testBearCallConfidenceScore_Score60_CorrectBoundary() {
+        MarketMetrics metrics = MarketMetrics.builder()
+                .ivr(BigDecimal.valueOf(55.0))      // in 50-65 range → +30
+                .ivHvRatio(BigDecimal.valueOf(1.5)) // >= 1.3 → +20
+                .atrPct(BigDecimal.valueOf(0.55))   // in 0.48-0.60 range → +10
+                .pcr(null)                          // 0
+                .build();
 
-         int score = bearCallStrategy.calculateConfidenceScore(metrics, null);
-         assertEquals(60, score, "Score 60 should be achievable (30+20+10)");
-     }
+        int score = bearCallStrategy.calculateConfidenceScore(metrics, null);
+        assertEquals(60, score, "Score 60 should be achievable (30+20+10)");
+    }
 
     /**
      * Test 9: Bear Call - All factors at worst band.
@@ -318,29 +318,29 @@ class SpreadConfidenceScoreTest {
         assertEquals(0, bearCallScore, "Bear Call: All null metrics should yield 0");
     }
 
-        @Test
-        void testBullPutConfidenceScore_KnownCombination_ProducesCorrectScore() {
-            MarketMetrics metrics = MarketMetrics.builder()
-                    .ivr(BigDecimal.valueOf(55.0))
-                    .ivHvRatio(BigDecimal.valueOf(1.5))
-                    .atrPct(BigDecimal.valueOf(0.3))
-                    .pcr(BigDecimal.valueOf(0.7))
-                    .build();
-            int score = bullPutStrategy.calculateConfidenceScore(metrics, null);
-            System.out.println("DEBUG: SpreadConfidenceScoreTest.testBullPutConfidenceScore_KnownCombination_ProducesCorrectScore() computed score = " + score);
-            assertEquals(80, score, "Known combination (IVR=55, IVHV=1.5, ATR%=0.3, PCR=0.7) produces score 80 for Bull Put Spread");
-        }
+    @Test
+    void testBullPutConfidenceScore_KnownCombination_ProducesCorrectScore() {
+        MarketMetrics metrics = MarketMetrics.builder()
+                .ivr(BigDecimal.valueOf(55.0))
+                .ivHvRatio(BigDecimal.valueOf(1.5))
+                .atrPct(BigDecimal.valueOf(0.3))
+                .pcr(BigDecimal.valueOf(0.7))
+                .build();
+        int score = bullPutStrategy.calculateConfidenceScore(metrics, null);
+        System.out.println("DEBUG: SpreadConfidenceScoreTest.testBullPutConfidenceScore_KnownCombination_ProducesCorrectScore() computed score = " + score);
+        assertEquals(80, score, "Known combination (IVR=55, IVHV=1.5, ATR%=0.3, PCR=0.7) produces score 80 for Bull Put Spread");
+    }
 
-     @Test
-     void testBearCallConfidenceScore_KnownCombination_ProducesCorrectScore() {
-         MarketMetrics metrics = MarketMetrics.builder()
-                 .ivr(BigDecimal.valueOf(55.0))
-                 .ivHvRatio(BigDecimal.valueOf(1.5))
-                 .atrPct(BigDecimal.valueOf(0.3))
-                 .pcr(BigDecimal.valueOf(1.3))
-                 .build();
-         int score = bearCallStrategy.calculateConfidenceScore(metrics, null);
-         System.out.println("DEBUG: SpreadConfidenceScoreTest.testBearCallConfidenceScore_KnownCombination_ProducesCorrectScore() computed score = " + score);
-         assertEquals(80, score, "Known combination (IVR=55, IVHV=1.5, ATR%=0.3, PCR=1.3) produces score 80 for Bear Call Spread");
-     }
+    @Test
+    void testBearCallConfidenceScore_KnownCombination_ProducesCorrectScore() {
+        MarketMetrics metrics = MarketMetrics.builder()
+                .ivr(BigDecimal.valueOf(55.0))
+                .ivHvRatio(BigDecimal.valueOf(1.5))
+                .atrPct(BigDecimal.valueOf(0.3))
+                .pcr(BigDecimal.valueOf(1.3))
+                .build();
+        int score = bearCallStrategy.calculateConfidenceScore(metrics, null);
+        System.out.println("DEBUG: SpreadConfidenceScoreTest.testBearCallConfidenceScore_KnownCombination_ProducesCorrectScore() computed score = " + score);
+        assertEquals(80, score, "Known combination (IVR=55, IVHV=1.5, ATR%=0.3, PCR=1.3) produces score 80 for Bear Call Spread");
+    }
 }

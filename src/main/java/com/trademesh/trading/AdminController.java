@@ -348,16 +348,16 @@ public class AdminController {
      * <p>
      * Three calculations:
      * 1. fullHistorySmoothedVsSmoothed: Full history, ATR14 vs ATR14 (baseline)
-     *    - Ranks each day's ATR14 against other days' ATR14 values
+     * - Ranks each day's ATR14 against other days' ATR14 values
      * 2. fullHistorySmoothedVsRaw: Full history, ATR14 vs raw TR (isolates comparison method)
-     *    - Compares today's smoothed ATR14 against distribution of raw TR values
+     * - Compares today's smoothed ATR14 against distribution of raw TR values
      * 3. last60DaysSmoothedVsRaw: 60-day window, ATR14 vs raw TR (replicates production)
-     *    - Exactly replicates MarketMetricsService.calculateATRPercentile()
+     * - Exactly replicates MarketMetricsService.calculateATRPercentile()
      * <p>
      * Example: {@code GET /admin/diagnostic/atr-percentiles}
      *
      * @return Mono emitting ResponseEntity with AtrPercentilesResponse containing
-     *         all three percentile distributions for comparison
+     * all three percentile distributions for comparison
      */
     @Operation(summary = "TEMPORARY: Compute three ATR percentile distributions (diagnostic endpoint)")
     @GetMapping(value = "/diagnostic/atr-percentiles", produces = MediaType.APPLICATION_JSON_VALUE)

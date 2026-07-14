@@ -7,7 +7,6 @@ import com.trademesh.intelligence.MarketMetrics;
 import com.trademesh.intelligence.MarketMetricsService;
 import com.trademesh.intelligence.vix.VixData;
 import com.trademesh.intelligence.vix.VixMonitorService;
-import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.config.StrategyProperties;
@@ -26,7 +25,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 /**
@@ -118,11 +116,11 @@ class IronCondorStrategyVixScalingTest {
                 .assertNext(result -> {
                     assertTrue(result.getIsExecutable());
                     assertNotNull(result.getSignal());
-                    
+
                     // Verify that legs have the VIX-scaled quantity (5)
                     List<TradeLeg> legs = result.getSignal().getLegs();
                     assertEquals(4, legs.size(), "Iron Condor should have 4 legs");
-                    
+
                     for (TradeLeg leg : legs) {
                         assertEquals(5, leg.getQuantity(),
                                 "All legs should use VIX-scaled quantity of 5");
@@ -181,11 +179,11 @@ class IronCondorStrategyVixScalingTest {
                 .assertNext(result -> {
                     assertTrue(result.getIsExecutable());
                     assertNotNull(result.getSignal());
-                    
+
                     // Verify that legs have the full quantity (10)
                     List<TradeLeg> legs = result.getSignal().getLegs();
                     assertEquals(4, legs.size(), "Iron Condor should have 4 legs");
-                    
+
                     for (TradeLeg leg : legs) {
                         assertEquals(10, leg.getQuantity(),
                                 "All legs should use full quantity of 10");
@@ -244,11 +242,11 @@ class IronCondorStrategyVixScalingTest {
                 .assertNext(result -> {
                     assertTrue(result.getIsExecutable());
                     assertNotNull(result.getSignal());
-                    
+
                     // Verify that legs have the full quantity (10) at boundary
                     List<TradeLeg> legs = result.getSignal().getLegs();
                     assertEquals(4, legs.size(), "Iron Condor should have 4 legs");
-                    
+
                     for (TradeLeg leg : legs) {
                         assertEquals(10, leg.getQuantity(),
                                 "At VIX=18.0 boundary, should use full quantity of 10");
@@ -287,17 +285,17 @@ class IronCondorStrategyVixScalingTest {
     private OptionChain createMockOptionChain() {
         LocalDate expiryDate = LocalDate.now().plusDays(2);
         List<OptionStrike> strikes = new ArrayList<>();
-        
+
         // Create mock strikes around 50000 with realistic LTPs
         // Spot = 50000, so strikes are: 49500, 49600, ..., 50000, ..., 50400, 50500
         // Near-the-money strikes have higher LTP, far OTM have lower LTP
         for (int i = 48000; i <= 52000; i += 100) {
             OptionStrike strike = new OptionStrike();
             strike.setStrikePrice(BigDecimal.valueOf(i));
-            
+
             // Distance from spot (50000)
             int distance = Math.abs(i - 50000);
-            
+
             // LTP decreases with distance from spot
             // At spot (distance=0): LTP=80
             // At distance 100: LTP=60
@@ -306,14 +304,14 @@ class IronCondorStrategyVixScalingTest {
             // At distance 400: LTP=10
             // At distance 500: LTP=5
             double ltp = Math.max(1.0, 150.0 - (distance / 100.0) * 8.0);
-            
+
             strike.setCallLTP(BigDecimal.valueOf(ltp));
             strike.setPutLTP(BigDecimal.valueOf(ltp));
             strike.setCallIV(BigDecimal.valueOf(15.0));
             strike.setPutIV(BigDecimal.valueOf(15.0));
             strikes.add(strike);
         }
-        
+
         OptionChain chain = new OptionChain();
         chain.setSpotPrice(BigDecimal.valueOf(50000.0));
         chain.setExpiryDate(expiryDate);

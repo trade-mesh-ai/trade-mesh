@@ -17,7 +17,6 @@ import java.time.ZoneId;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.when;
 
 /**
  * Controller-level test for TradingController.getTodayReport().

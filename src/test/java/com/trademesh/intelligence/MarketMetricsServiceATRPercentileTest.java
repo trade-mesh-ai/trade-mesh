@@ -2,7 +2,6 @@ package com.trademesh.intelligence;
 
 import com.trademesh.domain.NiftyDailyPrice;
 import com.trademesh.intelligence.iv.IvHistoryService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -81,8 +80,8 @@ class MarketMetricsServiceATRPercentileTest {
 
         // Verify the percentile is roughly in the middle
         assertTrue(percentile.compareTo(BigDecimal.valueOf(20)) > 0 &&
-                   percentile.compareTo(BigDecimal.valueOf(80)) < 0,
-                   "Percentile of the median-ish value should be roughly in the middle");
+                        percentile.compareTo(BigDecimal.valueOf(80)) < 0,
+                "Percentile of the median-ish value should be roughly in the middle");
     }
 
     /**

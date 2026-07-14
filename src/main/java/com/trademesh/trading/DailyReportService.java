@@ -201,9 +201,9 @@ public class DailyReportService {
      * - Currently open: all open trades (any entry date)
      * - Closed today: trades that closed on this date (any entry date)
      *
-     * @param metrics aggregated metrics from closed trades
-     * @param enteredToday count of trades entered today
-     * @param openCount count of all currently open trades
+     * @param metrics          aggregated metrics from closed trades
+     * @param enteredToday     count of trades entered today
+     * @param openCount        count of all currently open trades
      * @param closedTodayCount count of trades closed today
      * @return Mono emitting void
      */
@@ -341,7 +341,8 @@ public class DailyReportService {
             long openCount,
             int closedTodayCount,
             DailyReportMetrics metrics
-    ) {}
+    ) {
+    }
 
     /**
      * Package-private nested class holding aggregated daily trading metrics.

@@ -119,91 +119,91 @@ class TradingSchedulerTest {
         verify(tradingOrchestrator, never()).exitAllPositions(anyString());
     }
 
-     /**
-      * Test: scheduledDailyExit() handles successful position closure.
-      * <p>
-      * Verifies that:
-      * - exitPositionsForStrategy() is called and returns a count
-      * - No exceptions are thrown
-      */
-     @Test
-     @DisplayName("scheduledDailyExit: Handles successful position closure")
-     void testScheduledDailyExitHandlesSuccessfulClosure() {
-         // Arrange
-         when(marketCalendarService.isMarketOpen()).thenReturn(Mono.just(true));
-         when(tradingOrchestrator.exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE"))
-                 .thenReturn(Mono.just(3)); // 3 positions closed
+    /**
+     * Test: scheduledDailyExit() handles successful position closure.
+     * <p>
+     * Verifies that:
+     * - exitPositionsForStrategy() is called and returns a count
+     * - No exceptions are thrown
+     */
+    @Test
+    @DisplayName("scheduledDailyExit: Handles successful position closure")
+    void testScheduledDailyExitHandlesSuccessfulClosure() {
+        // Arrange
+        when(marketCalendarService.isMarketOpen()).thenReturn(Mono.just(true));
+        when(tradingOrchestrator.exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE"))
+                .thenReturn(Mono.just(3)); // 3 positions closed
 
-         // Act
-         tradingScheduler.scheduledDailyExit();
+        // Act
+        tradingScheduler.scheduledDailyExit();
 
-         // Give async operations time to complete
-         try {
-             Thread.sleep(100);
-         } catch (InterruptedException e) {
-             Thread.currentThread().interrupt();
-         }
+        // Give async operations time to complete
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
 
-         // Assert
-         verify(tradingOrchestrator, times(1)).exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE");
-         verify(tradingOrchestrator, never()).exitAllPositions(anyString());
-     }
+        // Assert
+        verify(tradingOrchestrator, times(1)).exitPositionsForStrategy("NIFTY50", "EXPIRY_DAY_STRANGLE");
+        verify(tradingOrchestrator, never()).exitAllPositions(anyString());
+    }
 
-     /**
-      * Test: dailySafetyNetCheck() calls runDteExitSafetyNetCheck() when market is open.
-      * <p>
-      * Verifies that:
-      * - Market open check is performed
-      * - runDteExitSafetyNetCheck() is called when market is open
-      */
-     @Test
-     @DisplayName("dailySafetyNetCheck: Calls runDteExitSafetyNetCheck when market is open")
-     void testDailySafetyNetCheckCallsWhenMarketOpen() {
-         // Arrange
-         when(marketCalendarService.isMarketOpen()).thenReturn(Mono.just(true));
-         when(tradingOrchestrator.runDteExitSafetyNetCheck())
-                 .thenReturn(Mono.just(0));
+    /**
+     * Test: dailySafetyNetCheck() calls runDteExitSafetyNetCheck() when market is open.
+     * <p>
+     * Verifies that:
+     * - Market open check is performed
+     * - runDteExitSafetyNetCheck() is called when market is open
+     */
+    @Test
+    @DisplayName("dailySafetyNetCheck: Calls runDteExitSafetyNetCheck when market is open")
+    void testDailySafetyNetCheckCallsWhenMarketOpen() {
+        // Arrange
+        when(marketCalendarService.isMarketOpen()).thenReturn(Mono.just(true));
+        when(tradingOrchestrator.runDteExitSafetyNetCheck())
+                .thenReturn(Mono.just(0));
 
-         // Act
-         tradingScheduler.dailySafetyNetCheck();
+        // Act
+        tradingScheduler.dailySafetyNetCheck();
 
-         // Give async operations time to complete
-         try {
-             Thread.sleep(100);
-         } catch (InterruptedException e) {
-             Thread.currentThread().interrupt();
-         }
+        // Give async operations time to complete
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
 
-         // Assert
-         verify(marketCalendarService, times(1)).isMarketOpen();
-         verify(tradingOrchestrator, times(1)).runDteExitSafetyNetCheck();
-     }
+        // Assert
+        verify(marketCalendarService, times(1)).isMarketOpen();
+        verify(tradingOrchestrator, times(1)).runDteExitSafetyNetCheck();
+    }
 
-     /**
-      * Test: dailySafetyNetCheck() skips execution when market is closed.
-      * <p>
-      * Verifies that:
-      * - Market open check is performed
-      * - runDteExitSafetyNetCheck() is NOT called when market is closed (e.g. NSE holiday)
-      */
-     @Test
-     @DisplayName("dailySafetyNetCheck: Skips execution when market is closed")
-     void testDailySafetyNetCheckSkipsWhenMarketClosed() {
-         // Arrange
-         when(marketCalendarService.isMarketOpen()).thenReturn(Mono.just(false));
+    /**
+     * Test: dailySafetyNetCheck() skips execution when market is closed.
+     * <p>
+     * Verifies that:
+     * - Market open check is performed
+     * - runDteExitSafetyNetCheck() is NOT called when market is closed (e.g. NSE holiday)
+     */
+    @Test
+    @DisplayName("dailySafetyNetCheck: Skips execution when market is closed")
+    void testDailySafetyNetCheckSkipsWhenMarketClosed() {
+        // Arrange
+        when(marketCalendarService.isMarketOpen()).thenReturn(Mono.just(false));
 
-         // Act
-         tradingScheduler.dailySafetyNetCheck();
+        // Act
+        tradingScheduler.dailySafetyNetCheck();
 
-         // Give async operations time to complete
-         try {
-             Thread.sleep(100);
-         } catch (InterruptedException e) {
-             Thread.currentThread().interrupt();
-         }
+        // Give async operations time to complete
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
 
-         // Assert
-         verify(marketCalendarService, times(1)).isMarketOpen();
-         verify(tradingOrchestrator, never()).runDteExitSafetyNetCheck();
-     }
+        // Assert
+        verify(marketCalendarService, times(1)).isMarketOpen();
+        verify(tradingOrchestrator, never()).runDteExitSafetyNetCheck();
+    }
 }

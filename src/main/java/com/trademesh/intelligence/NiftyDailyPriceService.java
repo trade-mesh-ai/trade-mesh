@@ -119,7 +119,7 @@ public class NiftyDailyPriceService {
                             .multiply(BigDecimal.valueOf(100))
                             .setScale(2, RoundingMode.HALF_UP);
 
-                    log.debug("Trend calculation: oldest={}, newest={}, trendPct={}", 
+                    log.debug("Trend calculation: oldest={}, newest={}, trendPct={}",
                             oldestClose, newestClose, trendPct);
 
                     return Mono.just(trendPct);

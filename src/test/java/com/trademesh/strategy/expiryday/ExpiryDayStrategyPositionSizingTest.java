@@ -1,7 +1,6 @@
 package com.trademesh.strategy.expiryday;
 
 import com.trademesh.config.LotSizeService;
-import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
 import com.trademesh.intelligence.MarketMetricsService;
@@ -9,13 +8,11 @@ import com.trademesh.strategy.StrategyResult;
 import com.trademesh.strategy.TradeSignal;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.config.StrategyProperties;
-import com.trademesh.strategy.enums.SignalType;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionStrike;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import reactor.core.publisher.Mono;
@@ -23,19 +20,17 @@ import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 /**
  * Tests for ExpiryDayStrategy capital-based position sizing.
- *
+ * <p>
  * Verifies:
  * 1. maxLossPerLot correctly derived from totalCredit × stopLossPercent × lotSize
  * 2. lots correctly capped at strategyConfig().getMaxLots()
@@ -64,13 +59,13 @@ class ExpiryDayStrategyPositionSizingTest {
 
     /**
      * Test 1: Verify maxLossPerLot correctly derived from totalCredit and stopLossPercent.
-     *
+     * <p>
      * Scenario:
      * - callLTP = 50.0, putLTP = 40.0 → totalCredit = 90.0 points
      * - stopLossPercent = 100.0 (from config)
      * - lotSize = 65 (NIFTY50)
      * - maxLossPerLot = 90.0 × (100.0 / 100.0) × 65 = 5850.0 rupees
-     *
+     * <p>
      * Expected: lotSizeService.getPositionSize(5850.0) is called with correct value
      */
     @Test
@@ -112,19 +107,19 @@ class ExpiryDayStrategyPositionSizingTest {
                     );
                 })
                 .verifyComplete();
-     }
+    }
 
-     /**
-      * Test 2: Verify lots is capped at strategyConfig().getMaxLots().
-      *
-      * Scenario:
-      * - Capital-based sizing would compute 5 lots
-      * - maxLots config = 1
-      * - Expected: final lots = min(5, 1) = 1
-      */
-     @Test
-     @DisplayName("Test 2: lots correctly capped at strategyConfig().getMaxLots()")
-     void testLotsCapAtMaxLots() {
+    /**
+     * Test 2: Verify lots is capped at strategyConfig().getMaxLots().
+     * <p>
+     * Scenario:
+     * - Capital-based sizing would compute 5 lots
+     * - maxLots config = 1
+     * - Expected: final lots = min(5, 1) = 1
+     */
+    @Test
+    @DisplayName("Test 2: lots correctly capped at strategyConfig().getMaxLots()")
+    void testLotsCapAtMaxLots() {
         // Setup
         StrategyProperties config = createMockConfig(100.0, 1, 20.0);
         when(strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE")).thenReturn(config);
@@ -158,19 +153,19 @@ class ExpiryDayStrategyPositionSizingTest {
                             "Put leg quantity should be capped at maxLots=1");
                 })
                 .verifyComplete();
-     }
+    }
 
     /**
      * Test 3: Verify both legs use the SAME computed lots value.
-     *
+     * <p>
      * Scenario:
      * - Capital-based sizing computes 2 lots
      * - maxLots = 3
      * - Expected: both call and put legs have quantity = 2
      */
-     @Test
-     @DisplayName("Test 3: Both legs use the SAME computed lots value")
-     void testBothLegsUseSameLotsValue() {
+    @Test
+    @DisplayName("Test 3: Both legs use the SAME computed lots value")
+    void testBothLegsUseSameLotsValue() {
         // Setup
         StrategyProperties config = createMockConfig(100.0, 3, 20.0);
         when(strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE")).thenReturn(config);
@@ -206,21 +201,21 @@ class ExpiryDayStrategyPositionSizingTest {
                             "Both legs must use the SAME computed lots value");
                 })
                 .verifyComplete();
-     }
+    }
 
     /**
      * Test 4: Regression test — buildTradeSignal() stopLossAmount logic unchanged.
-     *
+     * <p>
      * Scenario:
      * - totalCredit = 90.0 points
      * - stopLossPercent = 100.0
      * - Expected stopLossAmount = 90.0 × (100.0 / 100.0) = 90.0 points
-     *
+     * <p>
      * This is a points-based calculation (different from maxLossPerLot which is rupee-based).
      */
-     @Test
-     @DisplayName("Test 4: Regression — buildTradeSignal() stopLossAmount unchanged")
-     void testStopLossAmountCalculationUnchanged() {
+    @Test
+    @DisplayName("Test 4: Regression — buildTradeSignal() stopLossAmount unchanged")
+    void testStopLossAmountCalculationUnchanged() {
         // Setup
         StrategyProperties config = createMockConfig(100.0, 1, 20.0);
         when(strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE")).thenReturn(config);
@@ -253,11 +248,11 @@ class ExpiryDayStrategyPositionSizingTest {
                             "stopLossAmount should be 90.0 points (totalCredit × stopLossPercent / 100)");
                 })
                 .verifyComplete();
-     }
+    }
 
     /**
      * Test 5: Integration test with realistic values.
-     *
+     * <p>
      * Scenario:
      * - callLTP = 75.5, putLTP = 65.25 → totalCredit = 140.75 points
      * - stopLossPercent = 100.0
@@ -267,9 +262,9 @@ class ExpiryDayStrategyPositionSizingTest {
      * - maxLots = 2
      * - Expected final lots = min(1, 2) = 1
      */
-     @Test
-     @DisplayName("Test 5: Integration test with realistic values")
-     void testIntegrationWithRealisticValues() {
+    @Test
+    @DisplayName("Test 5: Integration test with realistic values")
+    void testIntegrationWithRealisticValues() {
         // Setup
         StrategyProperties config = createMockConfig(100.0, 2, 20.0);
         when(strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE")).thenReturn(config);
@@ -307,7 +302,7 @@ class ExpiryDayStrategyPositionSizingTest {
                     assertEquals(140.75, signal.getMaxLoss(), 0.01);
                 })
                 .verifyComplete();
-     }
+    }
 
     // ─── Helper Methods ───────────────────────────────────────────────────────────
 
@@ -359,16 +354,16 @@ class ExpiryDayStrategyPositionSizingTest {
         return intelligence;
     }
 
-     private MarketMetrics createMockMetrics() {
-         return MarketMetrics.builder()
-                 .atr14(BigDecimal.valueOf(250.0))
-                 .build();
-     }
+    private MarketMetrics createMockMetrics() {
+        return MarketMetrics.builder()
+                .atr14(BigDecimal.valueOf(250.0))
+                .build();
+    }
 
-     private com.trademesh.intelligence.oi.OIAnalysis createMockOIAnalysis() {
-         return com.trademesh.intelligence.oi.OIAnalysis.builder()
-                 .maxCallOIStrike(BigDecimal.valueOf(51000))
-                 .maxPutOIStrike(BigDecimal.valueOf(49000))
-                 .build();
-     }
- }
+    private com.trademesh.intelligence.oi.OIAnalysis createMockOIAnalysis() {
+        return com.trademesh.intelligence.oi.OIAnalysis.builder()
+                .maxCallOIStrike(BigDecimal.valueOf(51000))
+                .maxPutOIStrike(BigDecimal.valueOf(49000))
+                .build();
+    }
+}
