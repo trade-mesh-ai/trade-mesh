@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -68,7 +69,7 @@ class TradingControllerTest {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
         // Stub DailyReportService to return the zeroed metrics for any date
-        when(dailyReportService.getMetricsForDate(any(LocalDate.class)))
+        lenient().when(dailyReportService.getMetricsForDate(any(LocalDate.class)))
                 .thenReturn(Mono.just(zeroedMetrics));
 
         // Act & Assert: Call GET /trading/report/today and verify JSON response

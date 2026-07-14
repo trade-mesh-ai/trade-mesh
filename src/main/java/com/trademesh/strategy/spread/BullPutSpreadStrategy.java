@@ -5,6 +5,7 @@ import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
 import com.trademesh.intelligence.MarketMetricsService;
+import com.trademesh.intelligence.NiftyDailyPriceService;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
 import com.trademesh.strategy.StrategyConfig;
 import com.trademesh.strategy.StrategyResult;
@@ -46,6 +47,7 @@ public class BullPutSpreadStrategy implements TradingStrategy {
 
     private final StrategiesConfig strategiesConfig;
     private final MarketMetricsService marketMetricsService;
+    private final NiftyDailyPriceService niftyDailyPriceService;
     private final LotSizeService lotSizeService;
     private final MarketCalendarService marketCalendarService;
 
@@ -67,11 +69,11 @@ public class BullPutSpreadStrategy implements TradingStrategy {
     }
 
     /**
-     * Calculates confidence score based on market metrics.
-     * Scores IVR, IV/HV ratio, ATR%, and PCR to determine entry confidence (4 factors, max 85 points).
+     * Calculates confidence score based on market metrics and trend strength.
+     * Scores IVR, IV/HV ratio, ATR%, PCR, and trend percentage to determine entry confidence (5 factors, max 100 points).
      * VIX is handled separately via hard entry gate (max-vix) and sizing multiplier, not confidence score.
      */
-    int calculateConfidenceScore(MarketMetrics metrics) {
+    int calculateConfidenceScore(MarketMetrics metrics, BigDecimal trendPct) {
         int score = 0;
 
         // IVR scoring
@@ -107,9 +109,19 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     pcr < 0.8 ? 15 : (pcr < 1.0 ? 8 : 0));
         }
 
-        log.debug("Bull Put Spread confidence score: IVR={}, IV/HV={}, ATR%={}, PCR={}, total={}",
+        // Trend scoring (Bull Put specific: rewards positive trend)
+        if (trendPct != null) {
+            double trend = trendPct.doubleValue();
+            if (trend > 1.0) score += 15;
+            else if (trend >= 0.0) score += 8;
+
+            log.debug("Trend scoring (Bull Put): trendPct={}, contribution={}", trend,
+                    trend > 1.0 ? 15 : (trend >= 0.0 ? 8 : 0));
+        }
+
+        log.debug("Bull Put Spread confidence score: IVR={}, IV/HV={}, ATR%={}, PCR={}, Trend={}, total={}",
                 metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(),
-                metrics.getPcr(), score);
+                metrics.getPcr(), trendPct, score);
 
         return score;
     }
@@ -154,22 +166,8 @@ public class BullPutSpreadStrategy implements TradingStrategy {
         // Fetch market metrics and continue with strike selection
         return marketMetricsService.calculateMetrics(intelligence.getSymbol())
                 .flatMap(metrics -> {
-                    // Confidence score
-                    int score = calculateConfidenceScore(metrics);
-                    int minScore = cfg.getExtraInt("min-score", 51);
-                    log.info("Bull Put Spread confidence score: {}/{}", score, minScore);
-
-                    if (score < minScore) {
-                        return Mono.just(StrategyResult.builder()
-                                .isExecutable(false)
-                                .skipReason("Confidence score " + score + " below minimum " + minScore)
-                                .build());
-                    }
-
-                    // Get data from MarketIntelligence directly
-                    double spotPrice = intelligence.getSpotPrice();
+                    // Get DTE for trend lookback calculation
                     OptionChain chain = intelligence.getOptionChain();
-
                     if (chain == null) {
                         return Mono.just(StrategyResult.builder()
                                 .isExecutable(false)
@@ -177,8 +175,43 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                                 .build());
                     }
 
-                    // DTE check (trading days, not calendar days)
                     int dte = marketCalendarService.countTradingDays(LocalDate.now(), chain.getExpiryDate());
+                    int dteMin = cfg.getExtraInt("dte-min", 1);
+                    int trendLookback = Math.max(dteMin, 3);
+
+                    // Fetch trend percentage and metrics in parallel
+                    return niftyDailyPriceService.calculateTrendPct(trendLookback)
+                            .defaultIfEmpty(BigDecimal.ZERO)
+                            .flatMap(trendPct -> {
+                                // Confidence score with trend factor
+                                int score = calculateConfidenceScore(metrics, trendPct);
+                                int minScore = cfg.getExtraInt("min-score", 60);
+                                log.info("Bull Put Spread confidence score: {}/{}", score, minScore);
+
+                                if (score < minScore) {
+                                    return Mono.just(StrategyResult.builder()
+                                            .isExecutable(false)
+                                            .skipReason("Confidence score " + score + " below minimum " + minScore)
+                                            .build());
+                                }
+
+                                // Continue with strike selection
+                                return continueWithStrikeSelection(intelligence, metrics, score, cfg, currentVix, dte, chain);
+                            });
+                });
+    }
+
+    /**
+     * Continues with strike selection after confidence score validation.
+     */
+    private Mono<StrategyResult> continueWithStrikeSelection(
+            MarketIntelligence intelligence, MarketMetrics metrics, int score,
+            StrategyProperties cfg, double currentVix, int dte, OptionChain chain) {
+        return Mono.defer(() -> {
+                    // Get data from MarketIntelligence directly
+                    double spotPrice = intelligence.getSpotPrice();
+
+                    // DTE check (trading days, not calendar days)
                     int dteMin = cfg.getExtraInt("dte-min", 1);
                     int dteMax = cfg.getExtraInt("dte-max", 4);
                     if (dte < dteMin || dte > dteMax) {

@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 
 /**
@@ -78,5 +80,49 @@ public class NiftyDailyPriceService {
                     log.debug("No daily price data found in database");
                     return Mono.empty();
                 }));
+    }
+
+    /**
+     * Calculates trend percentage over a specified lookback period.
+     * <p>
+     * Formula: (currentClose - closeNDaysAgo) / closeNDaysAgo * 100
+     * <p>
+     * Fetches N+1 days of price data, takes the oldest and newest close prices,
+     * and computes the percentage change.
+     *
+     * @param lookbackDays the number of trading days to look back
+     * @return Mono emitting the trend percentage, or empty if insufficient data
+     */
+    public Mono<BigDecimal> calculateTrendPct(int lookbackDays) {
+        log.debug("Calculating trend percentage over {} days", lookbackDays);
+        return getLastNDays(lookbackDays + 1)
+                .collectList()
+                .flatMap(prices -> {
+                    if (prices.size() < 2) {
+                        log.debug("Insufficient price data for trend calculation: {} days available", prices.size());
+                        return Mono.empty();
+                    }
+
+                    NiftyDailyPrice oldestPrice = prices.get(0);
+                    NiftyDailyPrice newestPrice = prices.get(prices.size() - 1);
+
+                    BigDecimal oldestClose = oldestPrice.getClose();
+                    BigDecimal newestClose = newestPrice.getClose();
+
+                    if (oldestClose.compareTo(BigDecimal.ZERO) == 0) {
+                        log.warn("Oldest close price is zero, cannot calculate trend");
+                        return Mono.empty();
+                    }
+
+                    BigDecimal trendPct = newestClose.subtract(oldestClose)
+                            .divide(oldestClose, 4, java.math.RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(100))
+                            .setScale(2, RoundingMode.HALF_UP);
+
+                    log.debug("Trend calculation: oldest={}, newest={}, trendPct={}", 
+                            oldestClose, newestClose, trendPct);
+
+                    return Mono.just(trendPct);
+                });
     }
 }

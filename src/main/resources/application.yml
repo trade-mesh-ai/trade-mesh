@@ -188,7 +188,7 @@ trading-strategies:
       strike-step: 50
       min-credit-pct: 0.10
       vix-panic-threshold: 25.0
-      min-score: 51
+      min-score: 60
 
   - name: BEAR_CALL_SPREAD
     enabled: true
@@ -211,7 +211,7 @@ trading-strategies:
       strike-step: 50
       min-credit-pct: 0.10
       vix-panic-threshold: 25.0
-      min-score: 51
+      min-score: 60
 
   - name: IRON_CONDOR
     enabled: true

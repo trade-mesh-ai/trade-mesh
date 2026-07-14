@@ -71,7 +71,7 @@ class DailyReportServiceCrossDateTest {
     @DisplayName("generateDailyReport_tradeEnteredYesterdayClosedToday_appearsInClosedMetricsOnly")
     void generateDailyReport_tradeEnteredYesterdayClosedToday_appearsInClosedMetricsOnly() {
         // Arrange
-        LocalDate today = LocalDate.of(2026, 7, 13);
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         LocalDate yesterday = today.minusDays(1);
         LocalDateTime todayStart = today.atStartOfDay();
         LocalDateTime todayEnd = today.atTime(23, 59, 59);
@@ -86,8 +86,8 @@ class DailyReportServiceCrossDateTest {
                 .entryCredit(100.0)
                 .currentValue(50.0)
                 .tradeDate(yesterday)  // Entered yesterday
-                .entryTime(LocalDateTime.of(2026, 7, 12, 9, 30, 0))
-                .exitTime(LocalDateTime.of(2026, 7, 13, 14, 0, 0))  // Closed today
+                .entryTime(yesterday.atTime(9, 30, 0))
+                .exitTime(today.atTime(14, 0, 0))  // Closed today
                 .exitReason("TARGET_HIT")
                 .build();
 
@@ -122,7 +122,7 @@ class DailyReportServiceCrossDateTest {
     @DisplayName("generateDailyReport_tradeEnteredTodayStillOpen_appearsInEnteredAndOpenCountOnly")
     void generateDailyReport_tradeEnteredTodayStillOpen_appearsInEnteredAndOpenCountOnly() {
         // Arrange
-        LocalDate today = LocalDate.of(2026, 7, 13);
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         LocalDateTime todayStart = today.atStartOfDay();
         LocalDateTime todayEnd = today.atTime(23, 59, 59);
 
@@ -136,7 +136,7 @@ class DailyReportServiceCrossDateTest {
                 .currentValue(95.0)
                 .unrealizedPnl(5.0)
                 .tradeDate(today)  // Entered today
-                .entryTime(LocalDateTime.of(2026, 7, 13, 9, 30, 0))
+                .entryTime(today.atTime(9, 30, 0))
                 .exitTime(null)  // Still open
                 .build();
 
@@ -172,7 +172,7 @@ class DailyReportServiceCrossDateTest {
     @DisplayName("generateDailyReport_tradeEnteredAndClosedToday_appearsInBothCountsCorrectly")
     void generateDailyReport_tradeEnteredAndClosedToday_appearsInBothCountsCorrectly() {
         // Arrange
-        LocalDate today = LocalDate.of(2026, 7, 13);
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         LocalDateTime todayStart = today.atStartOfDay();
         LocalDateTime todayEnd = today.atTime(23, 59, 59);
 
@@ -186,8 +186,8 @@ class DailyReportServiceCrossDateTest {
                 .entryCredit(100.0)
                 .currentValue(25.0)
                 .tradeDate(today)  // Entered today
-                .entryTime(LocalDateTime.of(2026, 7, 13, 9, 30, 0))
-                .exitTime(LocalDateTime.of(2026, 7, 13, 15, 0, 0))  // Closed today
+                .entryTime(today.atTime(9, 30, 0))
+                .exitTime(today.atTime(15, 0, 0))  // Closed today
                 .exitReason("TARGET_HIT")
                 .build();
 
@@ -222,7 +222,7 @@ class DailyReportServiceCrossDateTest {
     @DisplayName("generateDailyReport_mixedScenarios_countsAreIndependent")
     void generateDailyReport_mixedScenarios_countsAreIndependent() {
         // Arrange
-        LocalDate today = LocalDate.of(2026, 7, 13);
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         LocalDate yesterday = today.minusDays(1);
         LocalDateTime todayStart = today.atStartOfDay();
         LocalDateTime todayEnd = today.atTime(23, 59, 59);
@@ -235,8 +235,8 @@ class DailyReportServiceCrossDateTest {
                 .status(TradeStatus.CLOSED)
                 .realizedPnl(50.0)
                 .tradeDate(yesterday)
-                .entryTime(LocalDateTime.of(2026, 7, 12, 9, 30, 0))
-                .exitTime(LocalDateTime.of(2026, 7, 13, 10, 0, 0))
+                .entryTime(yesterday.atTime(9, 30, 0))
+                .exitTime(today.atTime(10, 0, 0))
                 .exitReason("TARGET_HIT")
                 .build();
 
@@ -247,7 +247,7 @@ class DailyReportServiceCrossDateTest {
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.OPEN)
                 .tradeDate(today)
-                .entryTime(LocalDateTime.of(2026, 7, 13, 9, 30, 0))
+                .entryTime(today.atTime(9, 30, 0))
                 .exitTime(null)
                 .build();
 
@@ -259,8 +259,8 @@ class DailyReportServiceCrossDateTest {
                 .status(TradeStatus.CLOSED)
                 .realizedPnl(75.0)
                 .tradeDate(today)
-                .entryTime(LocalDateTime.of(2026, 7, 13, 11, 0, 0))
-                .exitTime(LocalDateTime.of(2026, 7, 13, 14, 0, 0))
+                .entryTime(today.atTime(11, 0, 0))
+                .exitTime(today.atTime(14, 0, 0))
                 .exitReason("TARGET_HIT")
                 .build();
 
@@ -271,7 +271,7 @@ class DailyReportServiceCrossDateTest {
                 .strategyName("BEAR_CALL_SPREAD")
                 .status(TradeStatus.OPEN)
                 .tradeDate(yesterday)
-                .entryTime(LocalDateTime.of(2026, 7, 12, 10, 0, 0))
+                .entryTime(yesterday.atTime(10, 0, 0))
                 .exitTime(null)
                 .build();
 
