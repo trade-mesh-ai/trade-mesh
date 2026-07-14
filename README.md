@@ -1,6 +1,6 @@
 # TradeMesh — Automated Options Trading Platform
 
-**Version:** 0.0.1-SNAPSHOT | **Last Updated:** July 4, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
+**Version:** 0.0.1-SNAPSHOT | **Last Updated:** July 14, 2026 | **Market:** NSE (India) | **Timezone:** IST (Asia/Kolkata)
 
 TradeMesh is a reactive options trading platform for NSE that executes multi-leg options strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day Strangle) based on real-time market intelligence and risk management rules.
 
