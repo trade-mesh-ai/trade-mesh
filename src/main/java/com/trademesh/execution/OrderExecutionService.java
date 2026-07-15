@@ -35,67 +35,51 @@ public class OrderExecutionService {
     /**
      * Executes a trading signal after passing risk validation.
      * <p>
-     * Process:
-     * 1. Validate signal against risk limits
-     * 2. Build order request from signal
-     * 3. Place order via OrderService
-     * 4. Record trade in RiskManager for tracking
-     * 5. Return order ID or empty if validation fails
+     * TODO: Risk validation removed — RiskManager's risk-check surface was dead/broken.
+     * When OrderExecutionService is wired into live trading, risk-checking will be
+     * redesigned as part of the ExecutionAdapter refactor.
      *
      * @param signal   the trading signal to act on
      * @param quantity desired quantity (pre-calculated by risk module)
-     * @return Mono emitting order ID or empty if risk check fails
+     * @return Mono emitting order ID or empty if validation fails
      */
     public Mono<String> execute(TradingSignal signal, int quantity) {
         log.info("Executing signal for {}: direction={} qty={}",
                 signal.getTradingSymbol(), signal.getDirection(), quantity);
 
-        return riskManager.isWithinRiskLimits(signal.getTradingSymbol(), quantity)
-                .flatMap(allowed -> {
-                    if (!allowed) {
-                        log.warn("Risk check failed for signal: {}", signal);
-                        return Mono.empty();
-                    }
+        // Determine transaction type from signal direction
+        String txType = switch (signal.getDirection()) {
+            case LONG -> "BUY";
+            case SHORT -> "SELL";
+            default -> null;
+        };
 
-                    // Determine transaction type from signal direction
-                    String txType = switch (signal.getDirection()) {
-                        case LONG -> "BUY";
-                        case SHORT -> "SELL";
-                        default -> null;
-                    };
+        if (txType == null) {
+            log.info("Neutral signal – no order placed for {}", signal.getTradingSymbol());
+            return Mono.empty();
+        }
 
-                    if (txType == null) {
-                        log.info("Neutral signal – no order placed for {}", signal.getTradingSymbol());
-                        return Mono.empty();
-                    }
+        // Build order request
+        OrderRequest order = OrderRequest.builder()
+                .tradingSymbol(signal.getTradingSymbol())
+                .exchange("NSE")
+                .transactionType(txType)
+                .orderType("MARKET")
+                .product("MIS")
+                .quantity(quantity)
+                .validity("DAY")
+                .tag(signal.getStrategyName())
+                .build();
 
-                    // Build order request
-                    OrderRequest order = OrderRequest.builder()
-                            .tradingSymbol(signal.getTradingSymbol())
-                            .exchange("NSE")
-                            .transactionType(txType)
-                            .orderType("MARKET")
-                            .product("MIS")
-                            .quantity(quantity)
-                            .validity("DAY")
-                            .tag(signal.getStrategyName())
-                            .build();
-
-                    // Place order with retry logic
-                    return orderService.placeOrder(order)
-                            .timeout(Duration.ofSeconds(15))
-                            .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
-                                    .maxBackoff(Duration.ofSeconds(4))
-                                    .doBeforeRetry(signal2 -> log.warn("Retrying order placement for {}, attempt {}",
-                                            signal.getTradingSymbol(), signal2.totalRetries() + 1)))
-                            .doOnNext(orderId -> {
-                                log.info("Order placed successfully: {} for {}", orderId, signal.getTradingSymbol());
-                                // Record trade for risk tracking
-                                riskManager.recordTrade(signal.getTradingSymbol(), quantity, 0.0).subscribe();
-                            })
-                            .doOnError(e -> log.error("Order placement failed for {}: {}",
-                                    signal.getTradingSymbol(), e.getMessage(), e));
-                });
+        // Place order with retry logic
+        return orderService.placeOrder(order)
+                .timeout(Duration.ofSeconds(15))
+                .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
+                        .maxBackoff(Duration.ofSeconds(4))
+                        .doBeforeRetry(signal2 -> log.warn("Retrying order placement for {}, attempt {}",
+                                signal.getTradingSymbol(), signal2.totalRetries() + 1)))
+                .doOnError(e -> log.error("Order placement failed for {}: {}",
+                        signal.getTradingSymbol(), e.getMessage(), e));
     }
 
     /**
