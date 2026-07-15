@@ -160,23 +160,27 @@ public class PaperTradingEngine {
         // Default mark-to-market for other strategies
         return fetchCurrentPrices(trade)
                 .flatMap(currentValue -> {
-                    trade.setCurrentValue(currentValue);
-                    trade.setUnrealizedPnl(trade.getEntryCredit() - currentValue);
-                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
+                     trade.setCurrentValue(currentValue);
+                     trade.setUnrealizedPnl(trade.getEntryCredit() - currentValue);
+                     trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
-                    // Check stop loss: if currentValue > entryCredit × 2
-                    if (currentValue > trade.getEntryCredit() * 2) {
-                        log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}",
-                                trade.getId(), currentValue, trade.getEntryCredit() * 2);
-                        return closeTrade(trade, "STOP_LOSS");
-                    }
+                     // Check stop loss: if currentValue > entryCredit × 2
+                     // Use BigDecimal for precision-safe comparison on live trading decision
+                     BigDecimal currentValueBD = BigDecimal.valueOf(currentValue);
+                     BigDecimal entryCreditBD = BigDecimal.valueOf(trade.getEntryCredit());
+                     if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(2))) > 0) {
+                         log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}",
+                                 trade.getId(), currentValue, trade.getEntryCredit() * 2);
+                         return closeTrade(trade, "STOP_LOSS");
+                     }
 
-                    // Check target: if currentValue < entryCredit × 0.5
-                    if (currentValue < trade.getEntryCredit() * 0.5) {
-                        log.info("Target hit for trade {}: currentValue={}, threshold={}",
-                                trade.getId(), currentValue, trade.getEntryCredit() * 0.5);
-                        return closeTrade(trade, "TARGET_HIT");
-                    }
+                     // Check target: if currentValue < entryCredit × 0.5
+                     // Use BigDecimal for precision-safe comparison on live trading decision
+                     if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(0.5))) < 0) {
+                         log.info("Target hit for trade {}: currentValue={}, threshold={}",
+                                 trade.getId(), currentValue, trade.getEntryCredit() * 0.5);
+                         return closeTrade(trade, "TARGET_HIT");
+                     }
 
                     // Save updated trade
                     return paperTradeRepository.save(trade);
