@@ -16,7 +16,7 @@ import java.util.Optional;
  * <p>Responsibilities:
  * <ul>
  *   <li>Filter strategies by applicability to current market condition</li>
- *   <li>Apply priority-based selection based on market condition</li>
+ *   <li>Perform direct lookup of the applicable strategy (one regime = one strategy)</li>
  *   <li>Evaluate selected strategy and return result</li>
  *   <li>Log strategy selection decisions</li>
  * </ul>
@@ -25,10 +25,8 @@ import java.util.Optional;
  * <ul>
  *   <li>NO_TRADE condition → skip all strategies (return empty)</li>
  *   <li>HIGH_VOLATILITY → skip all strategies (return empty)</li>
- *   <li>EXPIRY_DAY → prioritize ExpiryDayStrategy</li>
- *   <li>SIDEWAYS → prioritize ThetaSpreadStrategy</li>
- *   <li>TRENDING_BULLISH → prioritize BullPutSpreadStrategy</li>
- *   <li>TRENDING_BEARISH → prioritize BEAR_CALL_SPREAD</li>
+ *   <li>All other conditions → exactly one strategy is applicable by design</li>
+ *   <li>Selection is a direct lookup, not priority-based arbitration</li>
  * </ul>
  */
 @Slf4j
@@ -48,8 +46,8 @@ public class StrategySelector {
      * <p>Selection logic:
      * 1. If market condition is NO_TRADE or HIGH_VOLATILITY → return empty
      * 2. Filter strategies by isApplicable(condition)
-     * 3. Apply priority-based selection based on condition
-     * 4. Return first applicable strategy or empty if none found
+     * 3. Direct lookup of the applicable strategy (one regime = one strategy by design)
+     * 4. Return the applicable strategy or empty if none found
      *
      * @param intel market intelligence data
      * @return Mono emitting Optional with selected strategy, or empty if none applicable
@@ -79,16 +77,21 @@ public class StrategySelector {
                 return Optional.empty();
             }
 
-            // Apply priority-based selection
-            TradingStrategy selectedStrategy = selectByPriority(applicableStrategies, condition);
-
-            if (selectedStrategy != null) {
+            // Direct lookup - structurally guaranteed to have exactly one element
+            // (one regime = one strategy by design)
+            if (applicableStrategies.size() == 1) {
+                TradingStrategy selectedStrategy = applicableStrategies.getFirst();
+                log.info("Selected strategy: {} for condition: {}", selectedStrategy.getName(), condition);
+                return Optional.of(selectedStrategy);
+            } else {
+                // Config error: multiple strategies applicable to same condition
+                log.error("Config error: {} strategies applicable to condition {} (expected exactly 1). "
+                        + "This indicates overlapping applicable-conditions across strategies. "
+                        + "Selecting first strategy as fallback.", applicableStrategies.size(), condition);
+                TradingStrategy selectedStrategy = applicableStrategies.getFirst();
                 log.info("Selected strategy: {} for condition: {}", selectedStrategy.getName(), condition);
                 return Optional.of(selectedStrategy);
             }
-
-            log.info("No strategy selected after priority filtering for condition: {}", condition);
-            return Optional.empty();
         });
     }
 
@@ -143,45 +146,4 @@ public class StrategySelector {
                 });
     }
 
-    /**
-     * Selects a strategy from applicable ones based on priority for the given condition.
-     *
-     * <p>Priority logic:
-     * <ul>
-     *   <li>EXPIRY_DAY → ExpiryDayStrategy first</li>
-     *   <li>SIDEWAYS → ThetaSpreadStrategy first</li>
-     *   <li>TRENDING_BULLISH → BullPutSpreadStrategy first</li>
-     *   <li>TRENDING_BEARISH → BearCallSpreadStrategy first</li>
-     * </ul>
-     *
-     * @param applicableStrategies list of strategies applicable to the condition
-     * @param condition            market condition
-     * @return selected strategy or null if none match priority
-     */
-    private TradingStrategy selectByPriority(List<TradingStrategy> applicableStrategies,
-                                             MarketCondition condition) {
-        return switch (condition) {
-            case EXPIRY_DAY -> applicableStrategies.stream()
-                    .filter(s -> s.getName().equals("EXPIRY_DAY_STRANGLE"))
-                    .findFirst()
-                    .orElse(null);
-
-            case SIDEWAYS -> applicableStrategies.stream()
-                    .filter(s -> s.getName().equals("IRON_CONDOR"))
-                    .findFirst()
-                    .orElse(null);
-
-            case TRENDING_BULLISH -> applicableStrategies.stream()
-                    .filter(s -> s.getName().equals("BULL_PUT_SPREAD"))
-                    .findFirst()
-                    .orElse(null);
-
-            case TRENDING_BEARISH -> applicableStrategies.stream()
-                    .filter(s -> s.getName().equals("BEAR_CALL_SPREAD"))
-                    .findFirst()
-                    .orElse(null);
-
-            default -> null;
-        };
-    }
 }
