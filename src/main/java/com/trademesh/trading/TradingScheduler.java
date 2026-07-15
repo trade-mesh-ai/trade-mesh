@@ -3,6 +3,7 @@ package com.trademesh.trading;
 import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.strategy.StrategySelector;
 import com.trademesh.strategy.config.StrategiesConfig;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -35,12 +36,15 @@ import java.time.format.DateTimeFormatter;
 @RequiredArgsConstructor
 public class TradingScheduler {
 
+    private static final String SCHEDULER_NAME = "TradingScheduler";
+
     private final TradingOrchestrator tradingOrchestrator;
     private final DailyReportService dailyReportService;
     private final MarketCalendarService marketCalendarService;
     private final StrategiesConfig strategiesConfig;
     private final MarketIntelligenceService marketIntelligenceService;
     private final StrategySelector strategySelector;
+    private final TokenAvailabilityTracker tokenTracker;
 
     /**
      * Runs DTE exit safety net check every weekday at 9:20 AM IST.
@@ -108,6 +112,11 @@ public class TradingScheduler {
      * @param forceExecution if true, bypasses market open check; if false, checks market hours
      */
     private void executeDailyEntry(boolean forceExecution) {
+        if (!tokenTracker.isTokenAvailable()) {
+            tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+            return;
+        }
+
         Mono<Boolean> marketCheck = forceExecution
                 ? Mono.just(true)
                 : marketCalendarService.isMarketOpen();
@@ -229,6 +238,11 @@ public class TradingScheduler {
      * Eliminates 3 redundant market intelligence generations and strategy selections.
      */
     private void executeEntryRetry() {
+        if (!tokenTracker.isTokenAvailable()) {
+            tokenTracker.trackTokenMissing(SCHEDULER_NAME);
+            return;
+        }
+
         LocalTime currentTime = LocalTime.now(ZoneId.of("Asia/Kolkata"));
 
         // Step 1: Generate fresh market intelligence
