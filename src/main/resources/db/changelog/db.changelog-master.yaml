@@ -27,3 +27,5 @@ databaseChangeLog:
       file: db/changelog/changes/013-make-oi-snapshots-data-nullable.yaml
   - include:
       file: db/changelog/changes/014-drop-oi-snapshots-data-column.yaml
+  - include:
+      file: db/changelog/changes/015-add-paper-trades-indexes.yaml
