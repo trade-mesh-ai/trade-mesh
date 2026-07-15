@@ -13,16 +13,20 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 
 /**
- * Execution service that bridges signals → risk checks → order placement.
+ * Legacy execution service targeting an obsolete signal model.
  * <p>
- * Responsibilities:
- * - Validate trading signals against risk limits
- * - Route orders to appropriate execution engine (paper trading in Phase 2)
- * - Handle partial fills and order tracking
- * - Implement retry logic with exponential backoff
- * - Add timeout handling for order execution
+ * This class was designed against com.trademesh.intelligence.TradingSignal — a
+ * single-instrument, single-direction signal shape. This model is incompatible
+ * with the multi-leg com.trademesh.strategy.TradeSignal used by all current
+ * live strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day).
  * <p>
- * Phase 2 focuses on paper trading only. Phase 3 will add live order execution.
+ * This class has zero callers anywhere in the current codebase and is not part
+ * of the active execution path. It is retained as a historical reference only,
+ * pending deletion when live-trading execution architecture is designed as a
+ * separate, dedicated review.
+ * <p>
+ * Any future live-order-placement work should be designed fresh against
+ * TradeSignal and real broker/execution constraints, not by extending this class.
  */
 @Slf4j
 @Service
@@ -33,13 +37,14 @@ public class OrderExecutionService {
     private final OrderService orderService;
 
     /**
-     * Executes a trading signal after passing risk validation.
+     * Executes a trading signal (legacy method operating on obsolete model).
      * <p>
-     * TODO: Risk validation removed — RiskManager's risk-check surface was dead/broken.
-     * When OrderExecutionService is wired into live trading, risk-checking will be
-     * redesigned as part of the ExecutionAdapter refactor.
+     * This method operates on com.trademesh.intelligence.TradingSignal, which is
+     * incompatible with the multi-leg TradeSignal model used by all current
+     * strategies. This method is not invoked by any current code path and is
+     * retained for historical reference only.
      *
-     * @param signal   the trading signal to act on
+     * @param signal   the trading signal to act on (obsolete TradingSignal model)
      * @param quantity desired quantity (pre-calculated by risk module)
      * @return Mono emitting order ID or empty if validation fails
      */
