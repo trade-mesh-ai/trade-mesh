@@ -198,7 +198,7 @@ Telegram Alerts & Daily Reports
 ##### `strategy.enums` — Strategy Enums
 - **`Action`** — BUY, SELL
 - **`Confidence`** — LOW, MEDIUM, HIGH
-- **`LegType`** — ENTRY, EXIT, ADJUSTMENT
+- **`LegType`** — ENTRY, HEDGE
 - **`OptionType`** — CE (Call), PE (Put)
 - **`SignalType`** — ENTER, EXIT, ADJUST
 
