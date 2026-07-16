@@ -114,6 +114,8 @@ TradeMesh automates multi-leg options trading on NSE with:
 
 ## Trading Strategies
 
+**Note:** account-capital is now set to a real value (₹20,00,000) as of 2026-07-15 — previously a ₹1,00,000 placeholder that, combined with max-lots: 1, silently capped all position sizing to 1 lot regardless of the sizing formula's actual output. See CURRENT_STATE.md for detail.
+
 ### 1. EXPIRY_DAY_STRANGLE
 
 **Status:** ✅ Live validated June 30, 2026 | TARGET_HIT confirmed
@@ -124,9 +126,9 @@ TradeMesh automates multi-leg options trading on NSE with:
 - Trades ONLY on Tuesday (NSE expiry day)
 - Sells strangle at OI walls for maximum theta decay
 - Strike selection: OI-wall based with ATR-scaled safety boundary
-  - `min-distance-atr-multiplier: 0.4` — ATR14 × 0.4 = minimum distance from spot
-  - Falls back to boundary strike if OI wall too close
-  - Hard skip if OI wall on wrong side of spot (call strike ≤ spot or put strike ≥ spot)
+   - `min-distance-atr-multiplier: 0.4` — ATR14 × 0.4 = minimum distance from spot
+   - Falls back to boundary strike if OI wall too close
+   - Hard skip if OI wall on wrong side of spot (call strike ≤ spot or put strike ≥ spot)
 - Expiry date: Fixed — correctly picks today's expiry (not next week's)
 - Entry time limit: 12:30 PM IST
 
@@ -144,7 +146,7 @@ EXPIRY_DAY_STRANGLE:
   min-vix: 10.0
   latest-entry-time: "12:30"
   min-credit: 20.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
@@ -164,14 +166,14 @@ EXPIRY_DAY_STRANGLE:
 - Strike selection: Delta-based (target delta 0.18) via Black-Scholes engine
 - Wing width: 200 points
 - Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
-  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+  - `dte-min: 3, dte-max: 4` (derived from real trading-day sample data)
 - Confidence scoring:
   - IVR (20-80 range): 15-30 points
   - IV/HV ratio (≥1.1): 10-20 points
   - ATR% (<0.6-1.0): 10-20 points
   - VIX (12-20 range): 5-15 points
   - PCR (0.8-1.2 balanced): 15 points
-  - **Minimum score: 60/100** to execute
+  - **Minimum score: 51/100** to execute
 - Minimum credit: 30 points (15% of wing width)
 
 **Exit Conditions (Priority Order):**
@@ -193,24 +195,30 @@ IRON_CONDOR:
   min-vix: 12.0
   latest-entry-time: "13:00"
   min-credit: 30.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
     target-delta: 0.18
     wing-width: 200
+    strike-step: 50
     min-credit-pct: 0.15
-    min-score: 60
-    dte-min: 1
+    min-score: 51
+    ivr-min: 20.0
+    ivr-max: 80.0
+    iv-hv-ratio-min: 1.1
+    atr-pct-max: 1.0
+    dte-min: 3
     dte-max: 4
     dte-exit-threshold: 2
-    vix-panic-threshold: 25.0
+    dte-exit-earliest-time: "15:10"
     atr-calm-threshold: 0.7
     atr-high-threshold: 1.0
     calm-target-multiplier: 0.9
     calm-sl-multiplier: 0.8
     high-target-multiplier: 1.1
     high-sl-multiplier: 1.2
+    vix-panic-threshold: 25.0
 ```
 
 ---
@@ -227,7 +235,7 @@ IRON_CONDOR:
 - Wing width: 100 points
 - Profits when market stays above short put strike
 - Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
-  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+  - `dte-min: 2, dte-max: 4` (derived from real trading-day sample data)
 - Minimum credit: 10 points (10% of wing width)
 
 **Exit Conditions (Priority Order):**
@@ -245,17 +253,20 @@ BULL_PUT_SPREAD:
   min-vix: 10.0
   latest-entry-time: "13:00"
   min-credit: 20.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
-    dte-min: 1
+    dte-min: 2
     dte-max: 4
     dte-exit-threshold: 1
-    vix-panic-threshold: 25.0
+    dte-exit-earliest-time: "15:10"
     target-delta: 0.30
     wing-width: 100
+    strike-step: 50
     min-credit-pct: 0.10
+    vix-panic-threshold: 25.0
+    min-score: 60
 ```
 
 ---
@@ -272,7 +283,7 @@ BULL_PUT_SPREAD:
 - Wing width: 100 points
 - Profits when market stays below short call strike
 - Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
-  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+  - `dte-min: 2, dte-max: 4` (derived from real trading-day sample data)
 - Minimum credit: 10 points (10% of wing width)
 
 **Exit Conditions (Priority Order):**
@@ -290,17 +301,20 @@ BEAR_CALL_SPREAD:
   min-vix: 10.0
   latest-entry-time: "13:00"
   min-credit: 20.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
-    dte-min: 1
+    dte-min: 2
     dte-max: 4
     dte-exit-threshold: 1
-    vix-panic-threshold: 25.0
+    dte-exit-earliest-time: "15:10"
     target-delta: 0.30
     wing-width: 100
+    strike-step: 50
     min-credit-pct: 0.10
+    vix-panic-threshold: 25.0
+    min-score: 60
 ```
 
 ---
@@ -313,7 +327,7 @@ BEAR_CALL_SPREAD:
 |-----|------|-----------|-----------|--------|
 | **scheduledDailyEntry** | `0 30 9 * * MON-FRI` | 9:30 AM | Weekdays | Runs trading cycle entry for NIFTY50; StrategySelector picks strategy based on market condition |
 | **scheduledDailyExit** | `0 15 15 * * MON-FRI` | 3:15 PM | Weekdays | Closes ONLY EXPIRY_DAY_STRANGLE positions via TradingOrchestrator.exitPositionsForStrategy(). IRON_CONDOR, BULL_PUT_SPREAD, and BEAR_CALL_SPREAD are NO LONGER force-closed daily — they can now hold positions overnight and across weekends, governed entirely by DTE-exit logic in the 60-second markToMarket() cycle |
-| **dailySafetyNetCheck** | `0 0 9 * * MON-FRI` | 9:00 AM | Weekdays | Re-checks DTE-exit condition for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD positions as a redundant backstop (calls TradingOrchestrator.runDteExitSafetyNetCheck()). Closes any position that should have exited via the primary 60-second mechanism but remains open, using exit reason "DTE_EXIT_SAFETY_NET" (distinct from normal "DTE_EXIT"). EXPIRY_DAY_STRANGLE is explicitly excluded from this check |
+| **dailySafetyNetCheck** | `0 20 9 * * MON-FRI` | 9:20 AM | Weekdays | Re-checks DTE-exit condition for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD positions as a redundant backstop (calls TradingOrchestrator.runDteExitSafetyNetCheck()). Closes any position that should have exited via the primary 60-second mechanism but remains open, using exit reason "DTE_EXIT_SAFETY_NET" (distinct from normal "DTE_EXIT"). EXPIRY_DAY_STRANGLE is explicitly excluded from this check. **Retimed 2026-07-06 to 9:20 AM to avoid racing MarkToMarketScheduler's first ticks at market open.** |
 | **scheduledDailyReport** | `0 45 15 * * MON-FRI` | 3:45 PM | Weekdays | Generates daily P&L report and sends via Telegram |
 
 ### IntelligenceScheduler
@@ -333,6 +347,38 @@ BEAR_CALL_SPREAD:
 | Job | Cron | Time (IST) | Frequency | Action |
 |-----|------|-----------|-----------|--------|
 | **persistVix** | `0 */15 9-15 ? * MON-FRI` (configurable) | Every 15 min | Market hours | Persists VIX snapshot to database |
+
+### IvHistoryScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **Daily ATM IV capture** | `0 25 9 * * MON-FRI` | 9:25 AM | Weekdays | Captures ATM IV for IVR calculation |
+
+### MaxPainScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **Max Pain persistence** | `0 */30 9-15 ? * MON-FRI` (configurable, default) | Every 30 min | Market hours | Persists max pain snapshot |
+
+### OIAnalysisScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **OI analysis persistence** | `0 */15 9-15 ? * MON-FRI` (configurable, default) | Every 15 min | Market hours | Persists OI wall analysis |
+
+### OptionChainSnapshotScheduler
+
+| Job | Interval | Time (IST) | Frequency | Action |
+|-----|----------|-----------|-----------|--------|
+| **Option chain snapshot** | fixedRate 300000ms | Every 5 min | Market hours | Persists full option chain snapshot |
+
+### TokenExpiryWatcher
+
+| Job | Cron/Interval | Time (IST) | Frequency | Action |
+|-----|---------------|-----------|-----------|--------|
+| **Token health check (continuous)** | fixedRate 300000ms (configurable, default) | Every 5 min | Continuous | Checks Zerodha token availability in Redis, alerts via Telegram if missing |
+| **Token health check (pre-market 8 AM)** | `0 0 8 * * *` | 8:00 AM | Daily | Pre-market token health check, same underlying logic |
+| **Token health check (pre-market 9 AM)** | `0 0 9 * * MON-FRI` | 9:00 AM | Weekdays | Final pre-market check before market open, same underlying logic (consolidated 2026-07-15, see CURRENT_STATE.md finding #9 — this replaced the former separate TokenRefreshScheduler class) |
 
 ---
 
@@ -880,9 +926,11 @@ value of 30.9 — confirmed against the `paper_trades` row directly.)*
 
 ### Aggregate Position Limits
 
-- **max-concurrent-open-positions:** 3 (configurable) — aggregate cap across ALL strategies combined, enforced in `TradingOrchestrator.runTradingCycle()` via `RiskManager.isWithinConcurrentPositionLimit()`, checked as the final gate immediately before trade execution. This is SEPARATE from and ADDITIONAL to the existing per-strategy duplicate-entry check (one open position per strategy at a time) — both gates must pass for a new trade to execute.
+**Only real, enforced risk check:** max-concurrent-open-positions: 3 (configurable via risk.max-concurrent-open-positions) — a DB-backed aggregate cap across ALL strategies combined, enforced in RiskManager.isWithinConcurrentPositionLimit(), checked immediately before trade execution.
 
-- **Per-strategy duplicate check (fixed):** Previously scoped to "today" only (`existsByStrategyNameAndTradeDateAndStatus`), which would have failed to detect a still-open position from a prior day once overnight holding was enabled. Now uses `existsByStrategyNameAndStatus()` (date-independent).
+**Config values that exist but are NOT enforced:** daily-loss-limit-percent, max-sector-exposure, min-margin-buffer-percent, and position-sizing.* (risk-percent, max-quantity) remain defined in application.yml's risk: block, but the code that read them (RiskManager.isWithinRiskLimits(), checkDailyLossLimit(), checkSectorExposure(), calculatePositionSize()) was confirmed dead — zero callers, and checkDailyLossLimit() had a real unit bug (compared raw P&L against the literal config number instead of a true percentage of capital) — and was deleted during the 2026-07-15 design review (see CURRENT_STATE.md finding #3, and docs/architecture/ARCHITECTURE.md Section 6). These config values are orphaned — present in application.yml but read by nothing. Real position sizing (capital-based, VIX-scaled, confidence-scaled) is a separate mechanism via LotSizeService, documented in the Trading Strategies section above and in ARCHITECTURE.md.
+
+**Per-strategy duplicate check (fixed):** Previously scoped to "today" only (`existsByStrategyNameAndTradeDateAndStatus`), which would have failed to detect a still-open position from a prior day once overnight holding was enabled. Now uses `existsByStrategyNameAndStatus()` (date-independent).
 
 ---
 
