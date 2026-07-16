@@ -1,3 +1,13 @@
+**SUPERSEDED — DO NOT USE AS CURRENT REFERENCE.**
+
+This document was Cline-generated during an architecture review attempt on 2026-07-14 and was rejected by a subsequent Principal Engineer design-coherence review (2026-07-15) as unreliable — it contains a fabricated "no unit tests found in codebase" claim (357 tests actually passed at the time) underpinning an inflated 8.2/10 "production-ready" score, and gives zero treatment to the paper-to-live transition despite that being architecture-critical. It also incorrectly describes `OrderExecutionService` as an active, functioning component; it is confirmed dead code.
+
+Retained here only as a documented example of what was rejected and why — see [docs/architecture/CURRENT_STATE.md](../CURRENT_STATE.md)'s "Design Review Findings (2026-07-15)" section for the full account.
+
+For current, accurate architecture, see [docs/architecture/ARCHITECTURE.md](../ARCHITECTURE.md).
+
+---
+
 # TradeMesh — Principal Engineer Architecture Review
 
 **Date:** July 14, 2026 | **Reviewer:** Principal Engineer | **Version:** 0.0.1-SNAPSHOT | **Market:** NSE (India)
