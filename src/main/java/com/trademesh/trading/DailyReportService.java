@@ -173,6 +173,10 @@ public class DailyReportService {
      * <p>
      * Aggregates all trades from today and sends a comprehensive summary via Telegram.
      * Uses getTodayStatusSummary() as the single source of truth for daily counts.
+     * <p>
+     * Sends "no trades" alert only when all three counts are zero (nothing entered today,
+     * nothing currently open, nothing closed today). Otherwise, sends full report with
+     * entered/open/closed counts, even if closedTodayCount is zero.
      *
      * @return Mono emitting void
      */
@@ -183,8 +187,8 @@ public class DailyReportService {
 
         return getTodayStatusSummary(today)
                 .flatMap(summary -> {
-                    if (summary.closedTodayCount() == 0) {
-                        log.info("No trades closed today");
+                    if (summary.closedTodayCount() == 0 && summary.enteredToday() == 0 && summary.openCount() == 0) {
+                        log.info("No trades entered, open, or closed today");
                         return sendNoTradesAlert();
                     }
 
