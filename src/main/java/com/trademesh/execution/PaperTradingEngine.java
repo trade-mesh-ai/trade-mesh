@@ -536,11 +536,15 @@ public class PaperTradingEngine {
                             OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
                             log.debug("Retrieved option chain for {} with {} strikes", trade.getSymbol(), chainData.getStrikes().size());
 
-                            // Loop through legs and sum all LTPs
+                            // Loop through legs and apply signed netting
                             double totalCurrentValue = 0.0;
                             for (TradeLeg leg : finalLegs) {
                                 double ltp = extractLTP(chainData, leg);
-                                totalCurrentValue += ltp;
+                                if (leg.getAction() == Action.SELL) {
+                                    totalCurrentValue += ltp;
+                                } else {
+                                    totalCurrentValue -= ltp;
+                                }
                             }
 
                             log.debug("Calculated total current value for trade {}: {}", trade.getId(), totalCurrentValue);
@@ -1186,7 +1190,9 @@ public class PaperTradingEngine {
                             }
 
                             return currentValueMono.map(currentValue -> {
-                                double liveUnrealizedPnl = entryCredit - currentValue;
+                                int quantity = (legs != null && !legs.isEmpty()) ? legs.get(0).getQuantity() : 1;
+                                double scaledEntryCredit = entryCredit * quantity;
+                                double liveUnrealizedPnl = scaledEntryCredit - currentValue;
                                 log.debug("Calculated live P&L for trade {}: currentValue={}, liveUnrealizedPnl={}",
                                         trade.getId(), currentValue, liveUnrealizedPnl);
                                 return LivePnlData.builder()
@@ -1234,9 +1240,9 @@ public class PaperTradingEngine {
             for (TradeLeg leg : legs) {
                 double currentLtp = extractLTP(chainData, leg);
                 if (leg.getAction() == Action.SELL) {
-                    totalCurrentValue += currentLtp;
+                    totalCurrentValue += currentLtp * leg.getQuantity();
                 } else {
-                    totalCurrentValue -= currentLtp;
+                    totalCurrentValue -= currentLtp * leg.getQuantity();
                 }
             }
             return Mono.just(totalCurrentValue);
@@ -1261,9 +1267,9 @@ public class PaperTradingEngine {
             for (TradeLeg leg : legs) {
                 double currentLtp = extractLTP(chainData, leg);
                 if (leg.getAction() == Action.SELL) {
-                    totalCurrentValue += currentLtp;
+                    totalCurrentValue += currentLtp * leg.getQuantity();
                 } else {
-                    totalCurrentValue -= currentLtp;
+                    totalCurrentValue -= currentLtp * leg.getQuantity();
                 }
             }
             return Mono.just(totalCurrentValue);
@@ -1288,9 +1294,9 @@ public class PaperTradingEngine {
             for (TradeLeg leg : legs) {
                 double currentLtp = extractLTP(chainData, leg);
                 if (leg.getAction() == Action.SELL) {
-                    totalCurrentValue += currentLtp;
+                    totalCurrentValue += currentLtp * leg.getQuantity();
                 } else {
-                    totalCurrentValue -= currentLtp;
+                    totalCurrentValue -= currentLtp * leg.getQuantity();
                 }
             }
             return Mono.just(totalCurrentValue);
