@@ -259,54 +259,6 @@ public class DailyReportService {
     }
 
     /**
-     * Sends the daily report via Telegram.
-     *
-     * @param metrics aggregated daily trading metrics
-     * @return Mono emitting void
-     */
-    private Mono<Void> sendDailyReport(DailyReportMetrics metrics) {
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
-        String emoji = metrics.totalPnl >= 0 ? "📊" : "📉";
-
-        String message = String.format(
-                "%s <b>Daily Report - %s</b>\n\n" +
-                        "<b>Summary</b>\n" +
-                        "Trades: <b>%d</b>\n" +
-                        "Wins: <b>%d</b> | Losses: <b>%d</b>\n" +
-                        "Win Rate: <b>%.1f%%</b>\n\n" +
-                        "<b>P&L</b>\n" +
-                        "Total: <b>%.2f pts</b> (₹ <b>%.2f</b>)\n" +
-                        "Best: <b>%.2f pts</b> (₹ <b>%.2f</b>) - %s\n" +
-                        "Worst: <b>%.2f pts</b> (₹ <b>%.2f</b>) - %s",
-                emoji,
-                today,
-                metrics.totalTrades,
-                metrics.winningTrades,
-                metrics.losingTrades,
-                metrics.winRate,
-                metrics.totalPnl,
-                metrics.totalPnlAmount,
-                metrics.bestTrade != null ? metrics.bestTrade.getRealizedPnl() : 0,
-                metrics.bestPnlAmount,
-                metrics.bestTrade != null ? metrics.bestTrade.getStrategyName() : "N/A",
-                metrics.worstTrade != null ? metrics.worstTrade.getRealizedPnl() : 0,
-                metrics.worstPnlAmount,
-                metrics.worstTrade != null ? metrics.worstTrade.getStrategyName() : "N/A"
-        );
-
-        Alert alert = Alert.builder()
-                .type(AlertType.SIGNAL_GENERATED)
-                .tradingSymbol("DAILY_REPORT")
-                .message(message)
-                .triggeredAt(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
-                .build();
-
-        return telegramNotificationBot.sendAlert(alert)
-                .doOnSuccess(v -> log.info("Daily report sent successfully"))
-                .doOnError(e -> log.error("Error sending daily report: {}", e.getMessage(), e));
-    }
-
-    /**
      * Sends an alert when no trades were executed today.
      *
      * @return Mono emitting void
