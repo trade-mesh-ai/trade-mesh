@@ -371,7 +371,7 @@ public class PaperTradingEngine {
      * @param trade the Iron Condor paper trade to close
      * @return Mono emitting the closed PaperTrade
      */
-    private Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
+    Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
         log.info("Closing Iron Condor trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
         // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
@@ -1086,7 +1086,7 @@ public class PaperTradingEngine {
      * @param trade the spread paper trade to close
      * @return Mono emitting the closed PaperTrade
      */
-    private Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
+    Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
         log.info("Closing spread trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
         // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
