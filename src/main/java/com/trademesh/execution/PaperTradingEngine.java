@@ -23,6 +23,7 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Paper Trading Engine for simulating trades without real money.
@@ -45,6 +46,14 @@ public class PaperTradingEngine {
             "NIFTY50", 75,
             "NIFTYBANK", 30
     );
+
+    /**
+     * Nested enum for markToMarket exit trigger decision.
+     * Scoped narrowly to this method's decision logic only.
+     * Do NOT confuse with the separate String-based trade.exitReason field
+     * used throughout the codebase for DTE_EXIT/LEG_BREACH/etc.
+     */
+    enum MarkToMarketExitTrigger { STOP_LOSS, TARGET_HIT }
     private final PaperTradeRepository paperTradeRepository;
     private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final TelegramNotificationBot telegramNotificationBot;
@@ -136,6 +145,27 @@ public class PaperTradingEngine {
      * @param trade the paper trade to mark to market
      * @return Mono emitting the updated PaperTrade
      */
+    /**
+     * Determines if a mark-to-market exit trigger (STOP_LOSS or TARGET_HIT) is met.
+     * Pure function with no side effects.
+     *
+     * @param currentValueBD the current value in BigDecimal
+     * @param entryCreditBD  the entry credit in BigDecimal
+     * @return Optional.of(STOP_LOSS) if currentValue > entryCredit × 2,
+     *         Optional.of(TARGET_HIT) if currentValue < entryCredit × 0.5,
+     *         Optional.empty() otherwise
+     */
+    Optional<MarkToMarketExitTrigger> determineMarkToMarketExitTrigger(
+            BigDecimal currentValueBD, BigDecimal entryCreditBD) {
+        if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(2))) > 0) {
+            return Optional.of(MarkToMarketExitTrigger.STOP_LOSS);
+        }
+        if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(0.5))) < 0) {
+            return Optional.of(MarkToMarketExitTrigger.TARGET_HIT);
+        }
+        return Optional.empty();
+    }
+
     public Mono<PaperTrade> markToMarket(PaperTrade trade) {
         if (trade.getStatus() != TradeStatus.OPEN) {
             log.debug("Trade {} is not open, skipping mark-to-market", trade.getId());
@@ -164,28 +194,20 @@ public class PaperTradingEngine {
                      trade.setUnrealizedPnl(trade.getEntryCredit() - currentValue);
                      trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
-                     // Check stop loss: if currentValue > entryCredit × 2
-                     // Use BigDecimal for precision-safe comparison on live trading decision
+                     // Check for STOP_LOSS or TARGET_HIT using extracted decision method
                      BigDecimal currentValueBD = BigDecimal.valueOf(currentValue);
                      BigDecimal entryCreditBD = BigDecimal.valueOf(trade.getEntryCredit());
-                     if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(2))) > 0) {
-                         log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}",
-                                 trade.getId(), currentValue, trade.getEntryCredit() * 2);
-                         return closeTrade(trade, "STOP_LOSS");
+                     Optional<MarkToMarketExitTrigger> trigger = 
+                         determineMarkToMarketExitTrigger(currentValueBD, entryCreditBD);
+                     if (trigger.isPresent()) {
+                         String reason = trigger.get().name(); // "STOP_LOSS" or "TARGET_HIT"
+                         log.info("{} triggered for trade {}: currentValue={}, entryCredit={}",
+                                 reason, trade.getId(), currentValue, trade.getEntryCredit());
+                         return closeTrade(trade, reason);
                      }
-
-                     // Check target: if currentValue < entryCredit × 0.5
-                     // Use BigDecimal for precision-safe comparison on live trading decision
-                     if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(0.5))) < 0) {
-                         log.info("Target hit for trade {}: currentValue={}, threshold={}",
-                                 trade.getId(), currentValue, trade.getEntryCredit() * 0.5);
-                         return closeTrade(trade, "TARGET_HIT");
-                     }
-
-                    // Save updated trade
-                    return paperTradeRepository.save(trade);
-                })
-                .doOnError(error -> log.error("Error marking to market for trade: {}", trade.getId(), error));
+                     return paperTradeRepository.save(trade);
+                 })
+                 .doOnError(error -> log.error("Error marking to market for trade: {}", trade.getId(), error));
     }
 
     /**
@@ -235,7 +257,7 @@ public class PaperTradingEngine {
      * @param trade the Iron Condor paper trade
      * @return Mono emitting the unrealized P&L in points
      */
-     private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
+    Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
          try {
              List<TradeLeg> legs = trade.getLegs();
              if (legs == null || legs.isEmpty()) {
@@ -371,7 +393,7 @@ public class PaperTradingEngine {
      * @param trade the Iron Condor paper trade to close
      * @return Mono emitting the closed PaperTrade
      */
-    private Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
+    Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
         log.info("Closing Iron Condor trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
         // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
@@ -866,7 +888,7 @@ public class PaperTradingEngine {
      * @param trade the spread paper trade
      * @return Mono emitting the unrealized P&L in points
      */
-    private Mono<BigDecimal> calculateSpreadPnl(PaperTrade trade) {
+    Mono<BigDecimal> calculateSpreadPnl(PaperTrade trade) {
         try {
             List<TradeLeg> legs = trade.getLegs();
             if (legs == null || legs.isEmpty()) {
@@ -1086,7 +1108,7 @@ public class PaperTradingEngine {
      * @param trade the spread paper trade to close
      * @return Mono emitting the closed PaperTrade
      */
-    private Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
+    Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
         log.info("Closing spread trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
         // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
