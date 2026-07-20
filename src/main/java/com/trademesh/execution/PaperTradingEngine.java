@@ -675,7 +675,7 @@ public class PaperTradingEngine {
             }
 
             sb.append(String.format("\nCredit Collected: <b>%.2f pts</b>\n", trade.getEntryCredit()));
-            sb.append(String.format("Max Loss: <b>%.2f pts</b>\n", signal.getMaxLoss()));
+            sb.append(String.format("Max Loss: <b>₹%.2f</b>\n", signal.getMaxLoss()));
             sb.append(String.format("Confidence: <b>%s</b>\n", signal.getConfidence()));
 
             return sb.toString();
@@ -791,7 +791,7 @@ public class PaperTradingEngine {
         }
 
         sb.append(String.format("\nNet Credit: <b>%.2f pts</b>\n", trade.getEntryCredit()));
-        sb.append(String.format("Max Loss: <b>%.2f pts</b>\n", signal.getMaxLoss()));
+        sb.append(String.format("Max Loss: <b>₹%.2f</b>\n", signal.getMaxLoss()));
 
         return sb.toString();
     }
