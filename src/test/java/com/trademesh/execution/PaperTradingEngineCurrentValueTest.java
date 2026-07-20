@@ -1,5 +1,7 @@
 package com.trademesh.execution;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
@@ -9,14 +11,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.ReactiveValueOperations;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.verify;
 
 /**
  * Unit tests for P&L netting fix in PaperTradingEngine.
@@ -36,17 +43,344 @@ class PaperTradingEngineCurrentValueTest {
     @Mock
     private PaperTradeRepository paperTradeRepository;
 
-    @InjectMocks
+    @Mock
+    private ReactiveRedisTemplate<String, String> redisTemplate;
+
+    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
     private PaperTradingEngine paperTradingEngine;
 
     private OptionChain optionChain;
 
     @BeforeEach
     void setUp() {
+        paperTradingEngine = new PaperTradingEngine(
+            paperTradeRepository, redisTemplate, null, objectMapper,
+            null, null, null, null
+        );
         optionChain = OptionChain.builder()
                 .symbol("NIFTY50")
                 .expiryDate(LocalDate.of(2026, 7, 9))
                 .build();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // FALLBACK BRANCH TESTS FOR calculateIronCondorPnl()
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Test: calculateIronCondorPnl() - No legs fallback.
+     * Verifies that when trade has no legs (null or empty), the method returns
+     * BigDecimal.valueOf(trade.getUnrealizedPnl()) instead of ZERO.
+     */
+    @Test
+    @DisplayName("calculateIronCondorPnl: No legs (null) falls back to unrealizedPnl")
+    void testCalculateIronCondorPnl_NoLegsNull_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(null);
+        trade.setUnrealizedPnl(-14.9);
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateIronCondorPnl() - Empty legs fallback.
+     * Verifies that when trade has empty legs list, the method returns
+     * BigDecimal.valueOf(trade.getUnrealizedPnl()) instead of ZERO.
+     */
+    @Test
+    @DisplayName("calculateIronCondorPnl: Empty legs falls back to unrealizedPnl")
+    void testCalculateIronCondorPnl_EmptyLegs_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(List.of());
+        trade.setUnrealizedPnl(-14.9);
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateIronCondorPnl() - Redis key missing fallback.
+     * Verifies that when Redis key is missing (Mono.empty()), the method returns
+     * BigDecimal.valueOf(trade.getUnrealizedPnl()) instead of ZERO.
+     */
+    @Test
+    @DisplayName("calculateIronCondorPnl: Redis key missing falls back to unrealizedPnl")
+    void testCalculateIronCondorPnl_RedisKeyMissing_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(List.of(
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE)
+                        .strikePrice(24100.0).limitPrice(50.0).quantity(1).build()
+        ));
+        trade.setUnrealizedPnl(-14.9);
+
+        mockRedisOptionChain("NIFTY50", null); // null = Mono.empty()
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateIronCondorPnl() - JSON deserialization failure fallback.
+     * Verifies that when Redis returns malformed JSON, the method catches the
+     * deserialization exception and returns BigDecimal.valueOf(trade.getUnrealizedPnl()).
+     */
+    @Test
+    @DisplayName("calculateIronCondorPnl: JSON deserialization failure falls back to unrealizedPnl")
+    void testCalculateIronCondorPnl_JsonDeserializationFailure_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(List.of(
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE)
+                        .strikePrice(24100.0).limitPrice(50.0).quantity(1).build()
+        ));
+        trade.setUnrealizedPnl(-14.9);
+
+        mockRedisOptionChain("NIFTY50", "{not valid json"); // Malformed JSON
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateIronCondorPnl() - Successful path with valid Redis data.
+     * Verifies that when Redis returns valid option chain data, the method
+     * correctly calculates P&L (not falling back), proving fallback logic
+     * doesn't interfere with normal operation.
+     */
+    @Test
+    @DisplayName("calculateIronCondorPnl: Valid Redis data calculates correct P&L")
+    void testCalculateIronCondorPnl_ValidRedisData_CalculatesCorrectPnl() throws Exception {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setUnrealizedPnl(0.0); // Will be overwritten by calculation
+
+        // 2 legs: SELL @ 50 (entry), current LTP 40 → profit 10
+        //         BUY @ 30 (entry), current LTP 35 → profit 5
+        // Total P&L = 10 + 5 = 15
+        List<TradeLeg> legs = List.of(
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE)
+                        .strikePrice(24100.0).limitPrice(50.0).quantity(1).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE)
+                        .strikePrice(24200.0).limitPrice(30.0).quantity(1).build()
+        );
+        trade.setLegs(legs);
+
+        // Create valid option chain JSON with matching strikes and LTPs
+        OptionChain chainData = OptionChain.builder()
+                .symbol("NIFTY50")
+                .expiryDate(LocalDate.of(2026, 7, 9))
+                .strikes(List.of(
+                        OptionStrike.builder().strikePrice(BigDecimal.valueOf(24100))
+                                .callLTP(BigDecimal.valueOf(40.0)).build(),
+                        OptionStrike.builder().strikePrice(BigDecimal.valueOf(24200))
+                                .callLTP(BigDecimal.valueOf(35.0)).build()
+                ))
+                .build();
+
+        String chainJson = objectMapper.writeValueAsString(chainData);
+        mockRedisOptionChain("NIFTY50", chainJson);
+
+        // Act & Assert
+        // Expected P&L: SELL leg (50 - 40) * 1 = 10, BUY leg (35 - 30) * 1 = 5, total = 15
+        StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(15.0)) == 0)
+                .verifyComplete();
+        verify(redisTemplate, atLeastOnce()).opsForValue();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // FALLBACK BRANCH TESTS FOR calculateSpreadPnl()
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Test: calculateSpreadPnl() - No legs fallback.
+     * Verifies that when trade has no legs (null or empty), the method returns
+     * BigDecimal.valueOf(trade.getUnrealizedPnl()) instead of ZERO.
+     */
+    @Test
+    @DisplayName("calculateSpreadPnl: No legs (null) falls back to unrealizedPnl")
+    void testCalculateSpreadPnl_NoLegsNull_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(null);
+        trade.setUnrealizedPnl(-14.9);
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateSpreadPnl() - Empty legs fallback.
+     * Verifies that when trade has empty legs list, the method returns
+     * BigDecimal.valueOf(trade.getUnrealizedPnl()) instead of ZERO.
+     */
+    @Test
+    @DisplayName("calculateSpreadPnl: Empty legs falls back to unrealizedPnl")
+    void testCalculateSpreadPnl_EmptyLegs_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(List.of());
+        trade.setUnrealizedPnl(-14.9);
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateSpreadPnl() - Redis key missing fallback.
+     * Verifies that when Redis key is missing (Mono.empty()), the method returns
+     * BigDecimal.valueOf(trade.getUnrealizedPnl()) instead of ZERO.
+     */
+    @Test
+    @DisplayName("calculateSpreadPnl: Redis key missing falls back to unrealizedPnl")
+    void testCalculateSpreadPnl_RedisKeyMissing_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(List.of(
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
+                        .strikePrice(23900.0).limitPrice(50.0).quantity(1).build()
+        ));
+        trade.setUnrealizedPnl(-14.9);
+
+        mockRedisOptionChain("NIFTY50", null); // null = Mono.empty()
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateSpreadPnl() - JSON deserialization failure fallback.
+     * Verifies that when Redis returns malformed JSON, the method catches the
+     * deserialization exception and returns BigDecimal.valueOf(trade.getUnrealizedPnl()).
+     */
+    @Test
+    @DisplayName("calculateSpreadPnl: JSON deserialization failure falls back to unrealizedPnl")
+    void testCalculateSpreadPnl_JsonDeserializationFailure_FallsBackToUnrealizedPnl() {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setLegs(List.of(
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
+                        .strikePrice(23900.0).limitPrice(50.0).quantity(1).build()
+        ));
+        trade.setUnrealizedPnl(-14.9);
+
+        mockRedisOptionChain("NIFTY50", "{not valid json"); // Malformed JSON
+
+        // Act & Assert
+        StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(-14.9)) == 0)
+                .verifyComplete();
+    }
+
+    /**
+     * Test: calculateSpreadPnl() - Successful path with valid Redis data.
+     * Verifies that when Redis returns valid option chain data, the method
+     * correctly calculates P&L (not falling back), proving fallback logic
+     * doesn't interfere with normal operation.
+     */
+    @Test
+    @DisplayName("calculateSpreadPnl: Valid Redis data calculates correct P&L")
+    void testCalculateSpreadPnl_ValidRedisData_CalculatesCorrectPnl() throws Exception {
+        // Arrange
+        PaperTrade trade = new PaperTrade();
+        trade.setId(java.util.UUID.randomUUID());
+        trade.setSymbol("NIFTY50");
+        trade.setUnrealizedPnl(0.0); // Will be overwritten by calculation
+
+        // 2-leg spread: SELL @ 50 (entry), current LTP 40 → profit 10
+        //              BUY @ 30 (entry), current LTP 35 → profit 5
+        // Total P&L = 10 + 5 = 15
+        List<TradeLeg> legs = List.of(
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
+                        .strikePrice(23900.0).limitPrice(50.0).quantity(1).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE)
+                        .strikePrice(23800.0).limitPrice(30.0).quantity(1).build()
+        );
+        trade.setLegs(legs);
+
+        // Create valid option chain JSON with matching strikes and LTPs
+        OptionChain chainData = OptionChain.builder()
+                .symbol("NIFTY50")
+                .expiryDate(LocalDate.of(2026, 7, 9))
+                .strikes(List.of(
+                        OptionStrike.builder().strikePrice(BigDecimal.valueOf(23900))
+                                .putLTP(BigDecimal.valueOf(40.0)).build(),
+                        OptionStrike.builder().strikePrice(BigDecimal.valueOf(23800))
+                                .putLTP(BigDecimal.valueOf(35.0)).build()
+                ))
+                .build();
+
+        String chainJson = objectMapper.writeValueAsString(chainData);
+        mockRedisOptionChain("NIFTY50", chainJson);
+
+        // Act & Assert
+        // Expected P&L: SELL leg (50 - 40) * 1 = 10, BUY leg (35 - 30) * 1 = 5, total = 15
+        StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(15.0)) == 0)
+                .verifyComplete();
+        verify(redisTemplate, atLeastOnce()).opsForValue();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // HELPER METHODS
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Mocks Redis option chain data for a given symbol.
+     * If jsonData is null, returns Mono.empty() (key missing).
+     * If jsonData is a string, returns Mono.just(jsonData).
+     *
+     * @param symbol  the symbol (e.g., "NIFTY50")
+     * @param jsonData the JSON string to return, or null for Mono.empty()
+     */
+    private void mockRedisOptionChain(String symbol, String jsonData) {
+        @SuppressWarnings("unchecked")
+        ReactiveValueOperations<String, String> reactiveValueOps = org.mockito.Mockito.mock(ReactiveValueOperations.class);
+        org.mockito.Mockito.lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
+
+        String redisKey = "optionchain:" + symbol;
+        if (jsonData == null) {
+            org.mockito.Mockito.lenient().when(reactiveValueOps.get(redisKey)).thenReturn(Mono.empty());
+        } else {
+            org.mockito.Mockito.lenient().when(reactiveValueOps.get(redisKey)).thenReturn(Mono.just(jsonData));
+        }
     }
 
     // ─── Test Case 1: calculateSpreadCurrentValue() - 2-leg spread (SELL + BUY) ───

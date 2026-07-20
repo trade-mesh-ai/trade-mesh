@@ -235,7 +235,7 @@ public class PaperTradingEngine {
      * @param trade the Iron Condor paper trade
      * @return Mono emitting the unrealized P&L in points
      */
-     private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
+    Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
          try {
              List<TradeLeg> legs = trade.getLegs();
              if (legs == null || legs.isEmpty()) {
@@ -866,7 +866,7 @@ public class PaperTradingEngine {
      * @param trade the spread paper trade
      * @return Mono emitting the unrealized P&L in points
      */
-    private Mono<BigDecimal> calculateSpreadPnl(PaperTrade trade) {
+    Mono<BigDecimal> calculateSpreadPnl(PaperTrade trade) {
         try {
             List<TradeLeg> legs = trade.getLegs();
             if (legs == null || legs.isEmpty()) {
