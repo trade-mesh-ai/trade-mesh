@@ -41,7 +41,7 @@ public class OIAnalysisScheduler {
     public void captureOIAnalysisSnapshots() {
 
         if (!tokenTracker.isTokenAvailable()) {
-            log.warn("[OIAnalysisScheduler] Zerodha token unavailable. Skipping OI analysis snapshot capture.");
+            tokenTracker.trackTokenMissing(SCHEDULER_NAME);
             return;
         }
 
