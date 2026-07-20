@@ -5,6 +5,7 @@ import com.trademesh.strategy.config.StrategyProperties;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.trading.MarketCalendarService;
+import com.trademesh.zerodha.options.OptionChainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,9 @@ class PaperTradingEngineVixPanicTest {
     private MarketCalendarService marketCalendarService;
 
     @Mock
+    private OptionChainService optionChainService;
+
+    @Mock
     private ReactiveValueOperations<String, String> reactiveValueOps;
 
     @BeforeEach
@@ -68,7 +72,7 @@ class PaperTradingEngineVixPanicTest {
         lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
         lenient().when(reactiveValueOps.get("price:NIFTY50")).thenReturn(Mono.just("19400"));
 
-        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService);
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService, optionChainService);
 
         // Stub marketCalendarService for all tests (safe DTE value)
         lenient().when(marketCalendarService.countTradingDays(any(), any())).thenReturn(5);

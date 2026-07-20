@@ -5,6 +5,7 @@ import com.trademesh.config.LotSizeService;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
+import com.trademesh.zerodha.options.OptionChainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,11 +51,14 @@ class PaperTradingEngineCloseTest {
     @Mock
     private LotSizeService lotSizeService;
 
+    @Mock
+    private OptionChainService optionChainService;
+
     @BeforeEach
     void setUp() {
         engine = new PaperTradingEngine(
             paperTradeRepository, null, telegramNotificationBot,
-            null, null, lotSizeService, null, null
+            null, null, lotSizeService, null, null, optionChainService
         );
 
         // Stub lotSizeService for alert formatting

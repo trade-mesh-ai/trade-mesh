@@ -5,6 +5,7 @@ import com.trademesh.strategy.config.StrategyProperties;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.trading.MarketCalendarService;
+import com.trademesh.zerodha.options.OptionChainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,9 @@ class PaperTradingEngineLegsBreachTest {
     private StrategyProperties ironCondorConfig;
 
     @Mock
+    private OptionChainService optionChainService;
+
+    @Mock
     private StrategyProperties spreadConfig;
 
     @Mock
@@ -58,7 +62,7 @@ class PaperTradingEngineLegsBreachTest {
 
     @BeforeEach
     void setUp() {
-        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService);
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService, optionChainService);
         lenient().when(marketCalendarService.countTradingDays(any(), any())).thenReturn(5);
     }
 

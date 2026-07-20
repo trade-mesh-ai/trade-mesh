@@ -5,6 +5,7 @@ import com.trademesh.strategy.config.StrategyProperties;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.trading.MarketCalendarService;
+import com.trademesh.zerodha.options.OptionChainService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,9 @@ class PaperTradingEngineDteExitDueTest {
     private StrategyProperties ironCondorConfig;
 
     @Mock
+    private OptionChainService optionChainService;
+
+    @Mock
     private StrategyProperties spreadConfig;
 
     @Mock
@@ -56,7 +60,7 @@ class PaperTradingEngineDteExitDueTest {
     @BeforeEach
     void setUp() {
         // Create a minimal PaperTradingEngine instance with mocked MarketCalendarService
-        engine = new PaperTradingEngine(null, null, null, null, null, null, null, marketCalendarService);
+        engine = new PaperTradingEngine(null, null, null, null, null, null, null, marketCalendarService, optionChainService);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

@@ -8,6 +8,7 @@ import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.zerodha.options.OptionChain;
+import com.trademesh.zerodha.options.OptionChainService;
 import com.trademesh.zerodha.options.OptionStrike;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -53,6 +54,9 @@ class PaperTradingEngineMarkToMarketDecisionTest {
     @Mock
     private LotSizeService lotSizeService;
 
+    @Mock
+    private OptionChainService optionChainService;
+
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private PaperTradingEngine engine;
@@ -61,7 +65,7 @@ class PaperTradingEngineMarkToMarketDecisionTest {
     void setUp() {
         engine = new PaperTradingEngine(
             paperTradeRepository, redisTemplate, telegramNotificationBot,
-            objectMapper, null, lotSizeService, null, null
+            objectMapper, null, lotSizeService, null, null, optionChainService
         );
         lenient().when(lotSizeService.getLotSize("NIFTY50")).thenReturn(75);
     }
@@ -254,20 +258,8 @@ class PaperTradingEngineMarkToMarketDecisionTest {
             ))
             .build();
 
-        String chainJson = null;
-        try {
-            chainJson = objectMapper.writeValueAsString(optionChain);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to serialize option chain: " + e.getMessage());
-        }
-
-        // Mock Redis opsForValue
-        @SuppressWarnings("unchecked")
-        ReactiveValueOperations<String, String> reactiveValueOps = 
-            org.mockito.Mockito.mock(ReactiveValueOperations.class);
-        lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
-        lenient().when(reactiveValueOps.get("optionchain:NIFTY50"))
-            .thenReturn(Mono.just(chainJson));
+        when(optionChainService.fetchOptionChain("NIFTY50"))
+            .thenReturn(Mono.just(optionChain));
 
         // Mock paperTradeRepository.findById() for closeTrade's internal re-fetch
         // Return a FRESH trade object with status OPEN (so closeTrade's guard doesn't skip)
@@ -385,20 +377,8 @@ class PaperTradingEngineMarkToMarketDecisionTest {
             ))
             .build();
 
-        String chainJson = null;
-        try {
-            chainJson = objectMapper.writeValueAsString(optionChain);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to serialize option chain: " + e.getMessage());
-        }
-
-        // Mock Redis opsForValue
-        @SuppressWarnings("unchecked")
-        ReactiveValueOperations<String, String> reactiveValueOps = 
-            org.mockito.Mockito.mock(ReactiveValueOperations.class);
-        lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
-        lenient().when(reactiveValueOps.get("optionchain:NIFTY50"))
-            .thenReturn(Mono.just(chainJson));
+        when(optionChainService.fetchOptionChain("NIFTY50"))
+            .thenReturn(Mono.just(optionChain));
 
         // Mock paperTradeRepository.save() to echo back the mutated trade
         when(paperTradeRepository.save(any(PaperTrade.class)))
