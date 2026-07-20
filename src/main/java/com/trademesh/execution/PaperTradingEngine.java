@@ -235,13 +235,14 @@ public class PaperTradingEngine {
      * @param trade the Iron Condor paper trade
      * @return Mono emitting the unrealized P&L in points
      */
-    private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
-        try {
-            List<TradeLeg> legs = trade.getLegs();
-            if (legs == null || legs.isEmpty()) {
-                log.warn("No legs found for Iron Condor trade {}", trade.getId());
-                return Mono.just(BigDecimal.ZERO);
-            }
+     private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
+         try {
+             List<TradeLeg> legs = trade.getLegs();
+             if (legs == null || legs.isEmpty()) {
+                 log.warn("No legs found for Iron Condor trade {}, falling back to last known unrealized P&L: {}", 
+                         trade.getId(), trade.getUnrealizedPnl());
+                 return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
+             }
 
             String redisKey = "optionchain:" + trade.getSymbol();
             Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
@@ -274,17 +275,20 @@ public class PaperTradingEngine {
                             log.debug("Iron Condor total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
                             return Mono.just(totalPnl);
                         } catch (Exception e) {
-                            log.warn("Error deserializing option chain for Iron Condor P&L, using entry price fallback: {}", e.getMessage());
-                            return Mono.just(BigDecimal.ZERO);
+                            log.warn("Error deserializing option chain for Iron Condor P&L, falling back to last known unrealized P&L: {} ({})", 
+                                    trade.getUnrealizedPnl(), e.getMessage());
+                            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                         }
                     })
                     .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing for Iron Condor P&L: {}, using entry price fallback", redisKey);
-                        return Mono.just(BigDecimal.ZERO);
+                        log.warn("Redis key missing for Iron Condor P&L: {}, falling back to last known unrealized P&L: {}", 
+                                redisKey, trade.getUnrealizedPnl());
+                        return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                     }));
         } catch (Exception e) {
-            log.error("Error calculating Iron Condor P&L for trade: {}", trade.getId(), e);
-            return Mono.just(BigDecimal.ZERO);
+            log.error("Error calculating Iron Condor P&L for trade: {}, falling back to last known unrealized P&L: {}", 
+                    trade.getId(), trade.getUnrealizedPnl(), e);
+            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
         }
     }
 
@@ -866,8 +870,9 @@ public class PaperTradingEngine {
         try {
             List<TradeLeg> legs = trade.getLegs();
             if (legs == null || legs.isEmpty()) {
-                log.warn("No legs found for spread trade {}", trade.getId());
-                return Mono.just(BigDecimal.ZERO);
+                log.warn("No legs found for spread trade {}, falling back to last known unrealized P&L: {}", 
+                        trade.getId(), trade.getUnrealizedPnl());
+                return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
             }
 
             String redisKey = "optionchain:" + trade.getSymbol();
@@ -901,17 +906,20 @@ public class PaperTradingEngine {
                             log.debug("Spread total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
                             return Mono.just(totalPnl);
                         } catch (Exception e) {
-                            log.warn("Error deserializing option chain for spread P&L, using entry price fallback: {}", e.getMessage());
-                            return Mono.just(BigDecimal.ZERO);
+                            log.warn("Error deserializing option chain for spread P&L, falling back to last known unrealized P&L: {} ({})", 
+                                    trade.getUnrealizedPnl(), e.getMessage());
+                            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                         }
                     })
                     .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing for spread P&L: {}, using entry price fallback", redisKey);
-                        return Mono.just(BigDecimal.ZERO);
+                        log.warn("Redis key missing for spread P&L: {}, falling back to last known unrealized P&L: {}", 
+                                redisKey, trade.getUnrealizedPnl());
+                        return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                     }));
         } catch (Exception e) {
-            log.error("Error calculating spread P&L for trade: {}", trade.getId(), e);
-            return Mono.just(BigDecimal.ZERO);
+            log.error("Error calculating spread P&L for trade: {}, falling back to last known unrealized P&L: {}", 
+                    trade.getId(), trade.getUnrealizedPnl(), e);
+            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
         }
     }
 
