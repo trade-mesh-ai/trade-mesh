@@ -1,6 +1,6 @@
-# TradeMesh — Architecture Reference
+﻿# TradeMesh — Architecture Reference
 
-**This document describes verified current architecture as of July 16, 2026. For decision rationale, see [docs/architecture/decisions/](decisions/). For session-by-session implementation history, see [docs/architecture/CURRENT_STATE.md](CURRENT_STATE.md).**
+**This document describes verified current architecture as of July 20, 2026. For decision rationale, see [docs/architecture/decisions/](decisions/). For session-by-session implementation history, see [docs/architecture/CURRENT_STATE.md](CURRENT_STATE.md).**
 
 ---
 
@@ -136,6 +136,10 @@ Actual directory structure verified from source:
 
 **Known limitation:** All three close paths use check-then-act (fetch, check condition, update) rather than atomic conditional update. This is **currently safe only because Spring's scheduler runs single-threaded by default** in this deployment. This is an accepted characteristic, not hidden — documented in CURRENT_STATE.md as a known gap that becomes a live race the moment a thread pool is added for any reason.
 
+**Live price data (as of 2026-07-20):** `calculateIronCondorPnl()`, `calculateSpreadPnl()`, and `fetchCurrentPrices()` all source current option-chain data via `OptionChainService.fetchOptionChain(symbol)` — a cache-first-with-live-Kite-fallback mechanism (try Redis, and on a genuine cache miss, fetch fresh from Kite directly, then re-cache). Previously these three methods read Redis raw and fell back to a stale value on *any* cache miss, never attempting a live fetch — this was the confirmed root cause of a real P&L-corruption incident (2026-07-17). Each method's fallback-to-last-known-value behavior is preserved as the final safety net, now only reached if the live fetch itself also fails (no token, Kite down).
+
+**Multi-lot exit-threshold scaling (fixed 2026-07-20):** `shouldExitIronCondor()`'s and `shouldExitSpread()`'s STOP_LOSS/TARGET_HIT thresholds are derived from `trade.getLegs().get(0).getQuantity()` (the real lot count) multiplied against `trade.getEntryCredit()` — previously these thresholds were computed against the unscaled, per-single-lot `entryCredit` while being compared against a quantity-scaled `unrealizedPnl`, meaning every multi-lot trade's exit thresholds fired roughly `1/lots` too tight in both directions since `max-lots` was first raised above 1 (2026-07-15). See "Data Model" below for the underlying convention this bug violated.
+
 ---
 
 ## 6. Risk Architecture
@@ -147,11 +151,12 @@ Actual directory structure verified from source:
 - Capital-based: `LotSizeService.getPositionSize(maxLossPerLot)` — `lots = floor((accountCapital × riskPercent) / maxLossPerLot)`, floored at 1, capped at `max-lots` config
 - VIX-scaled: VIX > 18 → 0.5x multiplier; VIX ≤ 18 → 1.0x
 - Confidence-scaled (Iron Condor only): `multiplier = clamp(0.5 + (score - minScore) / (2 × (100 - minScore)), 0.5, 1.0)`
+- Real NIFTY50 lot size: **65** (confirmed via exact arithmetic match against real trade data; a stale, wrong hardcoded constant of `75` in `PaperTradingEngine.LOT_SIZES` was found and corrected 2026-07-20 — it fed directly into `shouldExitSpread()`'s stop-loss calculation)
 
 **Known gaps (logged, not blocking):**
-- No daily loss limit (code exists in `RiskManager` but is dead — zero callers, broken formula)
+- No daily loss limit — the dead, broken code that once existed in `RiskManager` (zero callers, an incorrect formula) was **deleted entirely** during the 2026-07-15 design review, not merely left in place. A real daily-loss circuit breaker, if ever built, should be DB-backed like the concurrent-position check, not resurrected from the deleted code.
 - No capital-at-risk budget across simultaneously open positions (only position count cap)
-- No sector exposure check (code exists but is dead)
+- No sector exposure check — same as above, the dead no-op implementation was deleted, not left dormant
 
 ---
 
@@ -195,6 +200,8 @@ Actual directory structure verified from source:
 - `createdAt`, `updatedAt` (LocalDateTime) — Audit timestamps
 
 **P&L storage convention:** All P&L fields stored in **points, not rupees**. Rupee conversion happens only at display/alert time: `rupeeAmount = pnlPoints × lotSizeService.getLotSize(symbol)`.
+
+**Critical convention, violated once and now fixed (2026-07-20):** `entryCredit` and `currentValue` on `PaperTrade` are stored as **per-single-lot** values — the premium for one lot, never multiplied by the actual quantity held. `unrealizedPnl`/`realizedPnl`, by contrast, **are quantity-scaled** — every leg's contribution multiplies by `leg.getQuantity()` before summing. Any code comparing these two kinds of value directly (e.g., an exit threshold derived from `entryCredit`, compared against `unrealizedPnl`) **must explicitly multiply the per-lot value by the real lot count first** — this is exactly the mismatch that caused `shouldExitIronCondor()`/`shouldExitSpread()`'s STOP_LOSS/TARGET_HIT thresholds to fire too tight by a factor of `lots` for two months. Future code touching these fields should treat this as a standing hazard, not a one-off bug.
 
 ### TradeStatus Enum
 
@@ -247,12 +254,17 @@ Three values only (no partial-fill or pending states):
 
 ## 10. Testing & Evidence Culture
 
-**Test count:** As of the most recent verified test run (2026-07-15), **344 tests pass** (verified via `grep -c "<testcase" build/test-results/test/*.xml | awk -F: '{sum+=$2} END {print sum}'`).
+**Test count:** As of the most recent verified test run (2026-07-20), **371 tests pass** (verified via `grep -c "<testcase" build/test-results/test/*.xml | awk -F: '{sum+=$2} END {print sum}'`).
+
+**Test coverage added 2026-07-20** for the five exit/entry-path methods previously confirmed to have zero dedicated coverage — the exact methods that produced multiple real production bugs found via live monitoring:
+- `calculateIronCondorPnl()`/`calculateSpreadPnl()`'s Redis-fallback and successful-computation paths
+- `closeIronCondorTrade()`/`closeSpreadTrade()`'s concurrency-safety guard
+- `markToMarket()`'s STOP_LOSS/TARGET_HIT decision (extracted into a pure, independently-testable `determineMarkToMarketExitTrigger()` method as part of this work)
+- The multi-lot exit-threshold scaling fix (`shouldExitIronCondor()`/`shouldExitSpread()`), verified at a realistic 7-lot size
 
 **Known gaps in test coverage (logged, not blocking):**
-- Exit-path methods (`closeIronCondorTrade()`, `closeSpreadTrade()`, generic `closeTrade()`) — zero dedicated unit test coverage
-- Entry-path methods (`TradingScheduler.executeDailyEntry()`, `TradingScheduler.executeEntryRetry()`) — zero dedicated unit test coverage (Kite-dependent, token-guarded)
-- Mark-to-market exit comparisons (`markToMarket()` exit logic) — zero dedicated unit test coverage
+- `TradingScheduler.executeDailyEntry()`/`executeEntryRetry()` — still zero dedicated unit test coverage (Kite-dependent, token-guarded)
+- Full entity-level `Double`→`BigDecimal` migration remains undone (115 call sites, 13 files, properly scoped but not yet started)
 
 **Evidence discipline:** All architectural claims in this document are grounded in verified current code, not narrative. Verification method: direct source-code inspection, grep output, or test execution — never hand-calculation or assumption.
 
@@ -288,4 +300,4 @@ Three values only (no partial-fill or pending states):
 
 ---
 
-**Document version:** 1.0 | **Last verified:** July 16, 2026, 12:00 PM IST
+**Document version:** 1.1 | **Last verified:** July 20, 2026, end of day IST
