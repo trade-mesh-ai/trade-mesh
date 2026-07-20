@@ -12,6 +12,7 @@ import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.trading.MarketCalendarService;
 import com.trademesh.zerodha.options.OptionChain;
+import com.trademesh.zerodha.options.OptionChainService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -62,6 +63,7 @@ public class PaperTradingEngine {
     private final LotSizeService lotSizeService;
     private final VixMonitorService vixMonitorService;
     private final MarketCalendarService marketCalendarService;
+    private final OptionChainService optionChainService;
     private final Clock clock = Clock.system(ZoneId.of("Asia/Kolkata"));
 
     /**
@@ -266,47 +268,37 @@ public class PaperTradingEngine {
                  return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
              }
 
-            String redisKey = "optionchain:" + trade.getSymbol();
-            Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+            return optionChainService.fetchOptionChain(trade.getSymbol())
+                    .flatMap(chainData -> {
+                        BigDecimal totalPnl = BigDecimal.ZERO;
 
-            return redisTemplate.opsForValue().get(redisKey)
-                    .flatMap(chainJson -> {
-                        try {
-                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
-                            BigDecimal totalPnl = BigDecimal.ZERO;
+                        for (TradeLeg leg : legs) {
+                            double currentLtp = extractLTP(chainData, leg);
+                            double entryPrice = leg.getLimitPrice();
+                            BigDecimal legPnl;
 
-                            for (TradeLeg leg : legs) {
-                                double currentLtp = extractLTP(chainData, leg);
-                                double entryPrice = leg.getLimitPrice();
-                                BigDecimal legPnl;
-
-                                if (leg.getAction() == Action.SELL) {
-                                    // SELL legs: profit when premium decays
-                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
-                                } else {
-                                    // BUY legs: profit when premium appreciates
-                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity());
-                                }
-
-                                totalPnl = totalPnl.add(legPnl);
-                                log.debug("Iron Condor leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
-                                        leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
-                                        entryPrice, currentLtp, legPnl);
+                            if (leg.getAction() == Action.SELL) {
+                                // SELL legs: profit when premium decays
+                                legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
+                            } else {
+                                // BUY legs: profit when premium appreciates
+                                legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity());
                             }
 
-                            log.debug("Iron Condor total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
-                            return Mono.just(totalPnl);
-                        } catch (Exception e) {
-                            log.warn("Error deserializing option chain for Iron Condor P&L, falling back to last known unrealized P&L: {} ({})", 
-                                    trade.getUnrealizedPnl(), e.getMessage());
-                            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
+                            totalPnl = totalPnl.add(legPnl);
+                            log.debug("Iron Condor leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
+                                    leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
+                                    entryPrice, currentLtp, legPnl);
                         }
+
+                        log.debug("Iron Condor total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
+                        return Mono.just(totalPnl);
                     })
-                    .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing for Iron Condor P&L: {}, falling back to last known unrealized P&L: {}", 
-                                redisKey, trade.getUnrealizedPnl());
+                    .onErrorResume(e -> {
+                        log.warn("Failed to fetch option chain for Iron Condor P&L (trade {}), falling back to last known unrealized P&L: {} ({})",
+                                trade.getId(), trade.getUnrealizedPnl(), e.getMessage());
                         return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
-                    }));
+                    });
         } catch (Exception e) {
             log.error("Error calculating Iron Condor P&L for trade: {}, falling back to last known unrealized P&L: {}", 
                     trade.getId(), trade.getUnrealizedPnl(), e);
@@ -537,9 +529,9 @@ public class PaperTradingEngine {
     }
 
     /**
-     * Fetches current option prices from Redis for all legs of a trade.
-     * Reads the option chain data from Redis using key optionchain:{symbol},
-     * then loops through all legs to extract LTPs and sum them.
+     * Fetches current option prices from OptionChainService for all legs of a trade.
+     * Uses the cache-first-with-live-Kite-fallback mechanism provided by OptionChainService.
+     * Loops through all legs to extract LTPs and applies signed netting.
      *
      * @param trade the paper trade
      * @return Mono emitting the current value in points
@@ -557,39 +549,32 @@ public class PaperTradingEngine {
                 return Mono.just(trade.getEntryCredit());
             }
 
-            // Single Redis call to fetch option chain data
-            String redisKey = "optionchain:" + trade.getSymbol();
             final Double entryCredit = trade.getEntryCredit();
             final Double currentValue = trade.getCurrentValue();
-            return redisTemplate.opsForValue().get(redisKey)
-                    .flatMap(chainJson -> {
-                        try {
-                            // Deserialize option chain once
-                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
-                            log.debug("Retrieved option chain for {} with {} strikes", trade.getSymbol(), chainData.getStrikes().size());
+            
+            return optionChainService.fetchOptionChain(trade.getSymbol())
+                    .flatMap(chainData -> {
+                        log.debug("Retrieved option chain for {} with {} strikes", trade.getSymbol(), chainData.getStrikes().size());
 
-                            // Loop through legs and apply signed netting
-                            double totalCurrentValue = 0.0;
-                            for (TradeLeg leg : finalLegs) {
-                                double ltp = extractLTP(chainData, leg);
-                                if (leg.getAction() == Action.SELL) {
-                                    totalCurrentValue += ltp;
-                                } else {
-                                    totalCurrentValue -= ltp;
-                                }
+                        // Loop through legs and apply signed netting
+                        double totalCurrentValue = 0.0;
+                        for (TradeLeg leg : finalLegs) {
+                            double ltp = extractLTP(chainData, leg);
+                            if (leg.getAction() == Action.SELL) {
+                                totalCurrentValue += ltp;
+                            } else {
+                                totalCurrentValue -= ltp;
                             }
-
-                            log.debug("Calculated total current value for trade {}: {}", trade.getId(), totalCurrentValue);
-                            return Mono.just(totalCurrentValue);
-                        } catch (Exception e) {
-                            log.error("Error deserializing option chain for {}: {}", trade.getSymbol(), e.getMessage());
-                            return Mono.just(currentValue != null ? currentValue : entryCredit);
                         }
+
+                        log.debug("Calculated total current value for trade {}: {}", trade.getId(), totalCurrentValue);
+                        return Mono.just(totalCurrentValue);
                     })
-                    .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing: {}, falling back to current value", redisKey);
-                        return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
-                    }));
+                    .onErrorResume(e -> {
+                        log.warn("Failed to fetch option chain for current prices (trade {}), falling back to last known value: {} ({})",
+                                trade.getId(), currentValue != null ? currentValue : entryCredit, e.getMessage());
+                        return Mono.just(currentValue != null ? currentValue : entryCredit);
+                    });
         } catch (Exception e) {
             log.error("Error fetching current prices for trade: {}", trade.getId(), e);
             return Mono.just(trade.getCurrentValue() != null ? trade.getCurrentValue() : trade.getEntryCredit());
@@ -903,47 +888,37 @@ public class PaperTradingEngine {
                 return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
             }
 
-            String redisKey = "optionchain:" + trade.getSymbol();
-            Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
+            return optionChainService.fetchOptionChain(trade.getSymbol())
+                    .flatMap(chainData -> {
+                        BigDecimal totalPnl = BigDecimal.ZERO;
 
-            return redisTemplate.opsForValue().get(redisKey)
-                    .flatMap(chainJson -> {
-                        try {
-                            OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
-                            BigDecimal totalPnl = BigDecimal.ZERO;
+                        for (TradeLeg leg : legs) {
+                            double currentLtp = extractLTP(chainData, leg);
+                            double entryPrice = leg.getLimitPrice();
+                            BigDecimal legPnl;
 
-                            for (TradeLeg leg : legs) {
-                                double currentLtp = extractLTP(chainData, leg);
-                                double entryPrice = leg.getLimitPrice();
-                                BigDecimal legPnl;
-
-                                if (leg.getAction() == Action.SELL) {
-                                    // SELL legs: profit when premium decays
-                                    legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
-                                } else {
-                                    // BUY legs: profit when premium appreciates
-                                    legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity());
-                                }
-
-                                totalPnl = totalPnl.add(legPnl);
-                                log.debug("Spread leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
-                                        leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
-                                        entryPrice, currentLtp, legPnl);
+                            if (leg.getAction() == Action.SELL) {
+                                // SELL legs: profit when premium decays
+                                legPnl = BigDecimal.valueOf((entryPrice - currentLtp) * leg.getQuantity());
+                            } else {
+                                // BUY legs: profit when premium appreciates
+                                legPnl = BigDecimal.valueOf((currentLtp - entryPrice) * leg.getQuantity());
                             }
 
-                            log.debug("Spread total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
-                            return Mono.just(totalPnl);
-                        } catch (Exception e) {
-                            log.warn("Error deserializing option chain for spread P&L, falling back to last known unrealized P&L: {} ({})", 
-                                    trade.getUnrealizedPnl(), e.getMessage());
-                            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
+                            totalPnl = totalPnl.add(legPnl);
+                            log.debug("Spread leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
+                                    leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
+                                    entryPrice, currentLtp, legPnl);
                         }
+
+                        log.debug("Spread total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
+                        return Mono.just(totalPnl);
                     })
-                    .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing for spread P&L: {}, falling back to last known unrealized P&L: {}", 
-                                redisKey, trade.getUnrealizedPnl());
+                    .onErrorResume(e -> {
+                        log.warn("Failed to fetch option chain for spread P&L (trade {}), falling back to last known unrealized P&L: {} ({})",
+                                trade.getId(), trade.getUnrealizedPnl(), e.getMessage());
                         return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
-                    }));
+                    });
         } catch (Exception e) {
             log.error("Error calculating spread P&L for trade: {}, falling back to last known unrealized P&L: {}", 
                     trade.getId(), trade.getUnrealizedPnl(), e);
