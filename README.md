@@ -10,15 +10,13 @@ TradeMesh is a reactive options trading platform for NSE that executes multi-leg
 
 1. [Project Overview](#project-overview)
 2. [Technology Stack](#technology-stack)
-3. [Package Structure](#package-structure)
-4. [Database Schema](#database-schema)
-5. [Trading Strategies](#trading-strategies)
-6. [Scheduled Jobs](#scheduled-jobs)
-7. [REST API Endpoints](#rest-api-endpoints)
-8. [Data Pipeline & Iron Condor Foundation](#data-pipeline--iron-condor-foundation)
-9. [Architecture Patterns](#architecture-patterns)
-10. [Key Bugs Fixed (June 29-30, July 1, 2026)](#key-bugs-fixed-june-29-30-july-1-2026)
-11. [Future Roadmap](#future-roadmap)
+3. [Database Schema](#database-schema)
+4. [Trading Strategies](#trading-strategies)
+5. [Scheduled Jobs](#scheduled-jobs)
+6. [REST API Endpoints](#rest-api-endpoints)
+7. [Data Pipeline & Iron Condor Foundation](#data-pipeline--iron-condor-foundation)
+8. [Key Bugs Fixed (June 29-30, July 1, 2026)](#key-bugs-fixed-june-29-30-july-1-2026)
+9. [Future Roadmap](#future-roadmap)
 
 ---
 
@@ -34,34 +32,7 @@ TradeMesh automates multi-leg options trading on NSE with:
 - **Risk management** with position limits and daily loss controls
 - **Real-time alerts** via Telegram
 
-### Architecture Summary
-
-```
-Zerodha Kite API (Market Data)
-    ↓
-Market Intelligence Layer (VIX, OI, Max Pain, Metrics)
-    ↓
-Strategy Evaluation (Iron Condor, Spreads, Expiry Day)
-    ↓
-Risk Management (Position Limits, Daily Loss Limits)
-    ↓
-Paper Trading Engine (Simulation)
-    ↓
-Execution Layer (Paper or Live via Zerodha)
-    ↓
-Position Monitoring (Mark-to-Market every 60 sec)
-    ↓
-Telegram Alerts & Daily Reports
-```
-
-### Key Characteristics
-
-- **Reactive:** Spring WebFlux throughout; no `.block()` anywhere
-- **R2DBC:** Reactive database access to PostgreSQL
-- **Redis:** Token storage, option chain caching, tick price caching
-- **Event-Driven:** Market intelligence refreshes every 5 minutes; trades execute at scheduled times
-- **Read/Write Separation:** REST endpoints read-only; all DB writes through schedulers
-- **Structured Logging:** SLF4J only; no System.out.println
+> For comprehensive architecture details (package structure, runtime flows, risk architecture, design patterns, and data model), see [ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md).
 
 ---
 
@@ -86,165 +57,6 @@ Telegram Alerts & Daily Reports
 | **Testing** | JUnit 5, Reactor Test, TestContainers | Latest |
 
 ---
-
-## Package Structure
-
-### `com.trademesh`
-
-#### `alert` — Telegram Notifications
-- **`Alert`** — Alert entity with type and message
-- **`AlertType`** — Enum: ENTRY, EXIT, ERROR, VIX_ALERT, SYSTEM
-- **`TelegramClient`** — HTTP client for Telegram Bot API
-- **`TelegramNotificationBot`** — Service to send Telegram messages
-- **`TelegramProperties`** — Configuration properties for Telegram
-
-#### `common` — Shared Utilities
-- **`dto`** — Data transfer objects for API responses
-- **`exception`** — Custom exceptions (InvalidStrategyException, InsufficientMarginException, etc.)
-- **`handler`** — Global exception handlers for REST controllers
-- **`resilience`** — Retry logic and circuit breaker patterns
-
-#### `config` — Application Configuration
-- **`ApplicationConstants`** — Market hours, symbols, timezone constants
-- **`JacksonConfig`** — JSON serialization/deserialization configuration
-- **`JdbcConfig`** — JDBC DataSource for Liquibase
-- **`LotSizeService`** — Centralized lot size lookup for NIFTY50 (65), NIFTYBANK (30)
-- **`PaperTradeLegsConverter`** — JSON converter for trade legs
-- **`R2dbcConfig`** — R2DBC connection pool configuration
-- **`ResilienceConfig`** — Retry and circuit breaker policies
-- **`WebClientConfig`** — WebClient configuration for HTTP calls
-
-#### `domain` — Core Domain Entities
-- **`Instrument`** — Zerodha instrument master (token, symbol, strike, expiry, lot size)
-- **`InstrumentRepository`** — R2DBC repository for instruments
-- **`NiftyDailyPrice`** — NIFTY50 OHLC data (trade_date, open, high, low, close, volume)
-- **`NiftyDailyPriceRepository`** — R2DBC repository for daily prices
-
-#### `execution` — Trade Execution & Position Management
-- **`MarkToMarketScheduler`** — Marks all open trades to market every 60 seconds (fixedRate)
-- **`OrderExecutionService`** — Executes orders via Zerodha API
-- **`PaperTrade`** — Simulated trade record (UUID id, symbol, strategy, status, legs, P&L)
-- **`PaperTradeController`** — REST endpoints for paper trade queries
-- **`PaperTradeRepository`** — R2DBC repository for paper trades
-- **`PaperTradingEngine`** — Simulates trade execution and mark-to-market calculations
-- **`TradeStatus`** — Enum: OPEN, CLOSED, CANCELLED
-- **`LivePnlData`** — DTO for live P&L data (liveUnrealizedPnl, isPnlLive flag)
-
-#### `intelligence` — Market Intelligence & Analysis
-- **`IntelligenceScheduler`** — Refreshes market intelligence every 5 minutes (cron: `0 */5 9-15 ? * MON-FRI`)
-- **`KiteHistoricalService`** — Fetches historical OHLC from Kite API
-- **`MarketCondition`** — Enum: SIDEWAYS, TRENDING_BULLISH, TRENDING_BEARISH, EXPIRY_DAY, HIGH_VOLATILITY, NO_TRADE
-- **`MarketIntelligence`** — Aggregated market data (VIX, OI, max pain, condition, metrics)
-- **`MarketIntelligenceController`** — REST endpoints for market intelligence
-- **`MarketIntelligenceService`** — Generates complete market intelligence for a symbol
-  - **`generateIntelligence(symbol)`** — Cached method (5-min TTL) for read-only endpoints
-  - **`generateFreshIntelligence(symbol)`** — Bypasses cache read for trade-decision path
-- **`MarketMetrics`** — Calculated metrics (HV20, ATR14, ATRPct, IVR, IV/HV ratio, PCR)
-- **`MarketMetricsService`** — Calculates market metrics from historical data
-- **`NiftyDailyPriceService`** — Manages NIFTY50 daily price data
-- **`SignalDirection`** — Enum: BULLISH, BEARISH, NEUTRAL
-- **`SignalService`** — Generates trading signals from market intelligence
-- **`TradingSignal`** — Market signal with direction and confidence
-
-##### `intelligence.iv` — Implied Volatility
-- **`ImpliedVolatilityCalculator`** — Black-Scholes IV and delta calculations
-- **`IvHistoryService`** — Tracks daily ATM IV at 9:25 AM
-- **`IvHistory`** — Daily ATM IV record (symbol, trade_date, atm_iv, call_iv, put_iv, spot_price, expiry_date)
-
-##### `intelligence.maxpain` — Max Pain Analysis
-- **`MaxPainCalculator`** — Calculates theoretical max pain for call/put sides
-- **`MaxPainService`** — Persists max pain snapshots every 30 minutes
-- **`MaxPainHistory`** — Max pain record (symbol, expiry_date, max_pain_strike, spot_price, distance)
-
-##### `intelligence.oi` — Open Interest Analysis
-- **`OiAnalysis`** — OI wall detection (max_call_oi_strike, max_put_oi_strike, market_bias)
-- **`OiAnalysisService`** — Analyzes option chain for OI walls
-- **`OiSnapshot`** — OI snapshot record (symbol, max_call_strike, max_put_strike, data JSONB)
-
-##### `intelligence.vix` — VIX Monitoring
-- **`VixAlertService`** — Sends Telegram alerts when VIX crosses thresholds
-- **`VixData`** — Current VIX value, level, change, safe-to-trade flag
-- **`VixHistory`** — VIX snapshot record (vix_value, vix_level, recorded_at)
-- **`VixMonitorService`** — Fetches current VIX from Kite API
-- **`VixScheduler`** — Persists VIX every 15 minutes (cron: `0 */15 9-15 ? * MON-FRI`)
-
-#### `portfolio` — Portfolio Management
-- **`PortfolioService`** — Aggregates positions and calculates portfolio P&L
-- **`PortfolioSummary`** — Aggregated portfolio metrics (total_value, total_pnl, position_count)
-- **`PositionSummary`** — Individual position summary (symbol, quantity, avg_price, current_price, pnl)
-
-#### `risk` — Risk Management
-- **`RiskLimitsConfig`** — Risk configuration (max_position_size, daily_loss_limit, margin_buffer)
-- **`RiskManager`** — Validates trades against risk limits before execution
-
-#### `scheduler` — Scheduled Jobs Coordination
-- **`TradingScheduler`** — Orchestrates daily trading cycles and position exits
-
-#### `strategy` — Strategy Engine
-- **`StrategyConfig`** — Strategy configuration (name, max_lots, stop_loss%, target_profit%, VIX range, allowed_days)
-- **`StrategyController`** — REST endpoints for strategy evaluation and status
-- **`StrategyEngine`** — Evaluates all applicable strategies for a symbol
-- **`StrategyOrchestrator`** — Selects and executes the best strategy
-- **`StrategyResult`** — Strategy evaluation result (executable flag, signal, skip reason)
-- **`StrategySelector`** — Selects strategy based on market condition
-- **`TradeLeg`** — Individual trade leg (instrument, action, strike, quantity, expiry)
-- **`TradeSignal`** — Strategy output (legs, credit, max loss, confidence, reason)
-- **`TradingStrategy`** — Interface for all strategy implementations
-
-##### `strategy.config` — Strategy Configuration
-- **`StrategiesConfig`** — Loads all strategy configs from application.yml
-- **`StrategyProperties`** — Individual strategy configuration properties
-
-##### `strategy.enums` — Strategy Enums
-- **`Action`** — BUY, SELL
-- **`Confidence`** — LOW, MEDIUM, HIGH
-- **`LegType`** — ENTRY, EXIT, ADJUSTMENT
-- **`OptionType`** — CE (Call), PE (Put)
-- **`SignalType`** — ENTER, EXIT, ADJUST
-
-##### `strategy.expiryday` — Expiry Day Strangle
-- **`ExpiryDayStrategy`** — Sells strangle at OI walls on expiry day (Tuesday)
-
-##### `strategy.ironcondor` — Iron Condor
-- **`IronCondorSignal`** — Iron Condor-specific signal with P&L matrix
-- **`IronCondorStrategy`** — Sells call and put spreads in sideways markets
-
-##### `strategy.spread` — Spread Strategies
-- **`BearCallSpreadStrategy`** — Sells OTM call spread in bearish markets
-- **`BullPutSpreadStrategy`** — Sells OTM put spread in bullish markets
-
-#### `trading` — Trading Orchestration
-- **`AdminController`** — Admin endpoints for bootstrapping and testing
-- **`DailyReportService`** — Generates daily P&L reports and sends via Telegram
-- **`MarketCalendarService`** — Checks if market is open (9:15 AM - 3:30 PM IST, Mon-Fri)
-- **`StrategyExecutionLog`** — Audit log for strategy execution events
-- **`StrategyExecutionLogRepository`** — R2DBC repository for execution logs
-- **`TradingController`** — REST endpoints for manual trading operations
-- **`TradingOrchestrator`** — Coordinates trading cycles, position monitoring, and exits
-- **`TradingScheduler`** — Scheduled jobs for daily entry (9:30 AM), exit (3:15 PM), and reporting (3:45 PM)
-
-#### `zerodha` — Zerodha Integration
-- **`zerodha.auth`** — OAuth2 authentication and token management
-  - **`TokenAvailabilityTracker`** — Tracks token availability in Redis
-  - **`ZerodhaAuthController`** — OAuth2 login/callback endpoints
-  - **`ZerodhaAuthService`** — Token exchange and storage
-  - **`ZerodhaSession`** — OAuth2 session entity
-  - **`ZerodhaSessionRepository`** — R2DBC repository for sessions
-
-- **`zerodha.options`** — Option chain and Greeks
-  - **`ImpliedVolatilityCalculator`** — Black-Scholes IV and delta
-  - **`OptionChain`** — Option chain data (spot_price, expiry_date, strikes)
-  - **`OptionChainService`** — Fetches and caches option chains
-  - **`OptionStrike`** — Individual strike (price, call_ltp, put_ltp, call_iv, put_iv, oi)
-
-- **`zerodha.orders`** — Order execution
-  - **`OrderExecutionService`** — Places orders via Kite API
-  - **`OrderStatus`** — Order status tracking
-
-- **`zerodha.ticker`** — WebSocket market data
-  - **`KiteTickerService`** — WebSocket connection to KiteTicker
-  - **`TickPrice`** — Tick price data (symbol, ltp, timestamp)
-  - **`TickerController`** — Server-Sent Events endpoint for price streaming
 
 ---
 
@@ -302,6 +114,8 @@ Telegram Alerts & Daily Reports
 
 ## Trading Strategies
 
+**Note:** account-capital is now set to a real value (₹20,00,000) as of 2026-07-15 — previously a ₹1,00,000 placeholder that, combined with max-lots: 1, silently capped all position sizing to 1 lot regardless of the sizing formula's actual output. See CURRENT_STATE.md for detail.
+
 ### 1. EXPIRY_DAY_STRANGLE
 
 **Status:** ✅ Live validated June 30, 2026 | TARGET_HIT confirmed
@@ -312,9 +126,9 @@ Telegram Alerts & Daily Reports
 - Trades ONLY on Tuesday (NSE expiry day)
 - Sells strangle at OI walls for maximum theta decay
 - Strike selection: OI-wall based with ATR-scaled safety boundary
-  - `min-distance-atr-multiplier: 0.4` — ATR14 × 0.4 = minimum distance from spot
-  - Falls back to boundary strike if OI wall too close
-  - Hard skip if OI wall on wrong side of spot (call strike ≤ spot or put strike ≥ spot)
+   - `min-distance-atr-multiplier: 0.4` — ATR14 × 0.4 = minimum distance from spot
+   - Falls back to boundary strike if OI wall too close
+   - Hard skip if OI wall on wrong side of spot (call strike ≤ spot or put strike ≥ spot)
 - Expiry date: Fixed — correctly picks today's expiry (not next week's)
 - Entry time limit: 12:30 PM IST
 
@@ -332,7 +146,7 @@ EXPIRY_DAY_STRANGLE:
   min-vix: 10.0
   latest-entry-time: "12:30"
   min-credit: 20.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
@@ -352,14 +166,14 @@ EXPIRY_DAY_STRANGLE:
 - Strike selection: Delta-based (target delta 0.18) via Black-Scholes engine
 - Wing width: 200 points
 - Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
-  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+  - `dte-min: 3, dte-max: 4` (derived from real trading-day sample data)
 - Confidence scoring:
   - IVR (20-80 range): 15-30 points
   - IV/HV ratio (≥1.1): 10-20 points
   - ATR% (<0.6-1.0): 10-20 points
   - VIX (12-20 range): 5-15 points
   - PCR (0.8-1.2 balanced): 15 points
-  - **Minimum score: 60/100** to execute
+  - **Minimum score: 51/100** to execute
 - Minimum credit: 30 points (15% of wing width)
 
 **Exit Conditions (Priority Order):**
@@ -381,24 +195,30 @@ IRON_CONDOR:
   min-vix: 12.0
   latest-entry-time: "13:00"
   min-credit: 30.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
     target-delta: 0.18
     wing-width: 200
+    strike-step: 50
     min-credit-pct: 0.15
-    min-score: 60
-    dte-min: 1
+    min-score: 51
+    ivr-min: 20.0
+    ivr-max: 80.0
+    iv-hv-ratio-min: 1.1
+    atr-pct-max: 1.0
+    dte-min: 3
     dte-max: 4
     dte-exit-threshold: 2
-    vix-panic-threshold: 25.0
+    dte-exit-earliest-time: "15:10"
     atr-calm-threshold: 0.7
     atr-high-threshold: 1.0
     calm-target-multiplier: 0.9
     calm-sl-multiplier: 0.8
     high-target-multiplier: 1.1
     high-sl-multiplier: 1.2
+    vix-panic-threshold: 25.0
 ```
 
 ---
@@ -415,7 +235,7 @@ IRON_CONDOR:
 - Wing width: 100 points
 - Profits when market stays above short put strike
 - Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
-  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+  - `dte-min: 2, dte-max: 4` (derived from real trading-day sample data)
 - Minimum credit: 10 points (10% of wing width)
 
 **Exit Conditions (Priority Order):**
@@ -433,17 +253,20 @@ BULL_PUT_SPREAD:
   min-vix: 10.0
   latest-entry-time: "13:00"
   min-credit: 20.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
-    dte-min: 1
+    dte-min: 2
     dte-max: 4
     dte-exit-threshold: 1
-    vix-panic-threshold: 25.0
+    dte-exit-earliest-time: "15:10"
     target-delta: 0.30
     wing-width: 100
+    strike-step: 50
     min-credit-pct: 0.10
+    vix-panic-threshold: 25.0
+    min-score: 60
 ```
 
 ---
@@ -460,7 +283,7 @@ BULL_PUT_SPREAD:
 - Wing width: 100 points
 - Profits when market stays below short call strike
 - Entry-side DTE: Uses TRADING DAYS (via MarketCalendarService.countTradingDays()), not calendar days
-  - `dte-min: 1, dte-max: 4` (derived from real trading-day sample data)
+  - `dte-min: 2, dte-max: 4` (derived from real trading-day sample data)
 - Minimum credit: 10 points (10% of wing width)
 
 **Exit Conditions (Priority Order):**
@@ -478,17 +301,20 @@ BEAR_CALL_SPREAD:
   min-vix: 10.0
   latest-entry-time: "13:00"
   min-credit: 20.0
-  max-lots: 1
+  max-lots: 30
   stop-loss-percent: 100.0
   target-profit-percent: 50.0
   extra:
-    dte-min: 1
+    dte-min: 2
     dte-max: 4
     dte-exit-threshold: 1
-    vix-panic-threshold: 25.0
+    dte-exit-earliest-time: "15:10"
     target-delta: 0.30
     wing-width: 100
+    strike-step: 50
     min-credit-pct: 0.10
+    vix-panic-threshold: 25.0
+    min-score: 60
 ```
 
 ---
@@ -501,7 +327,7 @@ BEAR_CALL_SPREAD:
 |-----|------|-----------|-----------|--------|
 | **scheduledDailyEntry** | `0 30 9 * * MON-FRI` | 9:30 AM | Weekdays | Runs trading cycle entry for NIFTY50; StrategySelector picks strategy based on market condition |
 | **scheduledDailyExit** | `0 15 15 * * MON-FRI` | 3:15 PM | Weekdays | Closes ONLY EXPIRY_DAY_STRANGLE positions via TradingOrchestrator.exitPositionsForStrategy(). IRON_CONDOR, BULL_PUT_SPREAD, and BEAR_CALL_SPREAD are NO LONGER force-closed daily — they can now hold positions overnight and across weekends, governed entirely by DTE-exit logic in the 60-second markToMarket() cycle |
-| **dailySafetyNetCheck** | `0 0 9 * * MON-FRI` | 9:00 AM | Weekdays | Re-checks DTE-exit condition for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD positions as a redundant backstop (calls TradingOrchestrator.runDteExitSafetyNetCheck()). Closes any position that should have exited via the primary 60-second mechanism but remains open, using exit reason "DTE_EXIT_SAFETY_NET" (distinct from normal "DTE_EXIT"). EXPIRY_DAY_STRANGLE is explicitly excluded from this check |
+| **dailySafetyNetCheck** | `0 20 9 * * MON-FRI` | 9:20 AM | Weekdays | Re-checks DTE-exit condition for IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD positions as a redundant backstop (calls TradingOrchestrator.runDteExitSafetyNetCheck()). Closes any position that should have exited via the primary 60-second mechanism but remains open, using exit reason "DTE_EXIT_SAFETY_NET" (distinct from normal "DTE_EXIT"). EXPIRY_DAY_STRANGLE is explicitly excluded from this check. **Retimed 2026-07-06 to 9:20 AM to avoid racing MarkToMarketScheduler's first ticks at market open.** |
 | **scheduledDailyReport** | `0 45 15 * * MON-FRI` | 3:45 PM | Weekdays | Generates daily P&L report and sends via Telegram |
 
 ### IntelligenceScheduler
@@ -521,6 +347,38 @@ BEAR_CALL_SPREAD:
 | Job | Cron | Time (IST) | Frequency | Action |
 |-----|------|-----------|-----------|--------|
 | **persistVix** | `0 */15 9-15 ? * MON-FRI` (configurable) | Every 15 min | Market hours | Persists VIX snapshot to database |
+
+### IvHistoryScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **Daily ATM IV capture** | `0 25 9 * * MON-FRI` | 9:25 AM | Weekdays | Captures ATM IV for IVR calculation |
+
+### MaxPainScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **Max Pain persistence** | `0 */30 9-15 ? * MON-FRI` (configurable, default) | Every 30 min | Market hours | Persists max pain snapshot |
+
+### OIAnalysisScheduler
+
+| Job | Cron | Time (IST) | Frequency | Action |
+|-----|------|-----------|-----------|--------|
+| **OI analysis persistence** | `0 */15 9-15 ? * MON-FRI` (configurable, default) | Every 15 min | Market hours | Persists OI wall analysis |
+
+### OptionChainSnapshotScheduler
+
+| Job | Interval | Time (IST) | Frequency | Action |
+|-----|----------|-----------|-----------|--------|
+| **Option chain snapshot** | fixedRate 300000ms | Every 5 min | Market hours | Persists full option chain snapshot |
+
+### TokenExpiryWatcher
+
+| Job | Cron/Interval | Time (IST) | Frequency | Action |
+|-----|---------------|-----------|-----------|--------|
+| **Token health check (continuous)** | fixedRate 300000ms (configurable, default) | Every 5 min | Continuous | Checks Zerodha token availability in Redis, alerts via Telegram if missing |
+| **Token health check (pre-market 8 AM)** | `0 0 8 * * *` | 8:00 AM | Daily | Pre-market token health check, same underlying logic |
+| **Token health check (pre-market 9 AM)** | `0 0 9 * * MON-FRI` | 9:00 AM | Weekdays | Final pre-market check before market open, same underlying logic (consolidated 2026-07-15, see CURRENT_STATE.md finding #9 — this replaced the former separate TokenRefreshScheduler class) |
 
 ---
 
@@ -659,134 +517,6 @@ Fetches historical NIFTY50 OHLC from Kite Connect and stores in database.
 **Idempotency:** Calling multiple times with same date range skips existing records.
 
 ---
-
-## Architecture Patterns
-
-### 1. Reactive Throughout
-
-- **No `.block()` anywhere** — All operations are non-blocking
-- **Mono/Flux throughout** — Reactive streams for all async operations
-- **R2DBC for database** — Reactive database access
-- **Lettuce for Redis** — Reactive Redis client
-- **WebFlux for HTTP** — Reactive web framework
-
-### 2. Entity Pattern
-
-All entities follow the **Persistable<UUID>** pattern:
-
-```java
-@Data
-@Entity
-@Table(name = "paper_trades")
-public class PaperTrade implements Persistable<UUID> {
-    @Id
-    private UUID id;
-    
-    @Transient
-    private boolean isNew = false;  // Default: false (not new)
-    
-    // ... other fields
-    
-    @Override
-    public boolean isNew() {
-        return isNew;
-    }
-    
-    // Factory method (not @PostLoad — JPA annotation doesn't work in R2DBC)
-    public static PaperTrade createNew() {
-        PaperTrade trade = new PaperTrade();
-        trade.isNew = true;
-        return trade;
-    }
-}
-```
-
-**Key Points:**
-- `isNew` defaults to `false` (entity already exists in DB)
-- Use `createNew()` factory method to create new entities
-- Do NOT use `@PostLoad` — R2DBC doesn't support it
-
-### 3. Database Writes: Schedulers Only
-
-**Architectural Rule:** All DB writes happen exclusively through schedulers, never from REST endpoints.
-
-**Pattern:**
-```java
-// REST Controller (read-only)
-@GetMapping("/positions/open")
-public Mono<ResponseEntity<List<PaperTrade>>> getOpenPositions() {
-    return paperTradeRepository.findByStatus(TradeStatus.OPEN)
-            .collectList()
-            .map(ResponseEntity::ok);
-}
-
-// Scheduler (writes to DB)
-@Scheduled(cron = "0 30 9 * * MON-FRI")
-public void scheduledDailyEntry() {
-    tradingOrchestrator.runTradingCycle("NIFTY50")
-            .subscribe();  // Writes trades to DB
-}
-```
-
-### 4. Service Layer: Read + Save Methods
-
-Services expose two method variants:
-
-```java
-@Service
-public class PaperTradeService {
-    
-    // READ method (REST-facing): fetches/calculates, no save
-    public Mono<PaperTrade> getTradeById(UUID id) {
-        return paperTradeRepository.findById(id);
-    }
-    
-    // SAVE method (scheduler-facing): calls read method then saves
-    public Mono<PaperTrade> saveNewTrade(PaperTrade trade) {
-        return paperTradeRepository.save(trade);
-    }
-}
-```
-
-### 5. REST Endpoints: Read-Only Display
-
-REST endpoints never persist to DB. They only:
-- Fetch data from repositories
-- Calculate derived values
-- Return responses
-
-All persistence happens through schedulers.
-
-### 6. Token Guard: Check Before Kite API Calls
-
-Before any Kite API call in schedulers, check token availability:
-
-```java
-@Scheduled(cron = "0 */5 9-15 ? * MON-FRI")
-public void refreshMarketIntelligence() {
-    if (!tokenTracker.isTokenAvailable()) {
-        log.warn("Zerodha token unavailable. Skipping refresh.");
-        return;
-    }
-    
-    // Proceed with Kite API calls
-    for (String symbol : SYMBOLS) {
-        refreshIntelligence(symbol).subscribe();
-    }
-}
-```
-
-### 7. Structured Logging
-
-- **Use SLF4J only** — No System.out.println
-- **Log business events at INFO/DEBUG** — Entry signals, exits, errors
-- **Log exceptions at ERROR** — Stack traces for debugging
-
-```java
-log.info("Iron Condor signal generated: {} | Credit: {} points", 
-         signal.getReason(), legsResult.getTotalCredit());
-log.error("Error evaluating strategy", e);
-```
 
 ---
 
@@ -1196,9 +926,11 @@ value of 30.9 — confirmed against the `paper_trades` row directly.)*
 
 ### Aggregate Position Limits
 
-- **max-concurrent-open-positions:** 3 (configurable) — aggregate cap across ALL strategies combined, enforced in `TradingOrchestrator.runTradingCycle()` via `RiskManager.isWithinConcurrentPositionLimit()`, checked as the final gate immediately before trade execution. This is SEPARATE from and ADDITIONAL to the existing per-strategy duplicate-entry check (one open position per strategy at a time) — both gates must pass for a new trade to execute.
+**Only real, enforced risk check:** max-concurrent-open-positions: 3 (configurable via risk.max-concurrent-open-positions) — a DB-backed aggregate cap across ALL strategies combined, enforced in RiskManager.isWithinConcurrentPositionLimit(), checked immediately before trade execution.
 
-- **Per-strategy duplicate check (fixed):** Previously scoped to "today" only (`existsByStrategyNameAndTradeDateAndStatus`), which would have failed to detect a still-open position from a prior day once overnight holding was enabled. Now uses `existsByStrategyNameAndStatus()` (date-independent).
+**Config values that exist but are NOT enforced:** daily-loss-limit-percent, max-sector-exposure, min-margin-buffer-percent, and position-sizing.* (risk-percent, max-quantity) remain defined in application.yml's risk: block, but the code that read them (RiskManager.isWithinRiskLimits(), checkDailyLossLimit(), checkSectorExposure(), calculatePositionSize()) was confirmed dead — zero callers, and checkDailyLossLimit() had a real unit bug (compared raw P&L against the literal config number instead of a true percentage of capital) — and was deleted during the 2026-07-15 design review (see CURRENT_STATE.md finding #3, and docs/architecture/ARCHITECTURE.md Section 6). These config values are orphaned — present in application.yml but read by nothing. Real position sizing (capital-based, VIX-scaled, confidence-scaled) is a separate mechanism via LotSizeService, documented in the Trading Strategies section above and in ARCHITECTURE.md.
+
+**Per-strategy duplicate check (fixed):** Previously scoped to "today" only (`existsByStrategyNameAndTradeDateAndStatus`), which would have failed to detect a still-open position from a prior day once overnight holding was enabled. Now uses `existsByStrategyNameAndStatus()` (date-independent).
 
 ---
 

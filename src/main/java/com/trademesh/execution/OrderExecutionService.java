@@ -13,16 +13,20 @@ import reactor.util.retry.Retry;
 import java.time.Duration;
 
 /**
- * Execution service that bridges signals → risk checks → order placement.
+ * Legacy execution service targeting an obsolete signal model.
  * <p>
- * Responsibilities:
- * - Validate trading signals against risk limits
- * - Route orders to appropriate execution engine (paper trading in Phase 2)
- * - Handle partial fills and order tracking
- * - Implement retry logic with exponential backoff
- * - Add timeout handling for order execution
+ * This class was designed against com.trademesh.intelligence.TradingSignal — a
+ * single-instrument, single-direction signal shape. This model is incompatible
+ * with the multi-leg com.trademesh.strategy.TradeSignal used by all current
+ * live strategies (Iron Condor, Bull Put Spread, Bear Call Spread, Expiry Day).
  * <p>
- * Phase 2 focuses on paper trading only. Phase 3 will add live order execution.
+ * This class has zero callers anywhere in the current codebase and is not part
+ * of the active execution path. It is retained as a historical reference only,
+ * pending deletion when live-trading execution architecture is designed as a
+ * separate, dedicated review.
+ * <p>
+ * Any future live-order-placement work should be designed fresh against
+ * TradeSignal and real broker/execution constraints, not by extending this class.
  */
 @Slf4j
 @Service
@@ -33,69 +37,54 @@ public class OrderExecutionService {
     private final OrderService orderService;
 
     /**
-     * Executes a trading signal after passing risk validation.
+     * Executes a trading signal (legacy method operating on obsolete model).
      * <p>
-     * Process:
-     * 1. Validate signal against risk limits
-     * 2. Build order request from signal
-     * 3. Place order via OrderService
-     * 4. Record trade in RiskManager for tracking
-     * 5. Return order ID or empty if validation fails
+     * This method operates on com.trademesh.intelligence.TradingSignal, which is
+     * incompatible with the multi-leg TradeSignal model used by all current
+     * strategies. This method is not invoked by any current code path and is
+     * retained for historical reference only.
      *
-     * @param signal   the trading signal to act on
+     * @param signal   the trading signal to act on (obsolete TradingSignal model)
      * @param quantity desired quantity (pre-calculated by risk module)
-     * @return Mono emitting order ID or empty if risk check fails
+     * @return Mono emitting order ID or empty if validation fails
      */
     public Mono<String> execute(TradingSignal signal, int quantity) {
         log.info("Executing signal for {}: direction={} qty={}",
                 signal.getTradingSymbol(), signal.getDirection(), quantity);
 
-        return riskManager.isWithinRiskLimits(signal.getTradingSymbol(), quantity)
-                .flatMap(allowed -> {
-                    if (!allowed) {
-                        log.warn("Risk check failed for signal: {}", signal);
-                        return Mono.empty();
-                    }
+        // Determine transaction type from signal direction
+        String txType = switch (signal.getDirection()) {
+            case LONG -> "BUY";
+            case SHORT -> "SELL";
+            default -> null;
+        };
 
-                    // Determine transaction type from signal direction
-                    String txType = switch (signal.getDirection()) {
-                        case LONG -> "BUY";
-                        case SHORT -> "SELL";
-                        default -> null;
-                    };
+        if (txType == null) {
+            log.info("Neutral signal – no order placed for {}", signal.getTradingSymbol());
+            return Mono.empty();
+        }
 
-                    if (txType == null) {
-                        log.info("Neutral signal – no order placed for {}", signal.getTradingSymbol());
-                        return Mono.empty();
-                    }
+        // Build order request
+        OrderRequest order = OrderRequest.builder()
+                .tradingSymbol(signal.getTradingSymbol())
+                .exchange("NSE")
+                .transactionType(txType)
+                .orderType("MARKET")
+                .product("MIS")
+                .quantity(quantity)
+                .validity("DAY")
+                .tag(signal.getStrategyName())
+                .build();
 
-                    // Build order request
-                    OrderRequest order = OrderRequest.builder()
-                            .tradingSymbol(signal.getTradingSymbol())
-                            .exchange("NSE")
-                            .transactionType(txType)
-                            .orderType("MARKET")
-                            .product("MIS")
-                            .quantity(quantity)
-                            .validity("DAY")
-                            .tag(signal.getStrategyName())
-                            .build();
-
-                    // Place order with retry logic
-                    return orderService.placeOrder(order)
-                            .timeout(Duration.ofSeconds(15))
-                            .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
-                                    .maxBackoff(Duration.ofSeconds(4))
-                                    .doBeforeRetry(signal2 -> log.warn("Retrying order placement for {}, attempt {}",
-                                            signal.getTradingSymbol(), signal2.totalRetries() + 1)))
-                            .doOnNext(orderId -> {
-                                log.info("Order placed successfully: {} for {}", orderId, signal.getTradingSymbol());
-                                // Record trade for risk tracking
-                                riskManager.recordTrade(signal.getTradingSymbol(), quantity, 0.0).subscribe();
-                            })
-                            .doOnError(e -> log.error("Order placement failed for {}: {}",
-                                    signal.getTradingSymbol(), e.getMessage(), e));
-                });
+        // Place order with retry logic
+        return orderService.placeOrder(order)
+                .timeout(Duration.ofSeconds(15))
+                .retryWhen(Retry.backoff(3, Duration.ofSeconds(1))
+                        .maxBackoff(Duration.ofSeconds(4))
+                        .doBeforeRetry(signal2 -> log.warn("Retrying order placement for {}, attempt {}",
+                                signal.getTradingSymbol(), signal2.totalRetries() + 1)))
+                .doOnError(e -> log.error("Order placement failed for {}: {}",
+                        signal.getTradingSymbol(), e.getMessage(), e));
     }
 
     /**

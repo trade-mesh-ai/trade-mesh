@@ -3,6 +3,7 @@ package com.trademesh.trading;
 import com.trademesh.intelligence.MarketIntelligenceService;
 import com.trademesh.strategy.StrategySelector;
 import com.trademesh.strategy.config.StrategiesConfig;
+import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,9 @@ class TradingSchedulerTest {
     @Mock
     private StrategySelector strategySelector;
 
+    @Mock
+    private TokenAvailabilityTracker tokenAvailabilityTracker;
+
     @BeforeEach
     void setUp() {
         tradingScheduler = new TradingScheduler(
@@ -54,7 +58,8 @@ class TradingSchedulerTest {
                 marketCalendarService,
                 strategiesConfig,
                 marketIntelligenceService,
-                strategySelector
+                strategySelector,
+                tokenAvailabilityTracker
         );
     }
 

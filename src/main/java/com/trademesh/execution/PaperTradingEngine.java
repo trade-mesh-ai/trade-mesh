@@ -160,23 +160,27 @@ public class PaperTradingEngine {
         // Default mark-to-market for other strategies
         return fetchCurrentPrices(trade)
                 .flatMap(currentValue -> {
-                    trade.setCurrentValue(currentValue);
-                    trade.setUnrealizedPnl(trade.getEntryCredit() - currentValue);
-                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
+                     trade.setCurrentValue(currentValue);
+                     trade.setUnrealizedPnl(trade.getEntryCredit() - currentValue);
+                     trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
-                    // Check stop loss: if currentValue > entryCredit × 2
-                    if (currentValue > trade.getEntryCredit() * 2) {
-                        log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}",
-                                trade.getId(), currentValue, trade.getEntryCredit() * 2);
-                        return closeTrade(trade, "STOP_LOSS");
-                    }
+                     // Check stop loss: if currentValue > entryCredit × 2
+                     // Use BigDecimal for precision-safe comparison on live trading decision
+                     BigDecimal currentValueBD = BigDecimal.valueOf(currentValue);
+                     BigDecimal entryCreditBD = BigDecimal.valueOf(trade.getEntryCredit());
+                     if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(2))) > 0) {
+                         log.info("Stop loss triggered for trade {}: currentValue={}, threshold={}",
+                                 trade.getId(), currentValue, trade.getEntryCredit() * 2);
+                         return closeTrade(trade, "STOP_LOSS");
+                     }
 
-                    // Check target: if currentValue < entryCredit × 0.5
-                    if (currentValue < trade.getEntryCredit() * 0.5) {
-                        log.info("Target hit for trade {}: currentValue={}, threshold={}",
-                                trade.getId(), currentValue, trade.getEntryCredit() * 0.5);
-                        return closeTrade(trade, "TARGET_HIT");
-                    }
+                     // Check target: if currentValue < entryCredit × 0.5
+                     // Use BigDecimal for precision-safe comparison on live trading decision
+                     if (currentValueBD.compareTo(entryCreditBD.multiply(BigDecimal.valueOf(0.5))) < 0) {
+                         log.info("Target hit for trade {}: currentValue={}, threshold={}",
+                                 trade.getId(), currentValue, trade.getEntryCredit() * 0.5);
+                         return closeTrade(trade, "TARGET_HIT");
+                     }
 
                     // Save updated trade
                     return paperTradeRepository.save(trade);
@@ -231,13 +235,14 @@ public class PaperTradingEngine {
      * @param trade the Iron Condor paper trade
      * @return Mono emitting the unrealized P&L in points
      */
-    private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
-        try {
-            List<TradeLeg> legs = trade.getLegs();
-            if (legs == null || legs.isEmpty()) {
-                log.warn("No legs found for Iron Condor trade {}", trade.getId());
-                return Mono.just(BigDecimal.ZERO);
-            }
+     private Mono<BigDecimal> calculateIronCondorPnl(PaperTrade trade) {
+         try {
+             List<TradeLeg> legs = trade.getLegs();
+             if (legs == null || legs.isEmpty()) {
+                 log.warn("No legs found for Iron Condor trade {}, falling back to last known unrealized P&L: {}", 
+                         trade.getId(), trade.getUnrealizedPnl());
+                 return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
+             }
 
             String redisKey = "optionchain:" + trade.getSymbol();
             Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
@@ -270,17 +275,20 @@ public class PaperTradingEngine {
                             log.debug("Iron Condor total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
                             return Mono.just(totalPnl);
                         } catch (Exception e) {
-                            log.warn("Error deserializing option chain for Iron Condor P&L, using entry price fallback: {}", e.getMessage());
-                            return Mono.just(BigDecimal.ZERO);
+                            log.warn("Error deserializing option chain for Iron Condor P&L, falling back to last known unrealized P&L: {} ({})", 
+                                    trade.getUnrealizedPnl(), e.getMessage());
+                            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                         }
                     })
                     .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing for Iron Condor P&L: {}, using entry price fallback", redisKey);
-                        return Mono.just(BigDecimal.ZERO);
+                        log.warn("Redis key missing for Iron Condor P&L: {}, falling back to last known unrealized P&L: {}", 
+                                redisKey, trade.getUnrealizedPnl());
+                        return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                     }));
         } catch (Exception e) {
-            log.error("Error calculating Iron Condor P&L for trade: {}", trade.getId(), e);
-            return Mono.just(BigDecimal.ZERO);
+            log.error("Error calculating Iron Condor P&L for trade: {}, falling back to last known unrealized P&L: {}", 
+                    trade.getId(), trade.getUnrealizedPnl(), e);
+            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
         }
     }
 
@@ -351,26 +359,56 @@ public class PaperTradingEngine {
 
     /**
      * Closes an Iron Condor trade with Telegram alert.
+     * <p>
+     * Process:
+     * 1. Re-fetch trade from DB to ensure current status (guard against concurrent closes)
+     * 2. Check if trade is still OPEN (skip if already closed)
+     * 3. Update status to CLOSED
+     * 4. Set exit time and realized P&L
+     * 5. Save to PostgreSQL
+     * 6. Send Telegram alert
      *
      * @param trade the Iron Condor paper trade to close
      * @return Mono emitting the closed PaperTrade
      */
     private Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
-        trade.setStatus(TradeStatus.CLOSED);
-        trade.setExitTime(LocalDateTime.now(this.clock));
-        trade.setRealizedPnl(trade.getUnrealizedPnl());
-        trade.setUnrealizedPnl(0.0);
-        trade.setUpdatedAt(LocalDateTime.now(this.clock));
+        log.info("Closing Iron Condor trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
-        return paperTradeRepository.save(trade)
-                .flatMap(closedTrade -> {
-                    String alert = formatIronCondorExitAlert(closedTrade);
-                    return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
-                            .then(Mono.just(closedTrade));
+        // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
+        // This guards against race condition where two concurrent chains (MTM cycle + scheduled exit)
+        // both read the same trade as OPEN and attempt to close it simultaneously
+        return paperTradeRepository.findById(trade.getId())
+                .flatMap(freshTrade -> {
+                    // Guard: check if trade is still OPEN
+                    if (freshTrade.getStatus() != TradeStatus.OPEN) {
+                        log.warn("closeIronCondorTrade() called on trade {} with status {} "
+                                        + "(expected OPEN) — skipping duplicate close attempt",
+                                freshTrade.getId(), freshTrade.getStatus());
+                        return Mono.just(freshTrade);
+                    }
+
+                    // Proceed with close logic on the original trade parameter
+                    // (which already has correct unrealizedPnl, exitReason, legs, etc. from the reactive chain)
+                    trade.setStatus(TradeStatus.CLOSED);
+                    trade.setExitTime(LocalDateTime.now(this.clock));
+                    trade.setRealizedPnl(trade.getUnrealizedPnl());
+                    trade.setUnrealizedPnl(0.0);
+                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
+
+                    return paperTradeRepository.save(trade)
+                            .flatMap(closedTrade -> {
+                                String alert = formatIronCondorExitAlert(closedTrade);
+                                return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
+                                        .then(Mono.just(closedTrade));
+                            })
+                            .doOnSuccess(closedTrade -> log.info("Iron Condor trade closed: {} with P&L: {}, reason: {}",
+                                    closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
+                            .doOnError(error -> log.error("Error closing Iron Condor trade: {}", trade.getId(), error));
                 })
-                .doOnSuccess(closedTrade -> log.info("Iron Condor trade closed: {} with P&L: {}, reason: {}",
-                        closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
-                .doOnError(error -> log.error("Error closing Iron Condor trade: {}", trade.getId(), error));
+                .onErrorResume(e -> {
+                    log.error("Error re-fetching trade {} for close operation: {}", trade.getId(), e.getMessage());
+                    return Mono.just(trade);
+                });
     }
 
     /**
@@ -502,11 +540,15 @@ public class PaperTradingEngine {
                             OptionChain chainData = objectMapper.readValue(chainJson, OptionChain.class);
                             log.debug("Retrieved option chain for {} with {} strikes", trade.getSymbol(), chainData.getStrikes().size());
 
-                            // Loop through legs and sum all LTPs
+                            // Loop through legs and apply signed netting
                             double totalCurrentValue = 0.0;
                             for (TradeLeg leg : finalLegs) {
                                 double ltp = extractLTP(chainData, leg);
-                                totalCurrentValue += ltp;
+                                if (leg.getAction() == Action.SELL) {
+                                    totalCurrentValue += ltp;
+                                } else {
+                                    totalCurrentValue -= ltp;
+                                }
                             }
 
                             log.debug("Calculated total current value for trade {}: {}", trade.getId(), totalCurrentValue);
@@ -828,8 +870,9 @@ public class PaperTradingEngine {
         try {
             List<TradeLeg> legs = trade.getLegs();
             if (legs == null || legs.isEmpty()) {
-                log.warn("No legs found for spread trade {}", trade.getId());
-                return Mono.just(BigDecimal.ZERO);
+                log.warn("No legs found for spread trade {}, falling back to last known unrealized P&L: {}", 
+                        trade.getId(), trade.getUnrealizedPnl());
+                return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
             }
 
             String redisKey = "optionchain:" + trade.getSymbol();
@@ -863,17 +906,20 @@ public class PaperTradingEngine {
                             log.debug("Spread total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
                             return Mono.just(totalPnl);
                         } catch (Exception e) {
-                            log.warn("Error deserializing option chain for spread P&L, using entry price fallback: {}", e.getMessage());
-                            return Mono.just(BigDecimal.ZERO);
+                            log.warn("Error deserializing option chain for spread P&L, falling back to last known unrealized P&L: {} ({})", 
+                                    trade.getUnrealizedPnl(), e.getMessage());
+                            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                         }
                     })
                     .switchIfEmpty(Mono.defer(() -> {
-                        log.warn("Redis key missing for spread P&L: {}, using entry price fallback", redisKey);
-                        return Mono.just(BigDecimal.ZERO);
+                        log.warn("Redis key missing for spread P&L: {}, falling back to last known unrealized P&L: {}", 
+                                redisKey, trade.getUnrealizedPnl());
+                        return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
                     }));
         } catch (Exception e) {
-            log.error("Error calculating spread P&L for trade: {}", trade.getId(), e);
-            return Mono.just(BigDecimal.ZERO);
+            log.error("Error calculating spread P&L for trade: {}, falling back to last known unrealized P&L: {}", 
+                    trade.getId(), trade.getUnrealizedPnl(), e);
+            return Mono.just(BigDecimal.valueOf(trade.getUnrealizedPnl()));
         }
     }
 
@@ -1028,26 +1074,56 @@ public class PaperTradingEngine {
 
     /**
      * Closes a spread trade with Telegram alert.
+     * <p>
+     * Process:
+     * 1. Re-fetch trade from DB to ensure current status (guard against concurrent closes)
+     * 2. Check if trade is still OPEN (skip if already closed)
+     * 3. Update status to CLOSED
+     * 4. Set exit time and realized P&L
+     * 5. Save to PostgreSQL
+     * 6. Send Telegram alert
      *
      * @param trade the spread paper trade to close
      * @return Mono emitting the closed PaperTrade
      */
     private Mono<PaperTrade> closeSpreadTrade(PaperTrade trade) {
-        trade.setStatus(TradeStatus.CLOSED);
-        trade.setExitTime(LocalDateTime.now(this.clock));
-        trade.setRealizedPnl(trade.getUnrealizedPnl());
-        trade.setUnrealizedPnl(0.0);
-        trade.setUpdatedAt(LocalDateTime.now(this.clock));
+        log.info("Closing spread trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
-        return paperTradeRepository.save(trade)
-                .flatMap(closedTrade -> {
-                    String alert = formatExitAlert(closedTrade);
-                    return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
-                            .then(Mono.just(closedTrade));
+        // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
+        // This guards against race condition where two concurrent chains (MTM cycle + scheduled exit)
+        // both read the same trade as OPEN and attempt to close it simultaneously
+        return paperTradeRepository.findById(trade.getId())
+                .flatMap(freshTrade -> {
+                    // Guard: check if trade is still OPEN
+                    if (freshTrade.getStatus() != TradeStatus.OPEN) {
+                        log.warn("closeSpreadTrade() called on trade {} with status {} "
+                                        + "(expected OPEN) — skipping duplicate close attempt",
+                                freshTrade.getId(), freshTrade.getStatus());
+                        return Mono.just(freshTrade);
+                    }
+
+                    // Proceed with close logic on the original trade parameter
+                    // (which already has correct unrealizedPnl, exitReason, legs, etc. from the reactive chain)
+                    trade.setStatus(TradeStatus.CLOSED);
+                    trade.setExitTime(LocalDateTime.now(this.clock));
+                    trade.setRealizedPnl(trade.getUnrealizedPnl());
+                    trade.setUnrealizedPnl(0.0);
+                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
+
+                    return paperTradeRepository.save(trade)
+                            .flatMap(closedTrade -> {
+                                String alert = formatExitAlert(closedTrade);
+                                return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
+                                        .then(Mono.just(closedTrade));
+                            })
+                            .doOnSuccess(closedTrade -> log.info("Spread trade closed: {} with P&L: {}, reason: {}",
+                                    closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
+                            .doOnError(error -> log.error("Error closing spread trade: {}", trade.getId(), error));
                 })
-                .doOnSuccess(closedTrade -> log.info("Spread trade closed: {} with P&L: {}, reason: {}",
-                        closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
-                .doOnError(error -> log.error("Error closing spread trade: {}", trade.getId(), error));
+                .onErrorResume(e -> {
+                    log.error("Error re-fetching trade {} for close operation: {}", trade.getId(), e.getMessage());
+                    return Mono.just(trade);
+                });
     }
 
     /**
@@ -1122,7 +1198,9 @@ public class PaperTradingEngine {
                             }
 
                             return currentValueMono.map(currentValue -> {
-                                double liveUnrealizedPnl = entryCredit - currentValue;
+                                int quantity = (legs != null && !legs.isEmpty()) ? legs.get(0).getQuantity() : 1;
+                                double scaledEntryCredit = entryCredit * quantity;
+                                double liveUnrealizedPnl = scaledEntryCredit - currentValue;
                                 log.debug("Calculated live P&L for trade {}: currentValue={}, liveUnrealizedPnl={}",
                                         trade.getId(), currentValue, liveUnrealizedPnl);
                                 return LivePnlData.builder()
@@ -1170,9 +1248,9 @@ public class PaperTradingEngine {
             for (TradeLeg leg : legs) {
                 double currentLtp = extractLTP(chainData, leg);
                 if (leg.getAction() == Action.SELL) {
-                    totalCurrentValue += currentLtp;
+                    totalCurrentValue += currentLtp * leg.getQuantity();
                 } else {
-                    totalCurrentValue -= currentLtp;
+                    totalCurrentValue -= currentLtp * leg.getQuantity();
                 }
             }
             return Mono.just(totalCurrentValue);
@@ -1197,9 +1275,9 @@ public class PaperTradingEngine {
             for (TradeLeg leg : legs) {
                 double currentLtp = extractLTP(chainData, leg);
                 if (leg.getAction() == Action.SELL) {
-                    totalCurrentValue += currentLtp;
+                    totalCurrentValue += currentLtp * leg.getQuantity();
                 } else {
-                    totalCurrentValue -= currentLtp;
+                    totalCurrentValue -= currentLtp * leg.getQuantity();
                 }
             }
             return Mono.just(totalCurrentValue);
@@ -1224,9 +1302,9 @@ public class PaperTradingEngine {
             for (TradeLeg leg : legs) {
                 double currentLtp = extractLTP(chainData, leg);
                 if (leg.getAction() == Action.SELL) {
-                    totalCurrentValue += currentLtp;
+                    totalCurrentValue += currentLtp * leg.getQuantity();
                 } else {
-                    totalCurrentValue -= currentLtp;
+                    totalCurrentValue -= currentLtp * leg.getQuantity();
                 }
             }
             return Mono.just(totalCurrentValue);

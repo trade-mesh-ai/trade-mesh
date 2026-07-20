@@ -157,6 +157,7 @@ No HTML tags in Javadoc.
 - Never skip tests to make build pass — fix the actual issue
 - Run diagnostic/debug commands directly and simply — one focused command per question, not chained multi-stage filter pipelines. If output needs isolating, narrow the test scope (--tests "ClassName.methodName") rather than filtering broad output after the fact.
 - If a command produces an unexpected result (empty output, no match, silent failure), the next action must be diagnosis, not retry: state a specific hypothesis for why the result was unexpected, then check exactly one thing to test that hypothesis. Never run a second variant of the same command hoping different filtering produces a different result. If two consecutive diagnosis attempts don't resolve the confusion, stop and report the unexplained behavior honestly rather than continuing to retry.
+- Never trust a completion report (from Cline or any tool) that a file was edited, created, or deleted without independently re-verifying the actual result — re-read the file, re-run grep, or re-check the filesystem directly. A reported success and an actual success are not the same thing; this has been confirmed to diverge multiple times, including a silently-skipped edit within a larger multi-part task with no error raised.
 
 ## What NOT to do (confirmed production bugs — never repeat)
 - Never use @PostLoad in R2DBC entities
@@ -170,6 +171,7 @@ No HTML tags in Javadoc.
   use ATR-scaled boundary with principled fallback (Option C)
 - Never cache trade-decision intelligence — use generateFreshIntelligence()
 - Never hand-calculate expected test values without verifying against real computed output first (debug print + isolated run) — repeated arithmetic errors in test fixtures this session cost multiple debugging rounds each time this was skipped.
+- Never assume the current shell context (WSL bash, PowerShell, Git Bash/MINGW64) without confirming it — commands that work in one fail silently or loudly in another (heredocs, `which` vs `Get-Command`, path separators, quoting rules for multi-line strings all differ). Specify which shell a command targets when giving one; when receiving one, confirm which shell is active before running it if unclear.
 
 ## Important
 These rules represent confirmed production bugs

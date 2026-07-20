@@ -4,7 +4,6 @@ import com.trademesh.zerodha.auth.TokenAvailabilityTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -20,7 +19,6 @@ import java.time.Instant;
  */
 @Slf4j
 @Component
-@EnableScheduling
 @RequiredArgsConstructor
 public class VixScheduler {
 

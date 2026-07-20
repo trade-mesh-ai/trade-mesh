@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 015-add-paper-trades-exit-time-index
+      author: trade-mesh
+      comment: "Add index on exit_time to support findByStatusAndExitTimeBetween() query used by DailyReportService for closed-today report filtering"
+      changes:
+        - sql:
+            sql: |
+              CREATE INDEX idx_paper_trades_exit_time ON trade_mesh.paper_trades(exit_time);
+            splitStatements: false
+
+  - changeSet:
+      id: 015-add-paper-trades-open-strategy-unique-index
+      author: trade-mesh
+      comment: "Add partial unique index on strategy_name WHERE status='OPEN' - defense-in-depth DB-level constraint backing the application-level existsByStrategyNameAndStatus() duplicate-open-position check. Enforces at most one OPEN trade per strategy at the database level. Note: This changeset will fail if duplicate OPEN rows per strategy already exist — this is intentional, not a bug."
+      changes:
+        - sql:
+            sql: |
+              CREATE UNIQUE INDEX idx_paper_trades_open_strategy_unique ON trade_mesh.paper_trades(strategy_name) WHERE status = 'OPEN';
+            splitStatements: false

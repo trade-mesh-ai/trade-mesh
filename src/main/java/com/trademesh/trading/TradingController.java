@@ -191,8 +191,8 @@ public class TradingController {
         log.info("Manual request to monitor all open positions");
 
         return Mono.zip(
-                        tradingOrchestrator.monitorOpenPositions("NIFTY"),
-                        tradingOrchestrator.monitorOpenPositions("BANKNIFTY")
+                        tradingOrchestrator.monitorOpenPositions("NIFTY50"),
+                        tradingOrchestrator.monitorOpenPositions("NIFTYBANK")
                 )
                 .map(tuple -> {
                     int niftyCount = tuple.getT1();

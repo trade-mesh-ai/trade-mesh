@@ -33,30 +33,19 @@ public interface StrategyExecutionLogRepository extends ReactiveCrudRepository<S
      */
     Flux<StrategyExecutionLog> findByStrategyName(String strategyName);
 
-    /**
-     * Finds all execution logs for a specific market condition.
-     *
-     * @param marketCondition the market condition to filter by
-     * @return Flux of matching execution logs
-     */
-    Flux<StrategyExecutionLog> findByMarketCondition(String marketCondition);
+     /**
+      * Finds all execution logs for a specific market condition.
+      *
+      * @param marketCondition the market condition to filter by
+      * @return Flux of matching execution logs
+      */
+     Flux<StrategyExecutionLog> findByMarketCondition(String marketCondition);
 
-    /**
-     * Finds all open paper positions for a given symbol.
-     * <p>
-     * This is a custom method that queries the paper_trades table
-     * to get all positions with OPEN status for the symbol.
-     *
-     * @param symbol the trading symbol
-     * @return Flux of open PaperTrade entities
-     */
-    Flux<PaperTrade> findOpenPositionsBySymbol(String symbol);
-
-    /**
-     * Finds a single execution log by ID.
-     *
-     * @param id the UUID of the execution log
-     * @return Mono emitting the execution log if found
-     */
-    Mono<StrategyExecutionLog> findById(UUID id);
+     /**
+      * Finds a single execution log by ID.
+      *
+      * @param id the UUID of the execution log
+      * @return Mono emitting the execution log if found
+      */
+     Mono<StrategyExecutionLog> findById(UUID id);
 }

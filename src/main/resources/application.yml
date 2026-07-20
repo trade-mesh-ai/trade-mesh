@@ -124,7 +124,7 @@ intelligence:
 # ─── 6. Trading Engine ───────────────────────────────────────────────────────
 trading:
   mode: paper                     # paper | live
-  expiry-day: THU                 # NSE options expiry day — update if NSE changes
+  expiry-day: TUE                 # NSE options expiry day — update if NSE changes
   symbols:
     - NIFTY50
     - NIFTYBANK
@@ -134,7 +134,7 @@ trading:
     NIFTYBANK: 30
   # Capital-based position sizing (this branch only)
   # TODO: Replace with real values from Kuldeep before meaningful use
-  account-capital: 100000         # Total trading account capital in rupees
+  account-capital: 2000000         # Total trading account capital in rupees
   risk-percent-per-trade: 2.0     # Risk per trade as percentage (e.g., 2.0 for 2%)
   paper:
     enabled: true
@@ -161,7 +161,7 @@ trading-strategies:
     latest-entry-time: "12:30"
     min-credit: 20.0
     min-distance-from-spot: 100
-    max-lots: 1
+    max-lots: 30
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
@@ -175,7 +175,7 @@ trading-strategies:
     min-vix: 10.0
     latest-entry-time: "13:00"
     min-credit: 20.0
-    max-lots: 1
+    max-lots: 30
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
@@ -198,7 +198,7 @@ trading-strategies:
     min-vix: 10.0
     latest-entry-time: "13:00"
     min-credit: 20.0
-    max-lots: 1
+    max-lots: 30
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
@@ -215,13 +215,13 @@ trading-strategies:
 
   - name: IRON_CONDOR
     enabled: true
-    allowed-days: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY]
+    allowed-days: [MONDAY, WEDNESDAY, THURSDAY, FRIDAY]
     applicable-conditions: [SIDEWAYS]
     max-vix: 20.0
     min-vix: 12.0
     latest-entry-time: "13:00"
     min-credit: 30.0
-    max-lots: 1
+    max-lots: 30
     stop-loss-percent: 100.0
     target-profit-percent: 50.0
     extra:
@@ -248,14 +248,14 @@ trading-strategies:
 
 # ─── 8. Risk Management ──────────────────────────────────────────────────────
 risk:
-  max-position-size-per-symbol: 20
+  max-position-size-per-symbol: 30
   daily-loss-limit-percent: 2.0
   max-sector-exposure: 2000000
   min-margin-buffer-percent: 10
   max-concurrent-open-positions: 3
   position-sizing:
     risk-percent: 1.0
-    max-quantity: 10
+    max-quantity: 30
 
 # ─── 9. Logging ──────────────────────────────────────────────────────────────
 logging:
