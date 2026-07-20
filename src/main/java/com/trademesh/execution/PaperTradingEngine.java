@@ -43,7 +43,7 @@ public class PaperTradingEngine {
 
     // Lot sizes from application.yml
     private static final Map<String, Integer> LOT_SIZES = Map.of(
-            "NIFTY50", 75,
+            "NIFTY50", 65,
             "NIFTYBANK", 30
     );
 
@@ -352,8 +352,14 @@ public class PaperTradingEngine {
                         return Mono.just(true);
                     }
 
+                    // Derive lot count from trade legs (all legs share same quantity)
+                    int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                            ? trade.getLegs().get(0).getQuantity()
+                            : 1;
+
                     // Check 3: Stop loss
-                    BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
+                    BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit())
+                            .multiply(BigDecimal.valueOf(lots));
                     double slPct = cfg.getStopLossPercent() / 100.0;
                     BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
 
@@ -1060,10 +1066,16 @@ public class PaperTradingEngine {
                         return Mono.just(true);
                     }
 
+                    // Derive lot count from trade legs (all legs share same quantity)
+                    int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                            ? trade.getLegs().get(0).getQuantity()
+                            : 1;
+
                     // Check 3: Stop loss (based on wing width and max loss)
                     int wingWidth = cfg.getExtraInt("wing-width", 100);
                     Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
-                    BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize);
+                    BigDecimal maxLoss = BigDecimal.valueOf(wingWidth * lotSize)
+                            .multiply(BigDecimal.valueOf(lots));
                     double slPct = cfg.getStopLossPercent() / 100.0;
                     BigDecimal stopLossThreshold = maxLoss.multiply(BigDecimal.valueOf(slPct)).negate();
 
@@ -1075,7 +1087,8 @@ public class PaperTradingEngine {
                     }
 
                     // Check 4: Profit target
-                    BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit());
+                    BigDecimal entryCredit = BigDecimal.valueOf(trade.getEntryCredit())
+                            .multiply(BigDecimal.valueOf(lots));
                     double targetPct = cfg.getTargetProfitPercent() / 100.0;
                     BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
 
