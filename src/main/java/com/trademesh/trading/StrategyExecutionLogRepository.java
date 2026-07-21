@@ -1,6 +1,5 @@
 package com.trademesh.trading;
 
-import com.trademesh.execution.PaperTrade;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
@@ -33,19 +32,19 @@ public interface StrategyExecutionLogRepository extends ReactiveCrudRepository<S
      */
     Flux<StrategyExecutionLog> findByStrategyName(String strategyName);
 
-     /**
-      * Finds all execution logs for a specific market condition.
-      *
-      * @param marketCondition the market condition to filter by
-      * @return Flux of matching execution logs
-      */
-     Flux<StrategyExecutionLog> findByMarketCondition(String marketCondition);
+    /**
+     * Finds all execution logs for a specific market condition.
+     *
+     * @param marketCondition the market condition to filter by
+     * @return Flux of matching execution logs
+     */
+    Flux<StrategyExecutionLog> findByMarketCondition(String marketCondition);
 
-     /**
-      * Finds a single execution log by ID.
-      *
-      * @param id the UUID of the execution log
-      * @return Mono emitting the execution log if found
-      */
-     Mono<StrategyExecutionLog> findById(UUID id);
+    /**
+     * Finds a single execution log by ID.
+     *
+     * @param id the UUID of the execution log
+     * @return Mono emitting the execution log if found
+     */
+    Mono<StrategyExecutionLog> findById(UUID id);
 }

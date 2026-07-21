@@ -25,8 +25,8 @@ public class BigDecimalTwoDecimalSerializer extends JsonSerializer<BigDecimal> {
      * Rounds the value to 2 decimal places using HALF_UP rounding mode,
      * then writes it as a JSON number.
      *
-     * @param value the BigDecimal value to serialize
-     * @param gen the JsonGenerator to write to
+     * @param value       the BigDecimal value to serialize
+     * @param gen         the JsonGenerator to write to
      * @param serializers the SerializerProvider (unused)
      * @throws IOException if an I/O error occurs during serialization
      */

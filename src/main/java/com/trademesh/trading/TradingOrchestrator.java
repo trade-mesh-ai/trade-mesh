@@ -132,24 +132,24 @@ public class TradingOrchestrator {
                 .doOnError(e -> log.error("Error in trading cycle for {}: {}", symbol, e.getMessage(), e));
     }
 
-     /**
-      * Monitors open positions for a given symbol.
-      * <p>
-      * Process:
-      * - Get all open paper positions for the symbol
-      * - For each position:
-      * - Get fresh market intelligence
-      * - Check if position should be exited
-      * - If exit signal: close the position
-      * - Else: update current prices via mark-to-market
-      *
-      * @param symbol trading symbol (e.g., "NIFTY", "BANKNIFTY")
-      * @return Mono emitting the count of monitored positions
-      */
-     public Mono<Integer> monitorOpenPositions(String symbol) {
-         log.debug("Monitoring open positions for symbol: {}", symbol);
+    /**
+     * Monitors open positions for a given symbol.
+     * <p>
+     * Process:
+     * - Get all open paper positions for the symbol
+     * - For each position:
+     * - Get fresh market intelligence
+     * - Check if position should be exited
+     * - If exit signal: close the position
+     * - Else: update current prices via mark-to-market
+     *
+     * @param symbol trading symbol (e.g., "NIFTY", "BANKNIFTY")
+     * @return Mono emitting the count of monitored positions
+     */
+    public Mono<Integer> monitorOpenPositions(String symbol) {
+        log.debug("Monitoring open positions for symbol: {}", symbol);
 
-         return paperTradeRepository.findByStatusAndSymbol(TradeStatus.OPEN, symbol)
+        return paperTradeRepository.findByStatusAndSymbol(TradeStatus.OPEN, symbol)
                 .flatMap(position -> {
                     // TODO: Architectural Decision - Market Intelligence Freshness for Position Monitoring
                     // CURRENT STATE: Uses cached generateIntelligence() because current exit logic

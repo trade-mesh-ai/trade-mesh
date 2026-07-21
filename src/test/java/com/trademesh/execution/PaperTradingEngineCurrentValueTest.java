@@ -23,7 +23,6 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.atLeastOnce;
 
 /**
  * Unit tests for P&L netting fix in PaperTradingEngine.
@@ -40,17 +39,13 @@ import static org.mockito.Mockito.atLeastOnce;
 @DisplayName("PaperTradingEngine P&L Netting Fix Tests")
 class PaperTradingEngineCurrentValueTest {
 
+    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
     @Mock
     private PaperTradeRepository paperTradeRepository;
-
     @Mock
     private ReactiveRedisTemplate<String, String> redisTemplate;
-
     @Mock
     private com.trademesh.zerodha.options.OptionChainService optionChainService;
-
-    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-
     private PaperTradingEngine paperTradingEngine;
 
     private OptionChain optionChain;
@@ -58,8 +53,8 @@ class PaperTradingEngineCurrentValueTest {
     @BeforeEach
     void setUp() {
         paperTradingEngine = new PaperTradingEngine(
-            paperTradeRepository, redisTemplate, null, objectMapper,
-            null, null, null, null, optionChainService
+                paperTradeRepository, redisTemplate, null, objectMapper,
+                null, null, null, null, optionChainService
         );
         optionChain = OptionChain.builder()
                 .symbol("NIFTY50")
@@ -206,12 +201,12 @@ class PaperTradingEngineCurrentValueTest {
         when(optionChainService.fetchOptionChain("NIFTY50"))
                 .thenReturn(Mono.just(chainData));
 
-         // Act & Assert
-         // Expected P&L: SELL leg (50 - 40) * 1 = 10, BUY leg (35 - 30) * 1 = 5, total = 15
-         StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
-                 .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(15.0)) == 0)
-                 .verifyComplete();
-         verify(optionChainService, atLeastOnce()).fetchOptionChain("NIFTY50");
+        // Act & Assert
+        // Expected P&L: SELL leg (50 - 40) * 1 = 10, BUY leg (35 - 30) * 1 = 5, total = 15
+        StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
+                .expectNextMatches(bd -> bd.compareTo(BigDecimal.valueOf(15.0)) == 0)
+                .verifyComplete();
+        verify(optionChainService, atLeastOnce()).fetchOptionChain("NIFTY50");
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -370,7 +365,7 @@ class PaperTradingEngineCurrentValueTest {
      * If jsonData is null, returns Mono.empty() (key missing).
      * If jsonData is a string, returns Mono.just(jsonData).
      *
-     * @param symbol  the symbol (e.g., "NIFTY50")
+     * @param symbol   the symbol (e.g., "NIFTY50")
      * @param jsonData the JSON string to return, or null for Mono.empty()
      */
     private void mockRedisOptionChain(String symbol, String jsonData) {

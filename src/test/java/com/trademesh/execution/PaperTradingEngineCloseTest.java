@@ -58,8 +58,8 @@ class PaperTradingEngineCloseTest {
     @BeforeEach
     void setUp() {
         engine = new PaperTradingEngine(
-            paperTradeRepository, null, telegramNotificationBot,
-            null, null, lotSizeService, null, null, optionChainService
+                paperTradeRepository, null, telegramNotificationBot,
+                null, null, lotSizeService, null, null, optionChainService
         );
 
         // Stub lotSizeService for alert formatting
@@ -100,21 +100,21 @@ class PaperTradingEngineCloseTest {
 
         // Stub findById to return the fresh (different) trade object
         when(paperTradeRepository.findById(originalParam.getId()))
-            .thenReturn(Mono.just(freshlyFetchedFromDb));
+                .thenReturn(Mono.just(freshlyFetchedFromDb));
 
         // Stub save() to echo back the actual mutated trade object
         when(paperTradeRepository.save(any(PaperTrade.class)))
-            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+                .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
         // Act & Assert
         StepVerifier.create(engine.closeIronCondorTrade(originalParam))
-            .expectNextMatches(result ->
-                result.getStatus() == TradeStatus.CLOSED &&
-                result.getRealizedPnl().compareTo(BigDecimal.valueOf(-10.5)) == 0 &&  // ORIGINAL param's unrealizedPnl
-                result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(0.0)) == 0 &&
-                result.getExitReason().equals("DTE_EXIT")  // ORIGINAL param's exitReason
-            )
-            .verifyComplete();
+                .expectNextMatches(result ->
+                        result.getStatus() == TradeStatus.CLOSED &&
+                                result.getRealizedPnl().compareTo(BigDecimal.valueOf(-10.5)) == 0 &&  // ORIGINAL param's unrealizedPnl
+                                result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(0.0)) == 0 &&
+                                result.getExitReason().equals("DTE_EXIT")  // ORIGINAL param's exitReason
+                )
+                .verifyComplete();
 
         // Verify save() was called exactly once
         verify(paperTradeRepository, times(1)).save(any(PaperTrade.class));
@@ -144,14 +144,14 @@ class PaperTradingEngineCloseTest {
 
         // Stub findById to return the fresh CLOSED trade
         when(paperTradeRepository.findById(trade.getId()))
-            .thenReturn(Mono.just(freshTrade));
+                .thenReturn(Mono.just(freshTrade));
 
         // NOTE: save() is NOT stubbed here — it should never be called
 
         // Act & Assert
         StepVerifier.create(engine.closeIronCondorTrade(trade))
-            .expectNextMatches(result -> result.getStatus() == TradeStatus.CLOSED)
-            .verifyComplete();
+                .expectNextMatches(result -> result.getStatus() == TradeStatus.CLOSED)
+                .verifyComplete();
 
         // Verify save() was NOT called
         verify(paperTradeRepository, never()).save(any(PaperTrade.class));
@@ -191,21 +191,21 @@ class PaperTradingEngineCloseTest {
 
         // Stub findById to return the fresh (different) trade object
         when(paperTradeRepository.findById(originalParam.getId()))
-            .thenReturn(Mono.just(freshlyFetchedFromDb));
+                .thenReturn(Mono.just(freshlyFetchedFromDb));
 
         // Stub save() to echo back the actual mutated trade object
         when(paperTradeRepository.save(any(PaperTrade.class)))
-            .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+                .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
         // Act & Assert
         StepVerifier.create(engine.closeSpreadTrade(originalParam))
-            .expectNextMatches(result ->
-                result.getStatus() == TradeStatus.CLOSED &&
-                result.getRealizedPnl().compareTo(BigDecimal.valueOf(-5.25)) == 0 &&  // ORIGINAL param's unrealizedPnl
-                result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(0.0)) == 0 &&
-                result.getExitReason().equals("LEG_BREACH")  // ORIGINAL param's exitReason
-            )
-            .verifyComplete();
+                .expectNextMatches(result ->
+                        result.getStatus() == TradeStatus.CLOSED &&
+                                result.getRealizedPnl().compareTo(BigDecimal.valueOf(-5.25)) == 0 &&  // ORIGINAL param's unrealizedPnl
+                                result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(0.0)) == 0 &&
+                                result.getExitReason().equals("LEG_BREACH")  // ORIGINAL param's exitReason
+                )
+                .verifyComplete();
 
         // Verify save() was called exactly once
         verify(paperTradeRepository, times(1)).save(any(PaperTrade.class));
@@ -235,14 +235,14 @@ class PaperTradingEngineCloseTest {
 
         // Stub findById to return the fresh CLOSED trade
         when(paperTradeRepository.findById(trade.getId()))
-            .thenReturn(Mono.just(freshTrade));
+                .thenReturn(Mono.just(freshTrade));
 
         // NOTE: save() is NOT stubbed here — it should never be called
 
         // Act & Assert
         StepVerifier.create(engine.closeSpreadTrade(trade))
-            .expectNextMatches(result -> result.getStatus() == TradeStatus.CLOSED)
-            .verifyComplete();
+                .expectNextMatches(result -> result.getStatus() == TradeStatus.CLOSED)
+                .verifyComplete();
 
         // Verify save() was NOT called
         verify(paperTradeRepository, never()).save(any(PaperTrade.class));
@@ -269,14 +269,14 @@ class PaperTradingEngineCloseTest {
 
         // 4 legs: SELL 23900 PE, BUY 23800 PE, SELL 24100 CE, BUY 24200 CE
         List<TradeLeg> legs = List.of(
-            TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
-                .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-            TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
-                .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-            TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24100.0))
-                .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-            TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24200.0))
-                .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24100.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24200.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 
@@ -306,10 +306,10 @@ class PaperTradingEngineCloseTest {
 
         // 2 legs: SELL 23900 PE, BUY 23800 PE
         List<TradeLeg> legs = List.of(
-            TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
-                .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-            TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
-                .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 
