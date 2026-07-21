@@ -14,6 +14,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -82,9 +83,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(50.0)
-                .entryCredit(100.0)
-                .currentValue(50.0)
+                .realizedPnl(BigDecimal.valueOf(50.0))
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(50.0))
                 .tradeDate(yesterday)  // Entered yesterday
                 .entryTime(yesterday.atTime(9, 30, 0))
                 .exitTime(today.atTime(14, 0, 0))  // Closed today
@@ -132,9 +133,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.OPEN)
-                .entryCredit(100.0)
-                .currentValue(95.0)
-                .unrealizedPnl(5.0)
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(95.0))
+                .unrealizedPnl(BigDecimal.valueOf(5.0))
                 .tradeDate(today)  // Entered today
                 .entryTime(today.atTime(9, 30, 0))
                 .exitTime(null)  // Still open
@@ -182,9 +183,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(75.0)
-                .entryCredit(100.0)
-                .currentValue(25.0)
+                .realizedPnl(BigDecimal.valueOf(75.0))
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(25.0))
                 .tradeDate(today)  // Entered today
                 .entryTime(today.atTime(9, 30, 0))
                 .exitTime(today.atTime(15, 0, 0))  // Closed today
@@ -233,7 +234,7 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(50.0)
+                .realizedPnl(BigDecimal.valueOf(50.0))
                 .tradeDate(yesterday)
                 .entryTime(yesterday.atTime(9, 30, 0))
                 .exitTime(today.atTime(10, 0, 0))
@@ -257,7 +258,7 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(75.0)
+                .realizedPnl(BigDecimal.valueOf(75.0))
                 .tradeDate(today)
                 .entryTime(today.atTime(11, 0, 0))
                 .exitTime(today.atTime(14, 0, 0))
@@ -332,9 +333,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(50.0)
-                .entryCredit(100.0)
-                .currentValue(50.0)
+                .realizedPnl(BigDecimal.valueOf(50.0))
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(50.0))
                 .tradeDate(yesterday)
                 .entryTime(yesterday.atTime(9, 30, 0))
                 .exitTime(today.atTime(10, 0, 0))
@@ -347,9 +348,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.OPEN)
-                .entryCredit(100.0)
-                .currentValue(95.0)
-                .unrealizedPnl(5.0)
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(95.0))
+                .unrealizedPnl(BigDecimal.valueOf(5.0))
                 .tradeDate(today)
                 .entryTime(today.atTime(9, 30, 0))
                 .exitTime(null)
@@ -361,9 +362,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(75.0)
-                .entryCredit(100.0)
-                .currentValue(25.0)
+                .realizedPnl(BigDecimal.valueOf(75.0))
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(25.0))
                 .tradeDate(today)
                 .entryTime(today.atTime(11, 0, 0))
                 .exitTime(today.atTime(14, 0, 0))
@@ -376,9 +377,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("BANKNIFTY")
                 .strategyName("BEAR_CALL_SPREAD")
                 .status(TradeStatus.OPEN)
-                .entryCredit(200.0)
-                .currentValue(190.0)
-                .unrealizedPnl(10.0)
+                .entryCredit(BigDecimal.valueOf(200.0))
+                .currentValue(BigDecimal.valueOf(190.0))
+                .unrealizedPnl(BigDecimal.valueOf(10.0))
                 .tradeDate(yesterday)
                 .entryTime(yesterday.atTime(10, 0, 0))
                 .exitTime(null)
@@ -412,9 +413,9 @@ class DailyReportServiceCrossDateTest {
 
                     // Verify best/worst trades
                     assertNotNull(metrics.bestTrade, "Best trade should not be null");
-                    assertEquals(75.0, metrics.bestTrade.getRealizedPnl(), 0.01, "Best trade should be C with 75 pts");
+                    assertEquals(75.0, metrics.bestTrade.getRealizedPnl().doubleValue(), 0.01, "Best trade should be C with 75 pts");
                     assertNotNull(metrics.worstTrade, "Worst trade should not be null");
-                    assertEquals(50.0, metrics.worstTrade.getRealizedPnl(), 0.01, "Worst trade should be A with 50 pts");
+                    assertEquals(50.0, metrics.worstTrade.getRealizedPnl().doubleValue(), 0.01, "Worst trade should be A with 50 pts");
                 })
                 .verifyComplete();
     }
@@ -445,9 +446,9 @@ class DailyReportServiceCrossDateTest {
                 .symbol("NIFTY50")
                 .strategyName("EXPIRY_DAY_STRANGLE")
                 .status(TradeStatus.OPEN)
-                .entryCredit(150.0)
-                .currentValue(145.0)
-                .unrealizedPnl(5.0)
+                .entryCredit(BigDecimal.valueOf(150.0))
+                .currentValue(BigDecimal.valueOf(145.0))
+                .unrealizedPnl(BigDecimal.valueOf(5.0))
                 .tradeDate(today)
                 .entryTime(today.atTime(9, 30, 0))
                 .exitTime(null)

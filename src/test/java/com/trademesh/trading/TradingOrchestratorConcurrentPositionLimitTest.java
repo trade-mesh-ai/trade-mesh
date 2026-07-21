@@ -23,6 +23,7 @@ import org.mockito.MockitoAnnotations;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -217,8 +218,8 @@ class TradingOrchestratorConcurrentPositionLimitTest {
                 .id(UUID.randomUUID())
                 .symbol(symbol)
                 .status(TradeStatus.OPEN)
-                .entryCredit(100.0)
-                .currentValue(101.0)
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(101.0))
                 .build();
     }
 

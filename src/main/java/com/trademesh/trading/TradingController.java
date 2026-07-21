@@ -156,7 +156,7 @@ public class TradingController {
                                     tradeInfo.put("strategyName", trade.getStrategyName());
                                     tradeInfo.put("entryCredit", trade.getEntryCredit());
                                     tradeInfo.put("currentValue", trade.getCurrentValue());
-                                    tradeInfo.put("unrealizedPnl", Math.round(trade.getUnrealizedPnl() * 100.0) / 100.0);
+                                    tradeInfo.put("unrealizedPnl", Math.round(trade.getUnrealizedPnl().doubleValue() * 100.0) / 100.0d);
                                     tradeInfo.put("liveUnrealizedPnl",
                                             Math.round(livePnlData.getLiveUnrealizedPnl() * 100.0) / 100.0);
                                     tradeInfo.put("isPnlLive", livePnlData.getIsPnlLive());

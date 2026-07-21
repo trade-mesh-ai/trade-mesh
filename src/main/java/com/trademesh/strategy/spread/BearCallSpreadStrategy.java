@@ -301,10 +301,10 @@ public class BearCallSpreadStrategy implements TradingStrategy {
                     .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), shortCallStrikePrice, OptionType.CE))
                     .action(Action.SELL)
                     .optionType(OptionType.CE)
-                    .strikePrice(shortCallStrikePrice.doubleValue())
+                    .strikePrice(shortCallStrikePrice)
                     .expiryDate(chain.getExpiryDate())
                     .quantity(lots)
-                    .limitPrice(shortCallLtp.doubleValue())
+                    .limitPrice(shortCallLtp)
                     .legType(LegType.ENTRY)
                     .build());
 
@@ -313,10 +313,10 @@ public class BearCallSpreadStrategy implements TradingStrategy {
                     .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), longCallStrikePrice, OptionType.CE))
                     .action(Action.BUY)
                     .optionType(OptionType.CE)
-                    .strikePrice(longCallStrikePrice.doubleValue())
+                    .strikePrice(longCallStrikePrice)
                     .expiryDate(chain.getExpiryDate())
                     .quantity(lots)
-                    .limitPrice(longCallLtp.doubleValue())
+                    .limitPrice(longCallLtp)
                     .legType(LegType.ENTRY)
                     .build());
 

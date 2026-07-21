@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.atLeastOnce;
 
 /**
  * Unit tests for P&L netting fix in PaperTradingEngine.
@@ -83,7 +84,7 @@ class PaperTradingEngineCurrentValueTest {
         trade.setId(java.util.UUID.randomUUID());
         trade.setSymbol("NIFTY50");
         trade.setLegs(null);
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         // Act & Assert
         StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
@@ -104,7 +105,7 @@ class PaperTradingEngineCurrentValueTest {
         trade.setId(java.util.UUID.randomUUID());
         trade.setSymbol("NIFTY50");
         trade.setLegs(List.of());
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         // Act & Assert
         StepVerifier.create(paperTradingEngine.calculateIronCondorPnl(trade))
@@ -126,9 +127,9 @@ class PaperTradingEngineCurrentValueTest {
         trade.setSymbol("NIFTY50");
         trade.setLegs(List.of(
                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE)
-                        .strikePrice(24100.0).limitPrice(50.0).quantity(1).build()
+                        .strikePrice(BigDecimal.valueOf(24100.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build()
         ));
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         mockRedisOptionChain("NIFTY50", null); // null = Mono.empty()
 
@@ -152,9 +153,9 @@ class PaperTradingEngineCurrentValueTest {
         trade.setSymbol("NIFTY50");
         trade.setLegs(List.of(
                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE)
-                        .strikePrice(24100.0).limitPrice(50.0).quantity(1).build()
+                        .strikePrice(BigDecimal.valueOf(24100.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build()
         ));
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         mockRedisOptionChain("NIFTY50", "{not valid json"); // Malformed JSON
 
@@ -177,16 +178,16 @@ class PaperTradingEngineCurrentValueTest {
         PaperTrade trade = new PaperTrade();
         trade.setId(java.util.UUID.randomUUID());
         trade.setSymbol("NIFTY50");
-        trade.setUnrealizedPnl(0.0); // Will be overwritten by calculation
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
 
         // 2 legs: SELL @ 50 (entry), current LTP 40 → profit 10
         //         BUY @ 30 (entry), current LTP 35 → profit 5
         // Total P&L = 10 + 5 = 15
         List<TradeLeg> legs = List.of(
                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE)
-                        .strikePrice(24100.0).limitPrice(50.0).quantity(1).build(),
+                        .strikePrice(BigDecimal.valueOf(24100.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build(),
                 TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE)
-                        .strikePrice(24200.0).limitPrice(30.0).quantity(1).build()
+                        .strikePrice(BigDecimal.valueOf(24200.0)).limitPrice(BigDecimal.valueOf(30.0)).quantity(1).build()
         );
         trade.setLegs(legs);
 
@@ -230,7 +231,7 @@ class PaperTradingEngineCurrentValueTest {
         trade.setId(java.util.UUID.randomUUID());
         trade.setSymbol("NIFTY50");
         trade.setLegs(null);
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         // Act & Assert
         StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
@@ -251,7 +252,7 @@ class PaperTradingEngineCurrentValueTest {
         trade.setId(java.util.UUID.randomUUID());
         trade.setSymbol("NIFTY50");
         trade.setLegs(List.of());
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         // Act & Assert
         StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
@@ -273,9 +274,9 @@ class PaperTradingEngineCurrentValueTest {
         trade.setSymbol("NIFTY50");
         trade.setLegs(List.of(
                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
-                        .strikePrice(23900.0).limitPrice(50.0).quantity(1).build()
+                        .strikePrice(BigDecimal.valueOf(23900.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build()
         ));
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         mockRedisOptionChain("NIFTY50", null); // null = Mono.empty()
 
@@ -299,9 +300,9 @@ class PaperTradingEngineCurrentValueTest {
         trade.setSymbol("NIFTY50");
         trade.setLegs(List.of(
                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
-                        .strikePrice(23900.0).limitPrice(50.0).quantity(1).build()
+                        .strikePrice(BigDecimal.valueOf(23900.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build()
         ));
-        trade.setUnrealizedPnl(-14.9);
+        trade.setUnrealizedPnl(BigDecimal.valueOf(-14.9));
 
         mockRedisOptionChain("NIFTY50", "{not valid json"); // Malformed JSON
 
@@ -324,16 +325,16 @@ class PaperTradingEngineCurrentValueTest {
         PaperTrade trade = new PaperTrade();
         trade.setId(java.util.UUID.randomUUID());
         trade.setSymbol("NIFTY50");
-        trade.setUnrealizedPnl(0.0); // Will be overwritten by calculation
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
 
         // 2-leg spread: SELL @ 50 (entry), current LTP 40 → profit 10
         //              BUY @ 30 (entry), current LTP 35 → profit 5
         // Total P&L = 10 + 5 = 15
         List<TradeLeg> legs = List.of(
                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
-                        .strikePrice(23900.0).limitPrice(50.0).quantity(1).build(),
+                        .strikePrice(BigDecimal.valueOf(23900.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build(),
                 TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE)
-                        .strikePrice(23800.0).limitPrice(30.0).quantity(1).build()
+                        .strikePrice(BigDecimal.valueOf(23800.0)).limitPrice(BigDecimal.valueOf(30.0)).quantity(1).build()
         );
         trade.setLegs(legs);
 
@@ -407,16 +408,16 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg sellLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(24000.0)
-                .limitPrice(50.0)
+                .strikePrice(BigDecimal.valueOf(24000.0))
+                .limitPrice(BigDecimal.valueOf(50.0))
                 .quantity(1)
                 .build();
 
         TradeLeg buyLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.CE)
-                .strikePrice(24100.0)
-                .limitPrice(20.0)
+                .strikePrice(BigDecimal.valueOf(24100.0))
+                .limitPrice(BigDecimal.valueOf(20.0))
                 .quantity(1)
                 .build();
 
@@ -461,32 +462,32 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg sellCallLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(24100.0)
-                .limitPrice(40.0)
+                .strikePrice(BigDecimal.valueOf(24100.0))
+                .limitPrice(BigDecimal.valueOf(40.0))
                 .quantity(1)
                 .build();
 
         TradeLeg sellPutLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(23900.0)
-                .limitPrice(35.0)
+                .strikePrice(BigDecimal.valueOf(23900.0))
+                .limitPrice(BigDecimal.valueOf(35.0))
                 .quantity(1)
                 .build();
 
         TradeLeg buyCallLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.CE)
-                .strikePrice(24200.0)
-                .limitPrice(15.0)
+                .strikePrice(BigDecimal.valueOf(24200.0))
+                .limitPrice(BigDecimal.valueOf(15.0))
                 .quantity(1)
                 .build();
 
         TradeLeg buyPutLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.PE)
-                .strikePrice(23800.0)
-                .limitPrice(10.0)
+                .strikePrice(BigDecimal.valueOf(23800.0))
+                .limitPrice(BigDecimal.valueOf(10.0))
                 .quantity(1)
                 .build();
 
@@ -520,16 +521,16 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg sellLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(24000.0)
-                .limitPrice(60.0)
+                .strikePrice(BigDecimal.valueOf(24000.0))
+                .limitPrice(BigDecimal.valueOf(60.0))
                 .quantity(1)
                 .build();
 
         TradeLeg buyLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.PE)
-                .strikePrice(24100.0)
-                .limitPrice(25.0)
+                .strikePrice(BigDecimal.valueOf(24100.0))
+                .limitPrice(BigDecimal.valueOf(25.0))
                 .quantity(1)
                 .build();
 
@@ -596,8 +597,8 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg sellLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(24000.0)
-                .limitPrice(45.0)
+                .strikePrice(BigDecimal.valueOf(24000.0))
+                .limitPrice(BigDecimal.valueOf(45.0))
                 .quantity(1)
                 .build();
 
@@ -622,8 +623,8 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg buyLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.CE)
-                .strikePrice(24000.0)
-                .limitPrice(30.0)
+                .strikePrice(BigDecimal.valueOf(24000.0))
+                .limitPrice(BigDecimal.valueOf(30.0))
                 .quantity(1)
                 .build();
 
@@ -653,16 +654,16 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg sellCallLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(24100.0)
-                .limitPrice(40.0)
+                .strikePrice(BigDecimal.valueOf(24100.0))
+                .limitPrice(BigDecimal.valueOf(40.0))
                 .quantity(1)
                 .build();
 
         TradeLeg sellPutLeg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(23900.0)
-                .limitPrice(35.0)
+                .strikePrice(BigDecimal.valueOf(23900.0))
+                .limitPrice(BigDecimal.valueOf(35.0))
                 .quantity(1)
                 .build();
 
@@ -692,16 +693,16 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg buyCallLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.CE)
-                .strikePrice(24200.0)
-                .limitPrice(15.0)
+                .strikePrice(BigDecimal.valueOf(24200.0))
+                .limitPrice(BigDecimal.valueOf(15.0))
                 .quantity(1)
                 .build();
 
         TradeLeg buyPutLeg = TradeLeg.builder()
                 .action(Action.BUY)
                 .optionType(OptionType.PE)
-                .strikePrice(23800.0)
-                .limitPrice(10.0)
+                .strikePrice(BigDecimal.valueOf(23800.0))
+                .limitPrice(BigDecimal.valueOf(10.0))
                 .quantity(1)
                 .build();
 
@@ -721,8 +722,8 @@ class PaperTradingEngineCurrentValueTest {
         TradeLeg leg = TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(24000.0)
-                .limitPrice(50.0)
+                .strikePrice(BigDecimal.valueOf(24000.0))
+                .limitPrice(BigDecimal.valueOf(50.0))
                 .quantity(1)
                 .build();
 

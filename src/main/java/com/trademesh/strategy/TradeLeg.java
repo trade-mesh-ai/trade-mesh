@@ -1,5 +1,7 @@
 package com.trademesh.strategy;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.trademesh.config.BigDecimalTwoDecimalSerializer;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.strategy.enums.LegType;
 import com.trademesh.strategy.enums.OptionType;
@@ -8,6 +10,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -43,7 +46,8 @@ public class TradeLeg {
     /**
      * Strike price of the option.
      */
-    private Double strikePrice;
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal strikePrice;
 
     /**
      * Expiry date of the option contract.
@@ -61,7 +65,8 @@ public class TradeLeg {
      * For BUY legs: maximum price willing to pay.
      * For SELL legs: minimum price willing to accept.
      */
-    private Double limitPrice;
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal limitPrice;
 
     /**
      * Type of leg within the strategy (ENTRY or HEDGE).

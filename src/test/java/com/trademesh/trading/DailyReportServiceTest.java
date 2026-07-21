@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -100,9 +101,9 @@ class DailyReportServiceTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(50.0)
-                .entryCredit(100.0)
-                .currentValue(50.0)
+                .realizedPnl(BigDecimal.valueOf(50.0))
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(50.0))
                 .tradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")))
                 .entryTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .exitTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
@@ -149,9 +150,9 @@ class DailyReportServiceTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(75.0)  // Tied PnL
-                .entryCredit(100.0)
-                .currentValue(25.0)
+                .realizedPnl(BigDecimal.valueOf(75.0))  // Tied PnL
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(25.0))
                 .tradeDate(LocalDate.of(2026, 7, 1))
                 .entryTime(LocalDateTime.of(2026, 7, 1, 9, 0, 0))
                 .exitTime(earlierTime)  // Earlier exit
@@ -163,9 +164,9 @@ class DailyReportServiceTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(75.0)  // Tied PnL
-                .entryCredit(100.0)
-                .currentValue(25.0)
+                .realizedPnl(BigDecimal.valueOf(75.0))  // Tied PnL
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(25.0))
                 .tradeDate(LocalDate.of(2026, 7, 1))
                 .entryTime(LocalDateTime.of(2026, 7, 1, 9, 15, 0))
                 .exitTime(laterTime)  // Later exit
@@ -205,9 +206,9 @@ class DailyReportServiceTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(52.50)
-                .entryCredit(100.0)
-                .currentValue(47.50)
+                .realizedPnl(BigDecimal.valueOf(52.50))
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(47.50))
                 .tradeDate(tradeDate)
                 .entryTime(LocalDateTime.of(2026, 7, 1, 9, 15, 0))
                 .exitTime(LocalDateTime.of(2026, 7, 1, 10, 0, 0))
@@ -219,9 +220,9 @@ class DailyReportServiceTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(116.25)  // Best trade
-                .entryCredit(150.0)
-                .currentValue(33.75)
+                .realizedPnl(BigDecimal.valueOf(116.25))  // Best trade
+                .entryCredit(BigDecimal.valueOf(150.0))
+                .currentValue(BigDecimal.valueOf(33.75))
                 .tradeDate(tradeDate)
                 .entryTime(LocalDateTime.of(2026, 7, 1, 9, 30, 0))
                 .exitTime(LocalDateTime.of(2026, 7, 1, 11, 0, 0))
@@ -233,9 +234,9 @@ class DailyReportServiceTest {
                 .symbol("NIFTY50")
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.CLOSED)
-                .realizedPnl(-1.05)  // Worst trade
-                .entryCredit(100.0)
-                .currentValue(101.05)
+                .realizedPnl(BigDecimal.valueOf(-1.05))  // Worst trade
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(101.05))
                 .tradeDate(tradeDate)
                 .entryTime(LocalDateTime.of(2026, 7, 1, 10, 0, 0))
                 .exitTime(LocalDateTime.of(2026, 7, 1, 14, 30, 0))
@@ -263,10 +264,10 @@ class DailyReportServiceTest {
 
         // Best and worst trades
         assertSame(tradeB, metrics.bestTrade, "bestTrade should be tradeB (116.25)");
-        assertEquals(116.25, metrics.bestTrade.getRealizedPnl(), "bestTrade.realizedPnl should be 116.25");
+        assertEquals(116.25, metrics.bestTrade.getRealizedPnl().doubleValue(), "bestTrade.realizedPnl should be 116.25");
 
         assertSame(tradeC, metrics.worstTrade, "worstTrade should be tradeC (-1.05)");
-        assertEquals(-1.05, metrics.worstTrade.getRealizedPnl(), "worstTrade.realizedPnl should be -1.05");
+        assertEquals(-1.05, metrics.worstTrade.getRealizedPnl().doubleValue(), "worstTrade.realizedPnl should be -1.05");
 
         // Rupee amounts (points * lotSize)
         // Total: (52.50 + 116.25 + (-1.05)) * 65 = 167.70 * 65 = 10,900.50

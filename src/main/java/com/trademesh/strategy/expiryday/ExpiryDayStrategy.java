@@ -368,10 +368,10 @@ public class ExpiryDayStrategy implements TradingStrategy {
                         strikeSelection.getCallStrike(), OptionType.CE))
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(strikeSelection.getCallStrike().doubleValue())
+                .strikePrice(strikeSelection.getCallStrike())
                 .expiryDate(expiryDate)
                 .quantity(lots)
-                .limitPrice(callLTP.doubleValue())
+                .limitPrice(callLTP)
                 .legType(LegType.ENTRY)
                 .build();
 
@@ -380,10 +380,10 @@ public class ExpiryDayStrategy implements TradingStrategy {
                         strikeSelection.getPutStrike(), OptionType.PE))
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(strikeSelection.getPutStrike().doubleValue())
+                .strikePrice(strikeSelection.getPutStrike())
                 .expiryDate(expiryDate)
                 .quantity(lots)
-                .limitPrice(putLTP.doubleValue())
+                .limitPrice(putLTP)
                 .legType(LegType.ENTRY)
                 .build();
 
