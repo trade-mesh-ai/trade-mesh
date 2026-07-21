@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -56,9 +57,9 @@ class MarkToMarketSchedulerTest {
         trade.setId(UUID.fromString("00000000-0000-0000-0000-00000000000" + id.charAt(id.length() - 1)));
         trade.setSymbol("NIFTY50");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(100.0);
-        trade.setCurrentValue(100.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(100.0));
+        trade.setCurrentValue(BigDecimal.valueOf(100.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")));
         return trade;
     }

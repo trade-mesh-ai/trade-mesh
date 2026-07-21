@@ -60,25 +60,25 @@ public class DailyReportService {
 
         metrics.totalTrades = trades.size();
         metrics.winningTrades = trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                 .count();
         metrics.losingTrades = trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
                 .count();
 
         metrics.totalPnl = trades.stream()
-                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                 .sum();
 
         // Best trade: highest realizedPnl, with exitTime ascending as tie-breaker
         metrics.bestTrade = trades.stream()
-                .max(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                .max(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                         .thenComparing(PaperTrade::getExitTime, Comparator.reverseOrder()))
                 .orElse(null);
 
         // Worst trade: lowest realizedPnl, with exitTime ascending as tie-breaker
         metrics.worstTrade = trades.stream()
-                .min(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                .min(Comparator.comparing((PaperTrade t) -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                         .thenComparing(PaperTrade::getExitTime))
                 .orElse(null);
 
@@ -88,16 +88,16 @@ public class DailyReportService {
         metrics.totalPnlAmount = trades.stream()
                 .mapToDouble(t -> {
                     int lotSize = lotSizeService.getLotSize(t.getSymbol());
-                    return (t.getRealizedPnl() != null ? t.getRealizedPnl() : 0) * lotSize;
+                    return (t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0) * lotSize;
                 })
                 .sum();
 
         if (metrics.bestTrade != null && metrics.bestTrade.getRealizedPnl() != null) {
-            metrics.bestPnlAmount = metrics.bestTrade.getRealizedPnl() * lotSizeService.getLotSize(metrics.bestTrade.getSymbol());
+            metrics.bestPnlAmount = metrics.bestTrade.getRealizedPnl().doubleValue() * (double) lotSizeService.getLotSize(metrics.bestTrade.getSymbol());
         }
 
         if (metrics.worstTrade != null && metrics.worstTrade.getRealizedPnl() != null) {
-            metrics.worstPnlAmount = metrics.worstTrade.getRealizedPnl() * lotSizeService.getLotSize(metrics.worstTrade.getSymbol());
+            metrics.worstPnlAmount = metrics.worstTrade.getRealizedPnl().doubleValue() * (double) lotSizeService.getLotSize(metrics.worstTrade.getSymbol());
         }
 
         return metrics;
@@ -238,10 +238,10 @@ public class DailyReportService {
                 metrics.winRate,
                 metrics.totalPnl,
                 metrics.totalPnlAmount,
-                metrics.bestTrade != null ? metrics.bestTrade.getRealizedPnl() : 0,
+                metrics.bestTrade != null ? metrics.bestTrade.getRealizedPnl().doubleValue() : 0.0,
                 metrics.bestPnlAmount,
                 metrics.bestTrade != null ? metrics.bestTrade.getStrategyName() : "N/A",
-                metrics.worstTrade != null ? metrics.worstTrade.getRealizedPnl() : 0,
+                metrics.worstTrade != null ? metrics.worstTrade.getRealizedPnl().doubleValue() : 0.0,
                 metrics.worstPnlAmount,
                 metrics.worstTrade != null ? metrics.worstTrade.getStrategyName() : "N/A"
         );

@@ -247,22 +247,22 @@ class PaperTradingEngineMultiLotExitTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("IRON_CONDOR");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(10.0); // Per-lot entry credit
-        trade.setCurrentValue(10.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(10.0)); // Per-lot entry credit
+        trade.setCurrentValue(BigDecimal.valueOf(10.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
         // 4 legs with quantity=7 (7 lots)
         List<TradeLeg> legs = List.of(
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(23900.0)
-                        .limitPrice(5.0).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(23800.0)
-                        .limitPrice(3.0).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(24100.0)
-                        .limitPrice(5.0).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(24200.0)
-                        .limitPrice(3.0).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(5.0)).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
+                        .limitPrice(BigDecimal.valueOf(3.0)).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24100.0))
+                        .limitPrice(BigDecimal.valueOf(5.0)).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24200.0))
+                        .limitPrice(BigDecimal.valueOf(3.0)).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 
@@ -280,18 +280,18 @@ class PaperTradingEngineMultiLotExitTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("BULL_PUT_SPREAD");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(10.0); // Per-lot entry credit
-        trade.setCurrentValue(10.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(10.0)); // Per-lot entry credit
+        trade.setCurrentValue(BigDecimal.valueOf(10.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
         // 2 legs with quantity=7 (7 lots)
         List<TradeLeg> legs = List.of(
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(23900.0)
-                        .limitPrice(5.0).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(23800.0)
-                        .limitPrice(3.0).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(5.0)).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
+                        .limitPrice(BigDecimal.valueOf(3.0)).quantity(7).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 

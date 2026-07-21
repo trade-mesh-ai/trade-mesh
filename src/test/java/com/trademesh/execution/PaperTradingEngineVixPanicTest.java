@@ -177,7 +177,6 @@ class PaperTradingEngineVixPanicTest {
         when(ironCondorConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
 
         PaperTrade trade = createIronCondorTrade();
-        double entryCredit = trade.getEntryCredit();
         // Stop loss threshold: entryCredit * (stopLossPercent / 100) = 100 * 1.0 = 100
         // Set unrealizedPnl to -150 (worse than stop loss threshold of -100)
         BigDecimal unrealizedPnl = BigDecimal.valueOf(-150.0);
@@ -207,7 +206,7 @@ class PaperTradingEngineVixPanicTest {
         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
 
         PaperTrade trade = createSpreadTrade();
-        double entryCredit = trade.getEntryCredit();
+        double entryCredit = trade.getEntryCredit().doubleValue();
         // Profit target threshold: entryCredit * (targetProfitPercent / 100) = 100 * 0.5 = 50
         // Set unrealizedPnl to 75 (exceeds profit target of 50)
         BigDecimal unrealizedPnl = BigDecimal.valueOf(75.0);
@@ -323,29 +322,29 @@ class PaperTradingEngineVixPanicTest {
                 TradeLeg.builder()
                         .action(Action.SELL)
                         .optionType(OptionType.CE)
-                        .strikePrice(19500.0)
-                        .limitPrice(50.0)
+                        .strikePrice(BigDecimal.valueOf(19500.0))
+                        .limitPrice(BigDecimal.valueOf(50.0))
                         .quantity(1)
                         .build(),
                 TradeLeg.builder()
                         .action(Action.BUY)
                         .optionType(OptionType.CE)
-                        .strikePrice(19700.0)
-                        .limitPrice(30.0)
+                        .strikePrice(BigDecimal.valueOf(19700.0))
+                        .limitPrice(BigDecimal.valueOf(30.0))
                         .quantity(1)
                         .build(),
                 TradeLeg.builder()
                         .action(Action.SELL)
                         .optionType(OptionType.PE)
-                        .strikePrice(19300.0)
-                        .limitPrice(50.0)
+                        .strikePrice(BigDecimal.valueOf(19300.0))
+                        .limitPrice(BigDecimal.valueOf(50.0))
                         .quantity(1)
                         .build(),
                 TradeLeg.builder()
                         .action(Action.BUY)
                         .optionType(OptionType.PE)
-                        .strikePrice(19100.0)
-                        .limitPrice(30.0)
+                        .strikePrice(BigDecimal.valueOf(19100.0))
+                        .limitPrice(BigDecimal.valueOf(30.0))
                         .quantity(1)
                         .build()
         );
@@ -356,9 +355,9 @@ class PaperTradingEngineVixPanicTest {
                 .strategyName("IRON_CONDOR")
                 .status(TradeStatus.OPEN)
                 .legs(legs)
-                .entryCredit(100.0)
-                .currentValue(100.0)
-                .unrealizedPnl(0.0)
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(100.0))
+                .unrealizedPnl(BigDecimal.valueOf(0.0))
                 .tradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")))
                 .entryTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();
@@ -374,15 +373,15 @@ class PaperTradingEngineVixPanicTest {
                 TradeLeg.builder()
                         .action(Action.SELL)
                         .optionType(OptionType.PE)
-                        .strikePrice(19300.0)
-                        .limitPrice(60.0)
+                        .strikePrice(BigDecimal.valueOf(19300.0))
+                        .limitPrice(BigDecimal.valueOf(60.0))
                         .quantity(1)
                         .build(),
                 TradeLeg.builder()
                         .action(Action.BUY)
                         .optionType(OptionType.PE)
-                        .strikePrice(19200.0)
-                        .limitPrice(40.0)
+                        .strikePrice(BigDecimal.valueOf(19200.0))
+                        .limitPrice(BigDecimal.valueOf(40.0))
                         .quantity(1)
                         .build()
         );
@@ -393,9 +392,9 @@ class PaperTradingEngineVixPanicTest {
                 .strategyName("BULL_PUT_SPREAD")
                 .status(TradeStatus.OPEN)
                 .legs(legs)
-                .entryCredit(100.0)
-                .currentValue(100.0)
-                .unrealizedPnl(0.0)
+                .entryCredit(BigDecimal.valueOf(100.0))
+                .currentValue(BigDecimal.valueOf(100.0))
+                .unrealizedPnl(BigDecimal.valueOf(0.0))
                 .tradeDate(LocalDate.now(ZoneId.of("Asia/Kolkata")))
                 .entryTime(LocalDateTime.now(ZoneId.of("Asia/Kolkata")))
                 .build();

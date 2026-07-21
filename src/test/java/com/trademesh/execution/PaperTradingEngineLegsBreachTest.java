@@ -466,22 +466,22 @@ class PaperTradingEngineLegsBreachTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("IRON_CONDOR");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(100.0);
-        trade.setCurrentValue(100.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(100.0));
+        trade.setCurrentValue(BigDecimal.valueOf(100.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
         // 4 legs: SELL 23900 PE, BUY 23800 PE, SELL 24100 CE, BUY 24200 CE
         List<TradeLeg> legs = List.of(
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(23900.0)
-                        .limitPrice(50.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(23800.0)
-                        .limitPrice(40.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(24100.0)
-                        .limitPrice(50.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(24200.0)
-                        .limitPrice(40.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24100.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24200.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 
@@ -504,18 +504,18 @@ class PaperTradingEngineLegsBreachTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("BULL_PUT_SPREAD");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(50.0);
-        trade.setCurrentValue(50.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(50.0));
+        trade.setCurrentValue(BigDecimal.valueOf(50.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
         // 2 legs: SELL 23900 PE, BUY 23800 PE
         List<TradeLeg> legs = List.of(
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(23900.0)
-                        .limitPrice(50.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(23800.0)
-                        .limitPrice(40.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23800.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 
@@ -528,18 +528,18 @@ class PaperTradingEngineLegsBreachTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("BEAR_CALL_SPREAD");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(50.0);
-        trade.setCurrentValue(50.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(50.0));
+        trade.setCurrentValue(BigDecimal.valueOf(50.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
         // 2 legs: SELL 24100 CE, BUY 24200 CE
         List<TradeLeg> legs = List.of(
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(24100.0)
-                        .limitPrice(50.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
-                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(24200.0)
-                        .limitPrice(40.0).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24100.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build(),
+                TradeLeg.builder().action(Action.BUY).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24200.0))
+                        .limitPrice(BigDecimal.valueOf(40.0)).quantity(1).expiryDate(LocalDate.now().plusDays(7)).build()
         );
         trade.setLegs(legs);
 
@@ -552,18 +552,18 @@ class PaperTradingEngineLegsBreachTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("EXPIRY_DAY_STRANGLE");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(100.0);
-        trade.setCurrentValue(100.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(100.0));
+        trade.setCurrentValue(BigDecimal.valueOf(100.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
         // 2 legs: SELL 23900 PE, SELL 24100 CE
         List<TradeLeg> legs = List.of(
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(23900.0)
-                        .limitPrice(50.0).quantity(1).expiryDate(LocalDate.now()).build(),
-                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(24100.0)
-                        .limitPrice(50.0).quantity(1).expiryDate(LocalDate.now()).build()
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE).strikePrice(BigDecimal.valueOf(23900.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now()).build(),
+                TradeLeg.builder().action(Action.SELL).optionType(OptionType.CE).strikePrice(BigDecimal.valueOf(24100.0))
+                        .limitPrice(BigDecimal.valueOf(50.0)).quantity(1).expiryDate(LocalDate.now()).build()
         );
         trade.setLegs(legs);
 

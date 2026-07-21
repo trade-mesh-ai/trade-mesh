@@ -211,9 +211,9 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("EXPIRY_DAY_STRANGLE");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(100.0);
-        trade.setCurrentValue(100.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(100.0));
+        trade.setCurrentValue(BigDecimal.valueOf(100.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
@@ -223,16 +223,16 @@ class PaperTradingEngineMarkToMarketDecisionTest {
             TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(23950.0)
-                .limitPrice(120.0)
+                .strikePrice(BigDecimal.valueOf(23950.0))
+                .limitPrice(BigDecimal.valueOf(120.0))
                 .quantity(1)
                 .expiryDate(LocalDate.now().plusDays(7))
                 .build(),
             TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(23850.0)
-                .limitPrice(90.0)
+                .strikePrice(BigDecimal.valueOf(23850.0))
+                .limitPrice(BigDecimal.valueOf(90.0))
                 .quantity(1)
                 .expiryDate(LocalDate.now().plusDays(7))
                 .build()
@@ -268,9 +268,9 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         freshTrade.setSymbol("NIFTY50");
         freshTrade.setStrategyName("BULL_PUT_SPREAD");
         freshTrade.setStatus(TradeStatus.OPEN);  // CRITICAL: must be OPEN
-        freshTrade.setEntryCredit(100.0);
-        freshTrade.setCurrentValue(100.0);
-        freshTrade.setUnrealizedPnl(0.0);
+        freshTrade.setEntryCredit(BigDecimal.valueOf(100.0));
+        freshTrade.setCurrentValue(BigDecimal.valueOf(100.0));
+        freshTrade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         freshTrade.setEntryTime(LocalDateTime.now());
         freshTrade.setTradeDate(LocalDate.now());
         freshTrade.setLegs(legs);
@@ -291,9 +291,9 @@ class PaperTradingEngineMarkToMarketDecisionTest {
             .expectNextMatches(result -> {
                 // Assert
                 return result.getStatus() == TradeStatus.CLOSED &&
-                       result.getCurrentValue() == 210.0 &&  // Verify actual computed value
+                       result.getCurrentValue().compareTo(BigDecimal.valueOf(210.0)) == 0 &&  // Verify actual computed value
                        result.getExitReason().equals("STOP_LOSS") &&
-                       result.getRealizedPnl() == -110.0;  // 100.0 - 210.0 = -110.0
+                       result.getRealizedPnl().compareTo(BigDecimal.valueOf(-110.0)) == 0;  // 100.0 - 210.0 = -110.0
             })
             .verifyComplete();
 
@@ -329,9 +329,9 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         trade.setSymbol("NIFTY50");
         trade.setStrategyName("EXPIRY_DAY_STRANGLE");
         trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(100.0);
-        trade.setCurrentValue(100.0);
-        trade.setUnrealizedPnl(0.0);
+        trade.setEntryCredit(BigDecimal.valueOf(100.0));
+        trade.setCurrentValue(BigDecimal.valueOf(100.0));
+        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
         trade.setEntryTime(LocalDateTime.now());
         trade.setTradeDate(LocalDate.now());
 
@@ -341,16 +341,16 @@ class PaperTradingEngineMarkToMarketDecisionTest {
             TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(23950.0)
-                .limitPrice(30.0)
+                .strikePrice(BigDecimal.valueOf(23950.0))
+                .limitPrice(BigDecimal.valueOf(30.0))
                 .quantity(1)
                 .expiryDate(LocalDate.now().plusDays(7))
                 .build(),
             TradeLeg.builder()
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(23850.0)
-                .limitPrice(20.0)
+                .strikePrice(BigDecimal.valueOf(23850.0))
+                .limitPrice(BigDecimal.valueOf(20.0))
                 .quantity(1)
                 .expiryDate(LocalDate.now().plusDays(7))
                 .build()
@@ -391,8 +391,8 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         StepVerifier.create(engine.markToMarket(trade))
             .expectNextMatches(result ->
                 result.getStatus() == TradeStatus.OPEN &&
-                result.getCurrentValue() == 50.0 &&
-                result.getUnrealizedPnl() == 50.0  // entryCredit - currentValue = 100.0 - 50.0 = 50.0
+                result.getCurrentValue().compareTo(BigDecimal.valueOf(50.0)) == 0 &&
+                result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(50.0)) == 0  // entryCredit - currentValue = 100.0 - 50.0 = 50.0
             )
             .verifyComplete();
 

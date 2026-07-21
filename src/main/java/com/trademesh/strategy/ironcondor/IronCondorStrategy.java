@@ -273,10 +273,10 @@ public class IronCondorStrategy implements TradingStrategy {
                 .instrument(buildInstrumentName("NIFTY50", expiryDate, shortCallStrike, OptionType.CE))
                 .action(Action.SELL)
                 .optionType(OptionType.CE)
-                .strikePrice(shortCallStrike.doubleValue())
+                .strikePrice(shortCallStrike)
                 .expiryDate(expiryDate)
                 .quantity(lots)
-                .limitPrice(shortCallLtp.doubleValue())
+                .limitPrice(shortCallLtp)
                 .legType(LegType.ENTRY)
                 .build());
 
@@ -285,10 +285,10 @@ public class IronCondorStrategy implements TradingStrategy {
                 .instrument(buildInstrumentName("NIFTY50", expiryDate, shortPutStrike, OptionType.PE))
                 .action(Action.SELL)
                 .optionType(OptionType.PE)
-                .strikePrice(shortPutStrike.doubleValue())
+                .strikePrice(shortPutStrike)
                 .expiryDate(expiryDate)
                 .quantity(lots)
-                .limitPrice(shortPutLtp.doubleValue())
+                .limitPrice(shortPutLtp)
                 .legType(LegType.ENTRY)
                 .build());
 
@@ -297,10 +297,10 @@ public class IronCondorStrategy implements TradingStrategy {
                 .instrument(buildInstrumentName("NIFTY50", expiryDate, longCallStrike, OptionType.CE))
                 .action(Action.BUY)
                 .optionType(OptionType.CE)
-                .strikePrice(longCallStrike.doubleValue())
+                .strikePrice(longCallStrike)
                 .expiryDate(expiryDate)
                 .quantity(lots)
-                .limitPrice(longCallLtp.doubleValue())
+                .limitPrice(longCallLtp)
                 .legType(LegType.ENTRY)
                 .build());
 
@@ -309,10 +309,10 @@ public class IronCondorStrategy implements TradingStrategy {
                 .instrument(buildInstrumentName("NIFTY50", expiryDate, longPutStrike, OptionType.PE))
                 .action(Action.BUY)
                 .optionType(OptionType.PE)
-                .strikePrice(longPutStrike.doubleValue())
+                .strikePrice(longPutStrike)
                 .expiryDate(expiryDate)
                 .quantity(lots)
-                .limitPrice(longPutLtp.doubleValue())
+                .limitPrice(longPutLtp)
                 .legType(LegType.ENTRY)
                 .build());
 

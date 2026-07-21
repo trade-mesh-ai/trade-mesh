@@ -114,12 +114,14 @@ public class PaperTradeController {
                     response.put("totalTrades", trades.size());
 
                     long winningTrades = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                             .count();
-                    long losingTrades = trades.size() - winningTrades;
+                    long losingTrades = trades.stream()
+                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
+                            .count();
 
                     double totalPnL = trades.stream()
-                            .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                            .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                             .sum();
 
                     double winRate = trades.isEmpty() ? 0 : (winningTrades * 100.0) / trades.size();
@@ -133,7 +135,7 @@ public class PaperTradeController {
                     Map<LocalDate, Double> dailyPnL = new HashMap<>();
                     for (PaperTrade trade : trades) {
                         dailyPnL.merge(trade.getTradeDate(),
-                                trade.getRealizedPnl() != null ? trade.getRealizedPnl() : 0,
+                                trade.getRealizedPnl() != null ? trade.getRealizedPnl().doubleValue() : 0,
                                 Double::sum);
                     }
 
@@ -286,22 +288,22 @@ public class PaperTradeController {
 
                     long totalTrades = trades.size();
                     long winningTrades = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                             .count();
 
                     double totalPnL = trades.stream()
-                            .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                            .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                             .sum();
 
                     double avgWin = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
-                            .mapToDouble(PaperTrade::getRealizedPnl)
+                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
+                            .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                             .average()
                             .orElse(0);
 
                     double avgLoss = trades.stream()
-                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
-                            .mapToDouble(PaperTrade::getRealizedPnl)
+                            .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
+                            .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                             .average()
                             .orElse(0);
 

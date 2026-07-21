@@ -301,10 +301,10 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), shortPutStrikePrice, OptionType.PE))
                     .action(Action.SELL)
                     .optionType(OptionType.PE)
-                    .strikePrice(shortPutStrikePrice.doubleValue())
+                    .strikePrice(shortPutStrikePrice)
                     .expiryDate(chain.getExpiryDate())
                     .quantity(lots)
-                    .limitPrice(shortPutLtp.doubleValue())
+                    .limitPrice(shortPutLtp)
                     .legType(LegType.ENTRY)
                     .build());
 
@@ -313,10 +313,10 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     .instrument(buildInstrumentName("NIFTY50", chain.getExpiryDate(), longPutStrikePrice, OptionType.PE))
                     .action(Action.BUY)
                     .optionType(OptionType.PE)
-                    .strikePrice(longPutStrikePrice.doubleValue())
+                    .strikePrice(longPutStrikePrice)
                     .expiryDate(chain.getExpiryDate())
                     .quantity(lots)
-                    .limitPrice(longPutLtp.doubleValue())
+                    .limitPrice(longPutLtp)
                     .legType(LegType.ENTRY)
                     .build());
 

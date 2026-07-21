@@ -2,6 +2,8 @@ package com.trademesh.execution;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.trademesh.config.BigDecimalTwoDecimalSerializer;
 import com.trademesh.strategy.TradeLeg;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,6 +15,7 @@ import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -91,14 +94,16 @@ public class PaperTrade implements Persistable<UUID> {
      * Positive value = credit received (income strategy).
      */
     @Column("entry_credit")
-    private Double entryCredit;
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal entryCredit;
 
     /**
      * Current value of the position (in points).
      * Updated via mark-to-market calculations.
      */
     @Column("current_value")
-    private Double currentValue;
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal currentValue;
 
     /**
      * Realized P&L after trade closure (in points).
@@ -106,7 +111,8 @@ public class PaperTrade implements Persistable<UUID> {
      * Only populated when status = CLOSED.
      */
     @Column("realized_pnl")
-    private Double realizedPnl;
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal realizedPnl;
 
     /**
      * Unrealized P&L based on current mark-to-market value (in points).
@@ -114,7 +120,8 @@ public class PaperTrade implements Persistable<UUID> {
      * Updated continuously while trade is OPEN.
      */
     @Column("unrealized_pnl")
-    private Double unrealizedPnl;
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal unrealizedPnl;
 
     /**
      * Timestamp when the trade was entered.
