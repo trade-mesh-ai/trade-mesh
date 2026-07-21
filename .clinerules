@@ -84,6 +84,35 @@ For JSONB columns (e.g. List<TradeLeg> legs):
 - Per-leg P&L calculation = (entryPrice - currentLtp) × quantity
   (quantity = lots, do NOT multiply by lotSize here)
 
+## Field Types — PaperTrade / TradeLeg (updated 2026-07-21, BigDecimal migration Phase 1)
+- PaperTrade.entryCredit, currentValue, realizedPnl, unrealizedPnl are
+  BigDecimal, NOT double/Double. Confirmed and re-confirmed multiple
+  times during the migration after repeated incorrect claims that these
+  "accept double" or are "kept as double" — they do not, they are not.
+  Verify against the actual field declaration in PaperTrade.java before
+  ever stating their type, never from memory or inference.
+- TradeLeg.strikePrice and limitPrice are also BigDecimal, not double.
+- Exit-decision-relevant methods (calculateIronCondorPnl, calculateSpreadPnl,
+  shouldExitIronCondor, shouldExitSpread, both markToMarket() paths,
+  isLegBreach()) must use full BigDecimal arithmetic throughout —
+  .subtract()/.add()/.multiply()/.compareTo(), never round-trip through
+  double mid-calculation (BigDecimal → double → BigDecimal is a real,
+  repeated mistake this project has made — it compiles but silently
+  reintroduces the precision loss the migration exists to prevent).
+- Approved double-boundary exceptions (may convert to double internally,
+  since they are read-only display paths with zero exit-decision
+  consumers): calculateLiveUnrealizedPnl(), calculateIronCondorCurrentValue(),
+  calculateSpreadCurrentValue(), calculateDefaultCurrentValue().
+- JSON API serialization: @JsonFormat(pattern = "0.00") does NOT
+  reliably format BigDecimal — confirmed via live API testing, it still
+  emits raw database column scale (e.g. 21.2000, not 21.20). Use a
+  custom @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+  instead (calls value.setScale(2, RoundingMode.HALF_UP) then
+  gen.writeNumber()). Verify serialization behavior via direct curl
+  against a running instance — Swagger UI's displayed output has been
+  confirmed unreliable for this specific check (shows cached/normalized
+  formatting inconsistent with the raw wire response).
+
 ## Market Intelligence Freshness
 - generateIntelligence(symbol) — uses Redis cache (5 min TTL)
   Use for: read-only endpoints, monitoring, display
@@ -93,34 +122,34 @@ For JSONB columns (e.g. List<TradeLeg> legs):
 - Never use generateIntelligence() in the trade-execution path
 
 ## Strategy Configuration
-All strategies configured in application.yml under 
+All strategies configured in application.yml under
 trading-strategies.items as a list.
-Each strategy has shared fields plus an extra map for 
+Each strategy has shared fields plus an extra map for
 strategy-specific parameters.
-StrategyProperties has getExtraDouble(key, default) and 
+StrategyProperties has getExtraDouble(key, default) and
 getExtraInt(key, default) helper methods.
-Strategy-specific extra params go in the extra map — 
+Strategy-specific extra params go in the extra map —
 never add strategy-specific fields to StrategyProperties directly.
 
 ## Strategy Package Structure
 - com.trademesh.strategy.expiryday — ExpiryDayStrategy
-- com.trademesh.strategy.ironcondor — IronCondorStrategy, 
+- com.trademesh.strategy.ironcondor — IronCondorStrategy,
   IronCondorSignal
-- com.trademesh.strategy.spread — BullPutSpreadStrategy, 
+- com.trademesh.strategy.spread — BullPutSpreadStrategy,
   BearCallSpreadStrategy
 
 ## Strike Rounding
 Always round strikes to valid exchange steps:
 - NIFTY50: step = 50 points
 - NIFTYBANK: step = 100 points
-Use roundUpToStep() / roundDownToStep() helpers 
+Use roundUpToStep() / roundDownToStep() helpers
 (available in ExpiryDayStrategy, reuse don't duplicate)
 
 ## Expiry Date Detection
 findNearestWeeklyExpiry() uses !date.isBefore(LocalDate.now())
 NOT date.isAfter(LocalDate.now())
 This ensures today's expiry is included on expiry day.
-Do not change this back to isAfter() — it was a confirmed 
+Do not change this back to isAfter() — it was a confirmed
 production bug.
 
 ## Logging
@@ -146,7 +175,7 @@ No HTML tags in Javadoc.
 - Generate production-ready code only
 - No placeholder implementations — implement fully or not at all
 - No TODO comments unless explicitly requested
-- All BigDecimal arithmetic uses BigDecimal methods or converts 
+- All BigDecimal arithmetic uses BigDecimal methods or converts
   to double for Math functions then back to BigDecimal
 - Use RoundingMode.HALF_UP for all BigDecimal rounding
 - Use ZoneId.of("Asia/Kolkata") for all IST time operations
@@ -158,6 +187,24 @@ No HTML tags in Javadoc.
 - Run diagnostic/debug commands directly and simply — one focused command per question, not chained multi-stage filter pipelines. If output needs isolating, narrow the test scope (--tests "ClassName.methodName") rather than filtering broad output after the fact.
 - If a command produces an unexpected result (empty output, no match, silent failure), the next action must be diagnosis, not retry: state a specific hypothesis for why the result was unexpected, then check exactly one thing to test that hypothesis. Never run a second variant of the same command hoping different filtering produces a different result. If two consecutive diagnosis attempts don't resolve the confusion, stop and report the unexplained behavior honestly rather than continuing to retry.
 - Never trust a completion report (from Cline or any tool) that a file was edited, created, or deleted without independently re-verifying the actual result — re-read the file, re-run grep, or re-check the filesystem directly. A reported success and an actual success are not the same thing; this has been confirmed to diverge multiple times, including a silently-skipped edit within a larger multi-part task with no error raised.
+- A mixed-type ternary (X != null ? X.getSomeBigDecimalMethod() : 0) with
+  a bare int/double literal on the null branch compiles cleanly but can
+  fail at RUNTIME — Java's ternary type inference silently resolves the
+  mixed-type branches to a boxed numeric type, which then breaks
+  String.format's %.2f/%f specifiers with IllegalFormatConversionException
+  only when the null branch actually fires. This is invisible to
+  compileJava/compileTestJava entirely. When converting any field to
+  BigDecimal, grep specifically for this ternary shape
+  ("!= null ? X.getY() : 0") and fix the fallback to BigDecimal.ZERO
+  (or the correctly-typed equivalent), not just direct setter/comparison
+  call sites.
+- A file-count or error-count grep against gradlew compile output can be
+  silently truncated by the compiler's default error cap (observed:
+  showed "first 100 of 166 total"). Never treat a grep-derived file list
+  as complete without confirming the run wasn't capped — re-run with an
+  explicit uncapped flag or independently verify the count another way
+  (e.g. sort -u | wc -l against a rerun) before treating a file list as
+  final scope for a multi-file fix.
 
 ## What NOT to do (confirmed production bugs — never repeat)
 - Never use @PostLoad in R2DBC entities
@@ -167,11 +214,14 @@ No HTML tags in Javadoc.
 - Never use isAfter(today) for expiry date detection
 - Never use new R2dbcCustomConversions(list) — use .of() factory
 - Never use Mono.defaultIfEmpty(null) — throws NPE in reactor
-- Never add a fixed-offset widening to OI-wall strikes — 
+- Never add a fixed-offset widening to OI-wall strikes —
   use ATR-scaled boundary with principled fallback (Option C)
 - Never cache trade-decision intelligence — use generateFreshIntelligence()
 - Never hand-calculate expected test values without verifying against real computed output first (debug print + isolated run) — repeated arithmetic errors in test fixtures this session cost multiple debugging rounds each time this was skipped.
 - Never assume the current shell context (WSL bash, PowerShell, Git Bash/MINGW64) without confirming it — commands that work in one fail silently or loudly in another (heredocs, `which` vs `Get-Command`, path separators, quoting rules for multi-line strings all differ). Specify which shell a command targets when giving one; when receiving one, confirm which shell is active before running it if unclear.
+- Never claim a PaperTrade or TradeLeg P&L/price field "accepts double" or is "kept as double" — entryCredit, currentValue, realizedPnl, unrealizedPnl, strikePrice, and limitPrice are all BigDecimal as of the 2026-07-21 migration. This exact false claim was made and had to be corrected three separate times on the same file in one session.
+- Never round-trip a BigDecimal through double mid-calculation in exit-decision code (BigDecimal.valueOf(x.doubleValue())) — it compiles and looks like a valid conversion but silently discards the precision the BigDecimal migration exists to preserve. Only convert to double at an approved, explicitly-scoped display-only boundary (see Field Types section above), never inside calculateIronCondorPnl/calculateSpreadPnl/shouldExitIronCondor/shouldExitSpread/markToMarket/isLegBreach.
+- Never rely on @JsonFormat(pattern = "0.00") to format a BigDecimal field for JSON output — it does not reliably apply. Use a custom @JsonSerialize-based serializer instead (see Field Types section above).
 
 ## Important
 These rules represent confirmed production bugs
