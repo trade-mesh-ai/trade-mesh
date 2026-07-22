@@ -54,6 +54,12 @@ public class RiskLimitsConfig {
     private int maxConcurrentOpenPositions = 3;
 
     /**
+     * Maximum aggregate risk as percentage of account capital.
+     * Default: 6.0% (6% of total account capital across all open positions)
+     */
+    private double maxAggregateRiskPercent = 6.0;
+
+    /**
      * Position sizing configuration.
      */
     private PositionSizingConfig positionSizing = new PositionSizingConfig();

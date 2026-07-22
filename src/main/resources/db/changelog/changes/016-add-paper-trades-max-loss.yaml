@@ -1,0 +1,17 @@
+databaseChangeLog:
+
+  # ─── paper_trades: add max_loss column ─────────────────────────────────────
+  - changeSet:
+      id: 016-add-paper-trades-max-loss
+      author: trade-mesh
+      comment: "Add max_loss column to paper_trades for portfolio-level aggregate risk budgeting"
+      changes:
+        - addColumn:
+            schemaName: trade_mesh
+            tableName: paper_trades
+            columns:
+              - column:
+                  name: max_loss
+                  type: NUMERIC(18,4)
+                  constraints:
+                    nullable: true

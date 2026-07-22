@@ -253,6 +253,7 @@ risk:
   max-sector-exposure: 2000000
   min-margin-buffer-percent: 10
   max-concurrent-open-positions: 3
+  max-aggregate-risk-percent: 6.0
   position-sizing:
     risk-percent: 1.0
     max-quantity: 30

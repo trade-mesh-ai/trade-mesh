@@ -99,8 +99,8 @@ public class TradingOrchestrator {
                                 // Step 4: If signal is executable, execute the trade
                                 if (result.getIsExecutable() && result.getSignal() != null) {
                                     return riskManager.isWithinConcurrentPositionLimit()
-                                            .flatMap(withinLimit -> {
-                                                if (!withinLimit) {
+                                            .flatMap(withinPositionLimit -> {
+                                                if (!withinPositionLimit) {
                                                     int maxAllowed = riskManager.getMaxConcurrentOpenPositions();
                                                     log.info("Max concurrent open positions ({}) reached, skipping entry", maxAllowed);
                                                     return Mono.just(StrategyResult.builder()
@@ -109,17 +109,28 @@ public class TradingOrchestrator {
                                                             .build());
                                                 }
 
-                                                TradeSignal signal = result.getSignal();
-                                                return paperTradingEngine.executeTrade(result)
-                                                        .flatMap(trade -> {
-                                                            // Step 5: Log execution
-                                                            return logExecution(symbol, signal, intelligence)
-                                                                    .then(Mono.just(result));
-                                                        })
-                                                        .flatMap(result2 -> {
-                                                            // Step 6: Send summary alert
-                                                            return sendTradingCycleSummary(symbol, result2.getSignal(), intelligence)
-                                                                    .then(Mono.just(result2));
+                                                return riskManager.isWithinAggregateRiskBudget()
+                                                        .flatMap(withinRiskBudget -> {
+                                                            if (!withinRiskBudget) {
+                                                                log.info("Aggregate risk budget exceeded, skipping entry");
+                                                                return Mono.just(StrategyResult.builder()
+                                                                        .isExecutable(false)
+                                                                        .skipReason("Aggregate risk budget exceeded")
+                                                                        .build());
+                                                            }
+
+                                                            TradeSignal signal = result.getSignal();
+                                                            return paperTradingEngine.executeTrade(result)
+                                                                    .flatMap(trade -> {
+                                                                        // Step 5: Log execution
+                                                                        return logExecution(symbol, signal, intelligence)
+                                                                                .then(Mono.just(result));
+                                                                    })
+                                                                    .flatMap(result2 -> {
+                                                                        // Step 6: Send summary alert
+                                                                        return sendTradingCycleSummary(symbol, result2.getSignal(), intelligence)
+                                                                                .then(Mono.just(result2));
+                                                                    });
                                                         });
                                             });
                                 } else {

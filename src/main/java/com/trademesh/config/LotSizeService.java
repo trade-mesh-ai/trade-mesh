@@ -48,6 +48,15 @@ public class LotSizeService {
     }
 
     /**
+     * Gets the total trading account capital.
+     *
+     * @return account capital in rupees
+     */
+    public double getAccountCapital() {
+        return accountCapital;
+    }
+
+    /**
      * Calculates position size (number of lots) based on account capital and risk per trade.
      * <p>
      * Formula:

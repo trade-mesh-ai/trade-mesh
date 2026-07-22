@@ -178,6 +178,10 @@ class TradingOrchestratorConcurrentPositionLimitTest {
         when(riskManager.isWithinConcurrentPositionLimit())
                 .thenReturn(Mono.just(true));
 
+        // Mock RiskManager: aggregate risk budget also passes
+        when(riskManager.isWithinAggregateRiskBudget())
+                .thenReturn(Mono.just(true));
+
         // Mock PaperTradingEngine.executeTrade() to return a successful trade
         PaperTrade executedTrade = createMockTrade("NIFTY50", 1);
         when(paperTradingEngine.executeTrade(strategyResult))
