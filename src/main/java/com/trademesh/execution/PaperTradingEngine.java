@@ -109,6 +109,7 @@ public class PaperTradingEngine {
                     trade.setEntryCredit(BigDecimal.valueOf(signal.getExpectedCredit()));
                     trade.setCurrentValue(BigDecimal.valueOf(signal.getExpectedCredit()));
                     trade.setUnrealizedPnl(BigDecimal.ZERO);
+                    trade.setMaxLoss(signal.getMaxLoss() != null ? BigDecimal.valueOf(signal.getMaxLoss()) : null);
                     trade.setEntryTime(now);
                     trade.setCreatedAt(now);
                     trade.setUpdatedAt(now);

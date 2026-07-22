@@ -124,6 +124,16 @@ public class PaperTrade implements Persistable<UUID> {
     private BigDecimal unrealizedPnl;
 
     /**
+     * Maximum loss for this trade (in rupees).
+     * Set once at trade creation from signal.getMaxLoss(), never updated.
+     * Nullable — existing/historical trades and strategies without defined max loss will have NULL.
+     * Used for portfolio-level aggregate risk budgeting.
+     */
+    @Column("max_loss")
+    @JsonSerialize(using = BigDecimalTwoDecimalSerializer.class)
+    private BigDecimal maxLoss;
+
+    /**
      * Timestamp when the trade was entered.
      */
     @Column("entry_time")
