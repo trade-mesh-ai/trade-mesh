@@ -222,7 +222,13 @@ public class PaperTradingEngine {
                     double currentVix = tuple.getT2();
 
                     trade.setUnrealizedPnl(pnl);
-                    trade.setCurrentValue(trade.getEntryCredit().subtract(pnl));
+                    // Derive lot count from trade legs (all legs share same quantity)
+                    int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                            ? trade.getLegs().get(0).getQuantity()
+                            : 1;
+                    // Scale entryCredit by lot count before subtraction
+                    BigDecimal scaledEntryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
+                    trade.setCurrentValue(scaledEntryCredit.subtract(pnl));
                     trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
                     com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy("IRON_CONDOR");
@@ -844,7 +850,13 @@ public class PaperTradingEngine {
                     double currentVix = tuple.getT2();
 
                     trade.setUnrealizedPnl(pnl);
-                    trade.setCurrentValue(trade.getEntryCredit().subtract(pnl));
+                    // Derive lot count from trade legs (all legs share same quantity)
+                    int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                            ? trade.getLegs().get(0).getQuantity()
+                            : 1;
+                    // Scale entryCredit by lot count before subtraction
+                    BigDecimal scaledEntryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
+                    trade.setCurrentValue(scaledEntryCredit.subtract(pnl));
                     trade.setUpdatedAt(LocalDateTime.now(this.clock));
 
                     String strategyName = trade.getStrategyName();
