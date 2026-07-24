@@ -646,6 +646,11 @@ public class PaperTradingEngine {
                 legs = List.of();
             }
 
+            // Calculate total quantity (lots × lot size)
+            int lotSize = lotSizeService.getLotSize(trade.getSymbol());
+            int lotsPerLeg = legs.isEmpty() ? 0 : legs.get(0).getQuantity();
+            int totalQuantity = lotsPerLeg * lotSize;
+
             StringBuilder sb = new StringBuilder();
             sb.append("📄 <b>Paper Trade ENTERED</b>\n\n");
             sb.append(String.format("Strategy: <b>%s</b>\n", trade.getStrategyName()));
@@ -663,7 +668,9 @@ public class PaperTradingEngine {
             }
 
             sb.append(String.format("\nCredit Collected: <b>%.2f pts</b>\n", trade.getEntryCredit()));
+            sb.append(String.format("Total Quantity: <b>%d</b> (%d lots × %d)\n", totalQuantity, lotsPerLeg, lotSize));
             sb.append(String.format("Max Loss: <b>₹%.2f</b>\n", signal.getMaxLoss()));
+            sb.append(String.format("Max Profit: <b>₹%s</b>\n", signal.getMetadata() != null ? signal.getMetadata().getOrDefault("maxProfit", "N/A") : "N/A"));
             sb.append(String.format("Confidence: <b>%s</b>\n", signal.getConfidence()));
 
             return sb.toString();
