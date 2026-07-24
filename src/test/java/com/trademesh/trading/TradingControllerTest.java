@@ -1,5 +1,6 @@
 package com.trademesh.trading;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.config.TradeMeshTestConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +39,9 @@ class TradingControllerTest {
 
     @MockBean
     private DailyReportService dailyReportService;
+
+    @MockBean
+    private LotSizeService lotSizeService;
 
     /**
      * Test: getTodayReport returns correct JSON shape for empty-day (all three counts zero).

@@ -1,5 +1,6 @@
 package com.trademesh.trading;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
@@ -43,6 +44,7 @@ public class TradingController {
     private final DailyReportService dailyReportService;
     private final PaperTradeRepository paperTradeRepository;
     private final TradingScheduler tradingScheduler;
+    private final LotSizeService lotSizeService;
 
     @Operation(summary = "Manually trigger expiry day entry")
     @PostMapping("/expiry-day/trigger")
@@ -162,6 +164,22 @@ public class TradingController {
                                     tradeInfo.put("isPnlLive", livePnlData.getIsPnlLive());
                                     tradeInfo.put("entryTime", trade.getEntryTime());
                                     tradeInfo.put("status", trade.getStatus());
+
+                                    // Add lot count, aggregate entry credit, and rupee P&L
+                                    int lots = 0;
+                                    if (trade.getLegs() != null && !trade.getLegs().isEmpty()) {
+                                        lots = trade.getLegs().get(0).getQuantity();
+                                    }
+                                    tradeInfo.put("lots", lots);
+
+                                    // totalEntryCredit = entryCredit (per lot) × lots, rounded to 2 decimals
+                                    double totalEntryCredit = trade.getEntryCredit().doubleValue() * lots;
+                                    tradeInfo.put("totalEntryCredit", Math.round(totalEntryCredit * 100.0) / 100.0);
+
+                                    // unrealizedPnlAmount = liveUnrealizedPnl (already aggregate) × lot size
+                                    double unrealizedPnlAmount = livePnlData.getLiveUnrealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
+                                    tradeInfo.put("unrealizedPnlAmount", Math.round(unrealizedPnlAmount * 100.0) / 100.0);
+
                                     return tradeInfo;
                                 }).toList());
 
