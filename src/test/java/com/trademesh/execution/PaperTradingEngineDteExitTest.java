@@ -311,17 +311,16 @@ class PaperTradingEngineDteExitTest {
      * Verifies that when tradingDaysRemaining (2) > threshold (1),
      * shouldExitSpread() returns false and exitReason is not set.
      */
-    @Test
-    @DisplayName("Spread: DTE > threshold → DTE exit does NOT fire")
-    void spread_dteGreaterThanThreshold_noExit() {
-        // Arrange
-        LocalDate expiryDate = LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(4); // 2 trading days away
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        when(marketCalendarService.countTradingDays(any(LocalDate.class), eq(expiryDate))).thenReturn(2);
-        when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0);
-        when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+     @Test
+     @DisplayName("Spread: DTE > threshold → DTE exit does NOT fire")
+     void spread_dteGreaterThanThreshold_noExit() {
+         // Arrange
+         LocalDate expiryDate = LocalDate.now(ZoneId.of("Asia/Kolkata")).plusDays(4); // 2 trading days away
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         when(marketCalendarService.countTradingDays(any(LocalDate.class), eq(expiryDate))).thenReturn(2);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0);
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
         PaperTrade trade = createSpreadTrade(expiryDate);
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0);
@@ -428,14 +427,13 @@ class PaperTradingEngineDteExitTest {
     @Test
     @DisplayName("Spread: Null legs → DTE exit skipped, no exception")
     void spread_nullLegs_noException() {
-        // Arrange
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0);
-        when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         // Arrange
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0);
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createSpreadTrade(null);
-        trade.setLegs(null); // Explicitly set legs to null
+         PaperTrade trade = createSpreadTrade(null);
+         trade.setLegs(null); // Explicitly set legs to null
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0);
         double currentVix = 15.0;
 
@@ -456,14 +454,13 @@ class PaperTradingEngineDteExitTest {
     @Test
     @DisplayName("Spread: Empty legs → DTE exit skipped, no exception")
     void spread_emptyLegs_noException() {
-        // Arrange
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0);
-        when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         // Arrange
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0);
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createSpreadTrade(null);
-        trade.setLegs(List.of()); // Explicitly set legs to empty list
+         PaperTrade trade = createSpreadTrade(null);
+         trade.setLegs(List.of()); // Explicitly set legs to empty list
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0);
         double currentVix = 15.0;
 

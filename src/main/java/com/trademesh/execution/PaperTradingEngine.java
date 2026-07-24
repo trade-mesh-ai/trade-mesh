@@ -1056,13 +1056,11 @@ public class PaperTradingEngine {
                             ? trade.getLegs().get(0).getQuantity()
                             : 1;
 
-                    // Check 3: Stop loss (based on wing width and max loss)
-                    int wingWidth = cfg.getExtraInt("wing-width", 100);
-                    Integer lotSize = LOT_SIZES.getOrDefault(trade.getSymbol(), 75);
-                    BigDecimal maxLoss = BigDecimal.valueOf((long) wingWidth * lotSize)
+                    // Check 3: Stop loss (based on entry credit, matching shouldExitIronCondor pattern)
+                    BigDecimal entryCredit = trade.getEntryCredit()
                             .multiply(BigDecimal.valueOf(lots));
                     double slPct = cfg.getStopLossPercent() / 100.0;
-                    BigDecimal stopLossThreshold = maxLoss.multiply(BigDecimal.valueOf(slPct)).negate();
+                    BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
 
                     if (unrealizedPnl.compareTo(stopLossThreshold) <= 0) {
                         log.warn("Stop loss triggered for spread trade {}: pnl={}, threshold={}",
@@ -1072,8 +1070,6 @@ public class PaperTradingEngine {
                     }
 
                     // Check 4: Profit target
-                    BigDecimal entryCredit = trade.getEntryCredit()
-                            .multiply(BigDecimal.valueOf(lots));
                     double targetPct = cfg.getTargetProfitPercent() / 100.0;
                     BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
 
