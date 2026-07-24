@@ -266,7 +266,6 @@ class PaperTradingEngineVixPanicTest {
         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
         when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0); // Target = 100 * 2.0 = 200.0
         when(spreadConfig.getStopLossPercent()).thenReturn(100.0); // Stop loss = -100.0
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
 
         PaperTrade trade = createSpreadTrade();
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Below profit target (200.0), above stop loss (-100.0)
@@ -290,13 +289,12 @@ class PaperTradingEngineVixPanicTest {
     @Test
     @DisplayName("Spread: Sentinel value (-1.0) handled safely")
     void spread_sentinelValue_handledSafely() {
-        // Arrange
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0); // Target = 100 * 2.0 = 200.0
-        when(spreadConfig.getStopLossPercent()).thenReturn(100.0); // Stop loss = -100.0
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         // Arrange
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(200.0); // Target = 100 * 2.0 = 200.0
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0); // Stop loss = -100.0
 
-        PaperTrade trade = createSpreadTrade();
+         PaperTrade trade = createSpreadTrade();
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Below profit target (200.0), above stop loss (-100.0)
         double currentVix = -1.0; // Sentinel value for unavailable VIX
 

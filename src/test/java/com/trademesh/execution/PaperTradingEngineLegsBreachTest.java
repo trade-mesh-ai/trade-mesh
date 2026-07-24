@@ -178,15 +178,14 @@ class PaperTradingEngineLegsBreachTest {
      * Verifies that when spot price drops below the short put strike,
      * shouldExitSpread() returns true with exitReason "LEG_BREACH".
      */
-    @Test
-    @DisplayName("Bull Put Spread: Spot < short put strike triggers LEG_BREACH")
-    void bullPutSpread_spotBelowShortPut_triggersLegBreach() {
-        // Arrange
-        lenient().when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        lenient().when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
-        lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        lenient().when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+     @Test
+     @DisplayName("Bull Put Spread: Spot < short put strike triggers LEG_BREACH")
+     void bullPutSpread_spotBelowShortPut_triggersLegBreach() {
+         // Arrange
+         lenient().when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         lenient().when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
         PaperTrade trade = createBullPutSpreadTrade();
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Not at stop loss or target
@@ -216,13 +215,12 @@ class PaperTradingEngineLegsBreachTest {
     @DisplayName("Bull Put Spread: Spot >= short put strike does NOT trigger LEG_BREACH")
     void bullPutSpread_spotAboveShortPut_noLegBreach() {
         // Arrange
-        lenient().when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
-        lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         lenient().when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createBullPutSpreadTrade();
+         PaperTrade trade = createBullPutSpreadTrade();
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Not at stop loss or target
         double currentVix = 15.0; // Below panic threshold
         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
@@ -254,12 +252,11 @@ class PaperTradingEngineLegsBreachTest {
     void bearCallSpread_spotAboveShortCall_triggersLegBreach() {
         // Arrange
         lenient().when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        lenient().when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
-        lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        lenient().when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         lenient().when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createBearCallSpreadTrade();
+         PaperTrade trade = createBearCallSpreadTrade();
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Not at stop loss or target
         double currentVix = 15.0; // Below panic threshold
         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
@@ -289,11 +286,10 @@ class PaperTradingEngineLegsBreachTest {
         // Arrange
         lenient().when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
         when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
-        lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         lenient().when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         lenient().when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createBearCallSpreadTrade();
+         PaperTrade trade = createBearCallSpreadTrade();
         BigDecimal unrealizedPnl = BigDecimal.valueOf(10.0); // Not at stop loss or target
         double currentVix = 15.0; // Below panic threshold
         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);

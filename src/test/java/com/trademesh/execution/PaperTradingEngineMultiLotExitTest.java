@@ -171,13 +171,12 @@ class PaperTradingEngineMultiLotExitTest {
     @DisplayName("Spread 7 lots: TARGET_HIT at scaled threshold (35.0)")
     void spread_7lots_targetHit_atScaledThreshold() {
         // Arrange
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
-        when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createBullPutSpreadTrade7Lots();
+         PaperTrade trade = createBullPutSpreadTrade7Lots();
         double currentVix = 15.0; // Below panic threshold
         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
 
@@ -195,43 +194,110 @@ class PaperTradingEngineMultiLotExitTest {
         assertNull(trade.getExitReason(), "Should not exit when below scaled threshold");
     }
 
-    /**
-     * Test 4: Spread (Bull Put/Bear Call) at 7 lots - Stop loss hit at scaled threshold.
-     * <p>
-     * Setup: wingWidth=100, lotSize=65 (NIFTY50), stopLossPercent=100, 7 lots
-     * Expected maxLoss: 100 × 65 × 7 = 45500
-     * Expected threshold: -(45500 × 1.0) = -45500
-     * <p>
-     * Verifies that shouldExitSpread() returns true when unrealizedPnl <= -45500
-     * (the correctly scaled stop loss), and false when unrealizedPnl > -45500.
-     */
-    @Test
-    @DisplayName("Spread 7 lots: STOP_LOSS at scaled threshold (-45500)")
-    void spread_7lots_stopLoss_atScaledThreshold() {
-        // Arrange
-        when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
-        when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
-        when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
-        when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
-        when(spreadConfig.getExtraInt("wing-width", 100)).thenReturn(100);
+     /**
+      * Test 4: Spread (Bull Put/Bear Call) at 7 lots - Stop loss hit at scaled threshold.
+      * <p>
+      * Setup: entryCredit=10.0, stopLossPercent=100, 7 lots
+      * Expected threshold: -(10.0 × 7 × 1.0) = -70.0
+      * <p>
+      * Verifies that shouldExitSpread() returns true when unrealizedPnl <= -70.0
+      * (the correctly scaled stop loss), and false when unrealizedPnl > -70.0.
+      * This now matches the Iron Condor stop-loss formula (entryCredit-based, not wing-width-based).
+      */
+     @Test
+     @DisplayName("Spread 7 lots: STOP_LOSS at scaled threshold (-70.0)")
+     void spread_7lots_stopLoss_atScaledThreshold() {
+         // Arrange
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
 
-        PaperTrade trade = createBullPutSpreadTrade7Lots();
-        double currentVix = 15.0; // Below panic threshold
-        java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
+         PaperTrade trade = createBullPutSpreadTrade7Lots();
+         double currentVix = 15.0; // Below panic threshold
+         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
 
-        // Act & Assert: At exactly -45500, should exit with STOPLOSS_HIT
-        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, BigDecimal.valueOf(-45500.0), spreadConfig, currentVix, currentTime))
-                .expectNext(true)
-                .verifyComplete();
-        assertEquals("STOPLOSS_HIT", trade.getExitReason(), "Should exit with STOPLOSS_HIT at scaled threshold");
+         // Act & Assert: At exactly -70.0, should exit with STOPLOSS_HIT
+         reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, BigDecimal.valueOf(-70.0), spreadConfig, currentVix, currentTime))
+                 .expectNext(true)
+                 .verifyComplete();
+         assertEquals("STOPLOSS_HIT", trade.getExitReason(), "Should exit with STOPLOSS_HIT at scaled threshold");
 
-        // Act & Assert: Just above -45500 (-45499), should NOT exit
-        trade = createBullPutSpreadTrade7Lots();
-        reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, BigDecimal.valueOf(-45499.0), spreadConfig, currentVix, currentTime))
-                .expectNext(false)
-                .verifyComplete();
-        assertNull(trade.getExitReason(), "Should not exit when above scaled threshold");
-    }
+         // Act & Assert: Just above -70.0 (-69.99), should NOT exit
+         trade = createBullPutSpreadTrade7Lots();
+         reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, BigDecimal.valueOf(-69.99), spreadConfig, currentVix, currentTime))
+                 .expectNext(false)
+                 .verifyComplete();
+         assertNull(trade.getExitReason(), "Should not exit when above scaled threshold");
+     }
+
+     /**
+      * Test 5: Spread (Bull Put/Bear Call) at 7 lots - Realistic P&L that triggers new correct threshold.
+      * <p>
+      * Setup: entryCredit=10.0, stopLossPercent=100, 7 lots
+      * Expected threshold: -(10.0 × 7 × 1.0) = -70.0
+      * <p>
+      * This test uses a realistic points-based P&L value (-75.0) that:
+      * 1. Would NOT have triggered the OLD buggy threshold (-45500 rupees) — trivially true for any realistic points value
+      * 2. DOES trigger the NEW correct threshold (-70.0 points) — proving the fix changes real-world behavior
+      * <p>
+      * Verifies that shouldExitSpread() returns true when unrealizedPnl <= -75.0
+      * (a realistic loss that exceeds the -70.0 threshold).
+      */
+      @Test
+      @DisplayName("Spread 7 lots: STOP_LOSS triggered by realistic P&L (-75.0 points)")
+      void spread_7lots_stopLoss_triggeredByRealisticPnl() {
+          // Arrange
+          when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+          when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+          when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
+
+         PaperTrade trade = createBullPutSpreadTrade7Lots();
+         double currentVix = 15.0; // Below panic threshold
+         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
+
+         // Act & Assert: At -75.0 (realistic loss beyond threshold), should exit with STOPLOSS_HIT
+         // This value would NOT have triggered the old buggy threshold (-45500 rupees)
+         // but DOES trigger the new correct threshold (-70.0 points)
+         reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, BigDecimal.valueOf(-75.0), spreadConfig, currentVix, currentTime))
+                 .expectNext(true)
+                 .verifyComplete();
+         assertEquals("STOPLOSS_HIT", trade.getExitReason(), "Should exit with STOPLOSS_HIT at realistic P&L beyond threshold");
+     }
+
+     /**
+      * Test 6: Spread (Bull Put/Bear Call) at 7 lots - Realistic P&L just above threshold (position stays open).
+      * <p>
+      * Setup: entryCredit=10.0, stopLossPercent=100, 7 lots
+      * Expected threshold: -(10.0 × 7 × 1.0) = -70.0
+      * <p>
+      * This test uses a realistic points-based P&L value (-65.0) that:
+      * 1. Is just above the -70.0 threshold
+      * 2. Should NOT trigger exit, keeping the position open
+      * <p>
+      * Verifies that shouldExitSpread() returns false when unrealizedPnl > -70.0,
+      * demonstrating a meaningful window where the position survives realistic P&L movement.
+      */
+     @Test
+     @DisplayName("Spread 7 lots: Position stays OPEN with realistic P&L just above threshold (-65.0 points)")
+     void spread_7lots_positionStaysOpen_aboveThreshold() {
+         // Arrange
+         when(spreadConfig.getExtraDouble("vix-panic-threshold", 25.0)).thenReturn(25.0);
+         when(spreadConfig.getExtraInt("dte-exit-threshold", 1)).thenReturn(1);
+         when(spreadConfig.getTargetProfitPercent()).thenReturn(50.0);
+         when(spreadConfig.getStopLossPercent()).thenReturn(100.0);
+
+         PaperTrade trade = createBullPutSpreadTrade7Lots();
+         double currentVix = 15.0; // Below panic threshold
+         java.time.LocalTime currentTime = java.time.LocalTime.of(10, 0);
+
+         // Act & Assert: At -65.0 (realistic loss but above threshold), should NOT exit
+         // This demonstrates the fix creates a meaningful window where positions survive realistic P&L movement
+         reactor.test.StepVerifier.create(engine.shouldExitSpread(trade, BigDecimal.valueOf(-65.0), spreadConfig, currentVix, currentTime))
+                 .expectNext(false)
+                 .verifyComplete();
+         assertNull(trade.getExitReason(), "Should not exit when P&L is above threshold, position stays open");
+     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
     // HELPER METHODS
