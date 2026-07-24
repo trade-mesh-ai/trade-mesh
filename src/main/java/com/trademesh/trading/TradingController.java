@@ -288,6 +288,8 @@ public class TradingController {
                                 bestInfo.put("strategy", metrics.bestTrade.getStrategyName());
                                 bestInfo.put("pnl", String.format("%.2f pts", metrics.bestTrade.getRealizedPnl()));
                                 bestInfo.put("pnlAmount", String.format("₹ %.2f", metrics.bestPnlAmount));
+                                bestInfo.put("lots", metrics.bestTrade.getLegs() != null && !metrics.bestTrade.getLegs().isEmpty() 
+                                    ? metrics.bestTrade.getLegs().get(0).getQuantity() : 0);
                                 put("bestTrade", bestInfo);
                             }
 
@@ -296,6 +298,8 @@ public class TradingController {
                                 worstInfo.put("strategy", metrics.worstTrade.getStrategyName());
                                 worstInfo.put("pnl", String.format("%.2f pts", metrics.worstTrade.getRealizedPnl()));
                                 worstInfo.put("pnlAmount", String.format("₹ %.2f", metrics.worstPnlAmount));
+                                worstInfo.put("lots", metrics.worstTrade.getLegs() != null && !metrics.worstTrade.getLegs().isEmpty() 
+                                    ? metrics.worstTrade.getLegs().get(0).getQuantity() : 0);
                                 put("worstTrade", worstInfo);
                             }
                         }});
