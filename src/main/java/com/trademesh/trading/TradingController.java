@@ -5,6 +5,7 @@ import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
 import com.trademesh.strategy.StrategyResult;
+import com.trademesh.strategy.config.StrategiesConfig;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,6 +46,7 @@ public class TradingController {
     private final PaperTradeRepository paperTradeRepository;
     private final TradingScheduler tradingScheduler;
     private final LotSizeService lotSizeService;
+    private final StrategiesConfig strategiesConfig;
 
     @Operation(summary = "Manually trigger expiry day entry")
     @PostMapping("/expiry-day/trigger")
@@ -179,6 +181,40 @@ public class TradingController {
                                     // unrealizedPnlAmount = liveUnrealizedPnl (already aggregate) × lot size
                                     double unrealizedPnlAmount = livePnlData.getLiveUnrealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
                                     tradeInfo.put("unrealizedPnlAmount", Math.round(unrealizedPnlAmount * 100.0) / 100.0);
+
+                                    // Add stop-loss and target thresholds based on strategy
+                                    String strategyName = trade.getStrategyName();
+                                    int lotSize = lotSizeService.getLotSize(trade.getSymbol());
+
+                                    if ("IRON_CONDOR".equals(strategyName) || "BULL_PUT_SPREAD".equals(strategyName) || "BEAR_CALL_SPREAD".equals(strategyName)) {
+                                        // IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD all use entryCredit-based formula
+                                        // (matching the fixed shouldExitSpread() logic in PaperTradingEngine)
+                                        com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
+                                        double scaledEntryCredit = trade.getEntryCredit().doubleValue() * lots;
+                                        double stopLossThreshold = -(scaledEntryCredit * cfg.getStopLossPercent() / 100.0);
+                                        double targetThreshold = scaledEntryCredit * cfg.getTargetProfitPercent() / 100.0;
+
+                                        tradeInfo.put("stopLossThreshold", Math.round(stopLossThreshold * 100.0) / 100.0);
+                                        tradeInfo.put("stopLossThresholdAmount", Math.round(stopLossThreshold * lotSize * 100.0) / 100.0);
+                                        tradeInfo.put("targetThreshold", Math.round(targetThreshold * 100.0) / 100.0);
+                                        tradeInfo.put("targetThresholdAmount", Math.round(targetThreshold * lotSize * 100.0) / 100.0);
+                                    } else if ("EXPIRY_DAY_STRANGLE".equals(strategyName)) {
+                                        // Expiry Day Strangle: hardcoded rule (per-lot thresholds, must scale by lots for rupee amount)
+                                        double entryCredit = trade.getEntryCredit().doubleValue();
+                                        double stopLossThreshold = entryCredit * 2.0;
+                                        double targetThreshold = entryCredit * 0.5;
+
+                                        tradeInfo.put("stopLossThreshold", Math.round(stopLossThreshold * 100.0) / 100.0);
+                                        tradeInfo.put("stopLossThresholdAmount", Math.round(stopLossThreshold * lotSize * lots * 100.0) / 100.0);
+                                        tradeInfo.put("targetThreshold", Math.round(targetThreshold * 100.0) / 100.0);
+                                        tradeInfo.put("targetThresholdAmount", Math.round(targetThreshold * lotSize * lots * 100.0) / 100.0);
+                                    } else {
+                                        // Unknown strategy — omit thresholds
+                                        tradeInfo.put("stopLossThreshold", null);
+                                        tradeInfo.put("stopLossThresholdAmount", null);
+                                        tradeInfo.put("targetThreshold", null);
+                                        tradeInfo.put("targetThresholdAmount", null);
+                                    }
 
                                     return tradeInfo;
                                 }).toList());
