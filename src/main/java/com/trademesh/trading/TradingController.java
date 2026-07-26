@@ -4,8 +4,8 @@ import com.trademesh.config.LotSizeService;
 import com.trademesh.execution.PaperTrade;
 import com.trademesh.execution.PaperTradeRepository;
 import com.trademesh.execution.TradeStatus;
+import com.trademesh.execution.TradeThresholdService;
 import com.trademesh.strategy.StrategyResult;
-import com.trademesh.strategy.config.StrategiesConfig;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +20,7 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,7 +47,7 @@ public class TradingController {
     private final PaperTradeRepository paperTradeRepository;
     private final TradingScheduler tradingScheduler;
     private final LotSizeService lotSizeService;
-    private final StrategiesConfig strategiesConfig;
+    private final TradeThresholdService tradeThresholdService;
 
     @Operation(summary = "Manually trigger expiry day entry")
     @PostMapping("/expiry-day/trigger")
@@ -130,7 +131,7 @@ public class TradingController {
                 .collectList()
                 .flatMap(positions -> {
                     if (positions.isEmpty()) {
-                        Map<String, Object> response = new HashMap<>();
+                        Map<String, Object> response = new LinkedHashMap<>();
                         response.put("count", 0);
                         response.put("positions", List.of());
                         log.info("No open positions found");
@@ -147,74 +148,38 @@ public class TradingController {
                             })
                             .collectList()
                             .map(positionPnlPairs -> {
-                                Map<String, Object> response = new HashMap<>();
+                                Map<String, Object> response = new LinkedHashMap<>();
                                 response.put("count", positionPnlPairs.size());
                                 response.put("positions", positionPnlPairs.stream().map(pair -> {
                                     PaperTrade trade = (PaperTrade) pair[0];
                                     com.trademesh.execution.LivePnlData livePnlData =
                                             (com.trademesh.execution.LivePnlData) pair[1];
 
-                                    Map<String, Object> tradeInfo = new HashMap<>();
+                                    // Calculate thresholds using the shared service
+                                    TradeThresholdService.TradeThresholds thresholds = tradeThresholdService.calculateThresholds(trade);
+
+                                    // unrealizedPnlAmount = liveUnrealizedPnl (already aggregate) × lot size
+                                    double unrealizedPnlAmount = livePnlData.getLiveUnrealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
+
+                                    Map<String, Object> tradeInfo = new LinkedHashMap<>();
                                     tradeInfo.put("id", trade.getId());
                                     tradeInfo.put("symbol", trade.getSymbol());
                                     tradeInfo.put("strategyName", trade.getStrategyName());
+                                    tradeInfo.put("status", trade.getStatus());
+                                    tradeInfo.put("entryTime", trade.getEntryTime());
                                     tradeInfo.put("entryCredit", trade.getEntryCredit());
+                                    tradeInfo.put("totalEntryCredit", thresholds.totalEntryCredit());
                                     tradeInfo.put("currentValue", trade.getCurrentValue());
                                     tradeInfo.put("unrealizedPnl", Math.round(trade.getUnrealizedPnl().doubleValue() * 100.0) / 100.0d);
                                     tradeInfo.put("liveUnrealizedPnl",
                                             Math.round(livePnlData.getLiveUnrealizedPnl() * 100.0) / 100.0);
                                     tradeInfo.put("isPnlLive", livePnlData.getIsPnlLive());
-                                    tradeInfo.put("entryTime", trade.getEntryTime());
-                                    tradeInfo.put("status", trade.getStatus());
-
-                                    // Add lot count, aggregate entry credit, and rupee P&L
-                                    int lots = 0;
-                                    if (trade.getLegs() != null && !trade.getLegs().isEmpty()) {
-                                        lots = trade.getLegs().get(0).getQuantity();
-                                    }
-                                    tradeInfo.put("lots", lots);
-
-                                    // totalEntryCredit = entryCredit (per lot) × lots, rounded to 2 decimals
-                                    double totalEntryCredit = trade.getEntryCredit().doubleValue() * lots;
-                                    tradeInfo.put("totalEntryCredit", Math.round(totalEntryCredit * 100.0) / 100.0);
-
-                                    // unrealizedPnlAmount = liveUnrealizedPnl (already aggregate) × lot size
-                                    double unrealizedPnlAmount = livePnlData.getLiveUnrealizedPnl() * lotSizeService.getLotSize(trade.getSymbol());
+                                    tradeInfo.put("stopLossThreshold", thresholds.stopLossThreshold());
+                                    tradeInfo.put("stopLossThresholdAmount", thresholds.stopLossThresholdAmount());
+                                    tradeInfo.put("targetThreshold", thresholds.targetThreshold());
+                                    tradeInfo.put("targetThresholdAmount", thresholds.targetThresholdAmount());
                                     tradeInfo.put("unrealizedPnlAmount", Math.round(unrealizedPnlAmount * 100.0) / 100.0);
-
-                                    // Add stop-loss and target thresholds based on strategy
-                                    String strategyName = trade.getStrategyName();
-                                    int lotSize = lotSizeService.getLotSize(trade.getSymbol());
-
-                                    if ("IRON_CONDOR".equals(strategyName) || "BULL_PUT_SPREAD".equals(strategyName) || "BEAR_CALL_SPREAD".equals(strategyName)) {
-                                        // IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD all use entryCredit-based formula
-                                        // (matching the fixed shouldExitSpread() logic in PaperTradingEngine)
-                                        com.trademesh.strategy.config.StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
-                                        double scaledEntryCredit = trade.getEntryCredit().doubleValue() * lots;
-                                        double stopLossThreshold = -(scaledEntryCredit * cfg.getStopLossPercent() / 100.0);
-                                        double targetThreshold = scaledEntryCredit * cfg.getTargetProfitPercent() / 100.0;
-
-                                        tradeInfo.put("stopLossThreshold", Math.round(stopLossThreshold * 100.0) / 100.0);
-                                        tradeInfo.put("stopLossThresholdAmount", Math.round(stopLossThreshold * lotSize * 100.0) / 100.0);
-                                        tradeInfo.put("targetThreshold", Math.round(targetThreshold * 100.0) / 100.0);
-                                        tradeInfo.put("targetThresholdAmount", Math.round(targetThreshold * lotSize * 100.0) / 100.0);
-                                    } else if ("EXPIRY_DAY_STRANGLE".equals(strategyName)) {
-                                        // Expiry Day Strangle: hardcoded rule (per-lot thresholds, must scale by lots for rupee amount)
-                                        double entryCredit = trade.getEntryCredit().doubleValue();
-                                        double stopLossThreshold = entryCredit * 2.0;
-                                        double targetThreshold = entryCredit * 0.5;
-
-                                        tradeInfo.put("stopLossThreshold", Math.round(stopLossThreshold * 100.0) / 100.0);
-                                        tradeInfo.put("stopLossThresholdAmount", Math.round(stopLossThreshold * lotSize * lots * 100.0) / 100.0);
-                                        tradeInfo.put("targetThreshold", Math.round(targetThreshold * 100.0) / 100.0);
-                                        tradeInfo.put("targetThresholdAmount", Math.round(targetThreshold * lotSize * lots * 100.0) / 100.0);
-                                    } else {
-                                        // Unknown strategy — omit thresholds
-                                        tradeInfo.put("stopLossThreshold", null);
-                                        tradeInfo.put("stopLossThresholdAmount", null);
-                                        tradeInfo.put("targetThreshold", null);
-                                        tradeInfo.put("targetThresholdAmount", null);
-                                    }
+                                    tradeInfo.put("lots", thresholds.lots());
 
                                     return tradeInfo;
                                 }).toList());
@@ -289,7 +254,7 @@ public class TradingController {
 
         return dailyReportService.getTodayStatusSummary(today)
                 .map(summary -> {
-                    Map<String, Object> response = new HashMap<>();
+                    Map<String, Object> response = new LinkedHashMap<>();
                     response.put("date", today);
 
                     // If all three counts are zero, show the simple "no trades" message
@@ -311,7 +276,7 @@ public class TradingController {
 
                     // Include closed-trade metrics only if there are closed trades
                     if (metrics.totalTrades > 0) {
-                        response.put("closedTradesSummary", new HashMap<String, Object>() {{
+                        response.put("closedTradesSummary", new LinkedHashMap<String, Object>() {{
                             put("totalTrades", metrics.totalTrades);
                             put("winningTrades", metrics.winningTrades);
                             put("losingTrades", metrics.losingTrades);
@@ -320,7 +285,7 @@ public class TradingController {
                             put("totalPnlAmount", String.format("₹ %.2f", metrics.totalPnlAmount));
 
                             if (metrics.bestTrade != null) {
-                                Map<String, Object> bestInfo = new HashMap<>();
+                                Map<String, Object> bestInfo = new LinkedHashMap<>();
                                 bestInfo.put("strategy", metrics.bestTrade.getStrategyName());
                                 bestInfo.put("pnl", String.format("%.2f pts", metrics.bestTrade.getRealizedPnl()));
                                 bestInfo.put("pnlAmount", String.format("₹ %.2f", metrics.bestPnlAmount));
@@ -330,7 +295,7 @@ public class TradingController {
                             }
 
                             if (metrics.worstTrade != null) {
-                                Map<String, Object> worstInfo = new HashMap<>();
+                                Map<String, Object> worstInfo = new LinkedHashMap<>();
                                 worstInfo.put("strategy", metrics.worstTrade.getStrategyName());
                                 worstInfo.put("pnl", String.format("%.2f pts", metrics.worstTrade.getRealizedPnl()));
                                 worstInfo.put("pnlAmount", String.format("₹ %.2f", metrics.worstPnlAmount));
