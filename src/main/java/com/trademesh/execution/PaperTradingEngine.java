@@ -114,6 +114,17 @@ public class PaperTradingEngine {
                     trade.setCreatedAt(now);
                     trade.setUpdatedAt(now);
 
+                    // Phase 1: Copy risk snapshot fields from signal to trade
+                    trade.setStopDistancePoints(signal.getStopDistancePoints());
+                    trade.setTargetThreshold(signal.getTargetThreshold());
+                    trade.setPlannedRiskPerLot(signal.getPlannedRiskPerLot());
+                    trade.setAtrPercentile(signal.getAtrPercentile());
+                    trade.setConfidenceScore(signal.getConfidenceScore());
+
+                    // Build risk snapshot JSON
+                    String riskSnapshot = buildRiskSnapshot(signal, now);
+                    trade.setRiskSnapshot(riskSnapshot);
+
                     // Save to PostgreSQL
                     return paperTradeRepository.save(trade)
                             .flatMap(savedTrade -> {
@@ -164,7 +175,7 @@ public class PaperTradingEngine {
 
     public Mono<PaperTrade> markToMarket(PaperTrade trade) {
         if (trade.getStatus() != TradeStatus.OPEN) {
-            log.debug("Trade {} is not open, skipping mark-to-market", trade.getId());
+            log.debug("Trade {} is not OPEN (status: {}), skipping mark-to-market", trade.getId(), trade.getStatus());
             return Mono.just(trade);
         }
 
@@ -399,8 +410,7 @@ public class PaperTradingEngine {
                 .flatMap(freshTrade -> {
                     // Guard: check if trade is still OPEN
                     if (freshTrade.getStatus() != TradeStatus.OPEN) {
-                        log.warn("closeIronCondorTrade() called on trade {} with status {} "
-                                        + "(expected OPEN) — skipping duplicate close attempt",
+                        log.warn("closeIronCondorTrade() called on trade {} with status {} (expected OPEN) — skipping duplicate close attempt",
                                 freshTrade.getId(), freshTrade.getStatus());
                         return Mono.just(freshTrade);
                     }
@@ -491,8 +501,7 @@ public class PaperTradingEngine {
                 .flatMap(freshTrade -> {
                     // Guard: check if trade is still OPEN
                     if (freshTrade.getStatus() != TradeStatus.OPEN) {
-                        log.warn("closeTrade() called on trade {} with status {} "
-                                        + "(expected OPEN) — skipping duplicate close attempt",
+                        log.warn("closeTrade() called on trade {} with status {} (expected OPEN) — skipping duplicate close attempt",
                                 freshTrade.getId(), freshTrade.getStatus());
                         return Mono.just(freshTrade);
                     }
@@ -1112,8 +1121,7 @@ public class PaperTradingEngine {
                 .flatMap(freshTrade -> {
                     // Guard: check if trade is still OPEN
                     if (freshTrade.getStatus() != TradeStatus.OPEN) {
-                        log.warn("closeSpreadTrade() called on trade {} with status {} "
-                                        + "(expected OPEN) — skipping duplicate close attempt",
+                        log.warn("closeSpreadTrade() called on trade {} with status {} (expected OPEN) — skipping duplicate close attempt",
                                 freshTrade.getId(), freshTrade.getStatus());
                         return Mono.just(freshTrade);
                     }
@@ -1174,7 +1182,7 @@ public class PaperTradingEngine {
      */
     public Mono<LivePnlData> calculateLiveUnrealizedPnl(PaperTrade trade) {
         if (trade.getStatus() != TradeStatus.OPEN) {
-            log.debug("Trade {} is not open, returning stored P&L", trade.getId());
+            log.debug("Trade {} is not OPEN (status: {}), returning stored P&L", trade.getId(), trade.getStatus());
             return Mono.just(LivePnlData.builder()
                     .liveUnrealizedPnl(trade.getUnrealizedPnl().doubleValue())
                     .isPnlLive(false)
@@ -1452,6 +1460,40 @@ public class PaperTradingEngine {
                     log.warn("Spot price not available in Redis key {}, skipping leg breach check", spotPriceKey);
                     return Mono.just(false);
                 }));
+    }
+
+    /**
+     * Builds a JSON risk snapshot string capturing entry-time risk metrics.
+     * <p>
+     * Serializes key fields from the signal at entry time for audit and analysis:
+     * - ATR percentile, strategy name, entry credit
+     * - Stop distance, target threshold, planned risk per lot
+     * - Confidence score and timestamp
+     * <p>
+     * Non-blocking: on JSON serialization failure, logs a warning and returns null
+     * rather than throwing, since a failed snapshot must not block trade entry.
+     *
+     * @param signal    the trade signal containing risk metrics
+     * @param timestamp the entry timestamp
+     * @return JSON string representation of risk snapshot, or null if serialization fails
+     */
+    private String buildRiskSnapshot(TradeSignal signal, LocalDateTime timestamp) {
+        try {
+            Map<String, Object> snapshot = new java.util.HashMap<>();
+            snapshot.put("atrPercentile", signal.getAtrPercentile());
+            snapshot.put("strategyName", signal.getStrategyName());
+            snapshot.put("entryCredit", signal.getExpectedCredit());
+            snapshot.put("stopDistancePoints", signal.getStopDistancePoints());
+            snapshot.put("targetThreshold", signal.getTargetThreshold());
+            snapshot.put("plannedRiskPerLot", signal.getPlannedRiskPerLot());
+            snapshot.put("confidenceScore", signal.getConfidenceScore());
+            snapshot.put("timestamp", timestamp);
+
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            log.warn("Failed to serialize risk snapshot for signal {}: {}", signal.getSignalId(), e.getMessage());
+            return null;
+        }
     }
 
     /**

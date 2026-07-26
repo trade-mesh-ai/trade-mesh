@@ -31,3 +31,5 @@ databaseChangeLog:
       file: db/changelog/changes/015-add-paper-trades-indexes.yaml
   - include:
       file: db/changelog/changes/016-add-paper-trades-max-loss.yaml
+  - include:
+      file: db/changelog/changes/017-trade-risk-snapshot.yaml

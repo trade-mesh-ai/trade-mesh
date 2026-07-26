@@ -258,14 +258,14 @@ public class IronCondorStrategy implements TradingStrategy {
         BigDecimal riskRewardRatio = maxLoss.signum() > 0 ?
                 maxProfit.divide(maxLoss, 4, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
-        // Adjusted exit levels
-        double atrPct = metrics.getAtrPct() != null ?
-                metrics.getAtrPct().doubleValue() : 0.8;
-        double[] exitLevels = calculateAdjustedExitLevels(atrPct, cfg);
-        BigDecimal adjustedProfitTarget = netCredit.multiply(BigDecimal.valueOf(exitLevels[0]));
-        BigDecimal adjustedStopLoss = netCredit.multiply(BigDecimal.valueOf(exitLevels[1]));
+         // Adjusted exit levels
+         double atrPct = metrics.getAtrPct() != null ?
+                 metrics.getAtrPct().doubleValue() : 0.8;
+         double[] exitLevels = calculateAdjustedExitLevels(atrPct, cfg);
+         BigDecimal adjustedProfitTarget = netCredit.multiply(BigDecimal.valueOf(exitLevels[0]));
+         BigDecimal adjustedStopLoss = netCredit.multiply(BigDecimal.valueOf(exitLevels[1]));
 
-        // Build trade legs
+         // Build trade legs
         List<TradeLeg> legs = new ArrayList<>();
 
         // SELL short call
@@ -469,6 +469,13 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         Confidence confidence = score >= 60 ? Confidence.HIGH
                                                                 : score >= 43 ? Confidence.MEDIUM
                                                                   : Confidence.LOW;
+                                                        // Phase 1: Compute risk snapshot fields (unadjusted, no multiplier)
+                                                        BigDecimal netCredit = signal.getNetCredit();
+                                                        int lotSize = lotSizeService.getLotSize("NIFTY50");
+                                                        BigDecimal stopDistancePoints = netCredit.multiply(BigDecimal.valueOf(cfg.getStopLossPercent() / 100.0));
+                                                        BigDecimal targetThreshold = netCredit.multiply(BigDecimal.valueOf(cfg.getTargetProfitPercent() / 100.0));
+                                                        BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
+
                                                         return StrategyResult.builder()
                                                                 .signal(com.trademesh.strategy.TradeSignal.builder()
                                                                         .symbol("NIFTY50")
@@ -482,6 +489,11 @@ public class IronCondorStrategy implements TradingStrategy {
                                                                                 signal.getNetCredit() + " | Score: " + score)
                                                                         .confidence(confidence)
                                                                         .metadata(metadata)
+                                                                        .stopDistancePoints(stopDistancePoints)
+                                                                        .targetThreshold(targetThreshold)
+                                                                        .plannedRiskPerLot(plannedRiskPerLot)
+                                                                        .atrPercentile(metrics.getAtrPercentile() != null ? metrics.getAtrPercentile().intValue() : null)
+                                                                        .confidenceScore(score)
                                                                         .build())
                                                                 .isExecutable(true)
                                                                 .build();

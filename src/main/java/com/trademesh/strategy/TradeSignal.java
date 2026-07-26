@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -106,4 +107,39 @@ public class TradeSignal {
      */
     @Builder.Default
     private Map<String, String> metadata = new HashMap<>();
+
+    /**
+     * Stop distance in points (unadjusted, no multiplier applied).
+     * Computed as: entryCredit × (stopLossPercent / 100.0)
+     * Nullable — may be null for strategies that don't compute this value.
+     */
+    private BigDecimal stopDistancePoints;
+
+    /**
+     * Target threshold in points (unadjusted, no multiplier applied).
+     * Computed as: entryCredit × (targetProfitPercent / 100.0)
+     * Nullable — may be null for strategies that don't compute this value.
+     */
+    private BigDecimal targetThreshold;
+
+    /**
+     * Planned risk per lot in rupees.
+     * Computed as: stopDistancePoints × lotSize
+     * Nullable — may be null for strategies that don't compute this value.
+     */
+    private BigDecimal plannedRiskPerLot;
+
+    /**
+     * ATR percentile at signal generation time.
+     * Read from MarketMetrics for this evaluation cycle.
+     * Nullable — may be null if ATR percentile unavailable.
+     */
+    private Integer atrPercentile;
+
+    /**
+     * Raw numeric confidence score (before enum bucketing).
+     * Computed by strategy's calculateConfidenceScore() method.
+     * Nullable — may be null for strategies that don't compute a raw score.
+     */
+    private Integer confidenceScore;
 }

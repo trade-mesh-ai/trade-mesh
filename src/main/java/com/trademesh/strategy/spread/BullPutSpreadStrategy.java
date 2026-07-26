@@ -293,6 +293,11 @@ public class BullPutSpreadStrategy implements TradingStrategy {
             BigDecimal maxLoss = maxLossPerLot.multiply(BigDecimal.valueOf(lots));
             BigDecimal breakeven = shortPutStrikePrice.subtract(netCredit);
 
+            // Phase 1: Compute risk snapshot fields (unadjusted, no multiplier)
+            BigDecimal stopDistancePoints = netCredit.multiply(BigDecimal.valueOf(cfg.getStopLossPercent() / 100.0));
+            BigDecimal targetThreshold = netCredit.multiply(BigDecimal.valueOf(cfg.getTargetProfitPercent() / 100.0));
+            BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
+
             // Build trade legs
             List<TradeLeg> legs = new ArrayList<>();
 
@@ -350,6 +355,11 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                                     longPutStrikePrice + "PE | Credit: " + netCredit + " | Score: " + score)
                             .confidence(confidence)
                             .metadata(metadata)
+                            .stopDistancePoints(stopDistancePoints)
+                            .targetThreshold(targetThreshold)
+                            .plannedRiskPerLot(plannedRiskPerLot)
+                            .atrPercentile(metrics.getAtrPercentile() != null ? metrics.getAtrPercentile().intValue() : null)
+                            .confidenceScore(score)
                             .build())
                     .isExecutable(true)
                     .build());

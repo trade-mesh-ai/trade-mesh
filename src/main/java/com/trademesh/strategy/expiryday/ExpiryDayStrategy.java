@@ -412,6 +412,13 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 ? Confidence.HIGH
                 : Confidence.MEDIUM;
 
+        // Phase 1: Compute risk snapshot fields (unadjusted, no multiplier)
+        BigDecimal totalCredit = BigDecimal.valueOf(legsResult.getTotalCredit());
+        int lotSize = lotSizeService.getLotSize(intelligence.getSymbol());
+        BigDecimal stopDistancePoints = totalCredit.multiply(BigDecimal.valueOf(strategyConfig().getStopLossPercent() / 100.0));
+        BigDecimal targetThreshold = totalCredit.multiply(BigDecimal.valueOf(strategyConfig().getTargetProfitPercent() / 100.0));
+        BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
+
         return TradeSignal.builder()
                 .signalId(UUID.randomUUID())
                 .symbol(intelligence.getSymbol())
@@ -422,6 +429,11 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .maxLoss(stopLossAmount)
                 .confidence(confidence)
                 .reason(reason)
+                .stopDistancePoints(stopDistancePoints)
+                .targetThreshold(targetThreshold)
+                .plannedRiskPerLot(plannedRiskPerLot)
+                .atrPercentile(null)
+                .confidenceScore(null)
                 .build();
     }
 

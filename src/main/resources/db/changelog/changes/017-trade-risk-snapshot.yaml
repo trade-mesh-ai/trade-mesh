@@ -1,0 +1,42 @@
+databaseChangeLog:
+
+  # ─── paper_trades: add risk snapshot columns ───────────────────────────────────
+  - changeSet:
+      id: 017-trade-risk-snapshot
+      author: trade-mesh
+      comment: "Add risk snapshot columns to paper_trades for Phase 1 persistence (unadjusted entry-time metrics)"
+      changes:
+        - addColumn:
+            schemaName: trade_mesh
+            tableName: paper_trades
+            columns:
+              - column:
+                  name: stop_distance_points
+                  type: NUMERIC(18,4)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: target_threshold
+                  type: NUMERIC(18,4)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: planned_risk_per_lot
+                  type: NUMERIC(18,4)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: atr_percentile
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: confidence_score
+                  type: INTEGER
+                  constraints:
+                    nullable: true
+              - column:
+                  name: risk_snapshot
+                  type: TEXT
+                  constraints:
+                    nullable: true
