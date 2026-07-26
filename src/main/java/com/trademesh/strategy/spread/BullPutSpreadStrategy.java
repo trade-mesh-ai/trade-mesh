@@ -281,10 +281,10 @@ public class BullPutSpreadStrategy implements TradingStrategy {
             BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
                     .multiply(BigDecimal.valueOf(lotSize));
 
-            // Capital-based position sizing with VIX scaling: compute lots from risk budget
+            // Capital-based position sizing with VIX and confidence scaling: compute lots from risk budget
             // Capped by cfg.getMaxLots() as hard ceiling
             int lots = Math.min(
-                    lotSizeService.getPositionSize(maxLossPerLot, currentVix),
+                    lotSizeService.getPositionSize(maxLossPerLot, currentVix, score, cfg.getExtraInt("min-score", 60)),
                     cfg.getMaxLots()
             );
 
