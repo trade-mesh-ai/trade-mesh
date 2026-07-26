@@ -158,6 +158,8 @@ Actual directory structure verified from source:
 - No capital-at-risk budget across simultaneously open positions (only position count cap)
 - No sector exposure check — same as above, the dead no-op implementation was deleted, not left dormant
 
+**In progress — three-gate risk architecture redesign (locked 2026-07-26, Phase 1 implemented 2026-07-26):** A full redesign of entry/sizing/exit incorporating ATR-percentile-based dynamic risk has been designed and locked, with a 4-phase rollout. Phase 1 (persistence plumbing — see `PaperTrade Entity` below for the new fields) is done; the mechanism described in this section (capital-based/VIX-scaled/confidence-scaled sizing, fixed-percentage exits) is **still exactly what actually runs today** — Phase 1 added no new behavior. Full design spec and phase-by-phase detail: `CURRENT_STATE.md`, "Locked Three-Gate Risk Architecture Redesign" section.
+
 ---
 
 ## 7. Strategy Selection & Market Regime Logic
@@ -190,14 +192,16 @@ Actual directory structure verified from source:
 - `strategyName` (String) — Strategy name (e.g., "IRON_CONDOR")
 - `status` (TradeStatus enum) — OPEN, CLOSED, or CANCELLED
 - `legs` (List<TradeLeg>, JSONB) — Multi-leg strategy definition
-- `entryCredit` (Double) — Premium collected at entry, in points
-- `currentValue` (Double) — Current mark-to-market value, in points
-- `realizedPnl` (Double) — P&L after closure, in points (only when CLOSED)
-- `unrealizedPnl` (Double) — Current P&L, in points (only when OPEN)
+- `entryCredit` (BigDecimal) — Premium collected at entry, in points *(this doc previously listed this and the next three fields as `Double`; corrected here — see the 2026-07-21 BigDecimal migration, `.clinerules` "Field Types" section)*
+- `currentValue` (BigDecimal) — Current mark-to-market value, in points
+- `realizedPnl` (BigDecimal) — P&L after closure, in points (only when CLOSED)
+- `unrealizedPnl` (BigDecimal) — Current P&L, in points (only when OPEN)
+- `maxLoss` (BigDecimal, nullable) — Worst-case loss in rupees, set once at creation from `signal.getMaxLoss()`, used for portfolio-level aggregate risk budgeting (added 2026-07-22)
 - `entryTime` (LocalDateTime) — Entry timestamp
 - `exitTime` (LocalDateTime) — Exit timestamp (only when CLOSED)
 - `exitReason` (String) — Reason for exit (e.g., "TARGET_HIT", "STOP_LOSS", "DTE_EXIT")
 - `createdAt`, `updatedAt` (LocalDateTime) — Audit timestamps
+- `stopDistancePoints`, `targetThreshold`, `plannedRiskPerLot` (BigDecimal, nullable), `atrPercentile`, `confidenceScore` (Integer, nullable), `riskSnapshot` (String/TEXT, nullable, JSON) — added 2026-07-26, Phase 1 of the three-gate risk architecture redesign (migration `017`). Populated at entry using today's unadjusted formulas; **not yet read by any exit logic** — see "Risk Architecture" section above and `CURRENT_STATE.md`'s "Locked Three-Gate Risk Architecture Redesign" section for the full design and phased rollout. Zero behavior change in Phase 1 — these fields exist purely for data capture ahead of Phase 2+.
 
 **P&L storage convention:** All P&L fields stored in **points, not rupees**. Rupee conversion happens only at display/alert time: `rupeeAmount = pnlPoints × lotSizeService.getLotSize(symbol)`.
 

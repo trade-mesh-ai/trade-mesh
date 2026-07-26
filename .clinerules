@@ -206,6 +206,40 @@ No HTML tags in Javadoc.
   (e.g. sort -u | wc -l against a rerun) before treating a file list as
   final scope for a multi-file fix.
 
+## Verification Protocol (added 2026-07-26, Phase 1 session)
+- Cline is NEVER asked to produce verification of its own work — no
+  diffs, no build output, no test output, no completion/success status.
+  All verification is performed by Kuldeep independently, using commands
+  given to him directly, outside of Cline's task instructions.
+- Every task given to Cline is scoped to code changes only, and ends with
+  an explicit instruction not to report completion, success, or a
+  "done"/"clean"/"verified" status.
+- A narrative description of what Cline believes it did (e.g. "all four
+  files have been corrected," "fields are already present," "ready for
+  compilation verification") is never treated as evidence — it is treated
+  as an unverified claim, exactly like any other claim in this project's
+  evidence-first culture, until confirmed by a real command run by
+  Kuldeep.
+- This rule exists because of a real incident (2026-07-26, Phase 1
+  session): Cline stated fields "are already present" and that a prior
+  deletion was reverted "without deleting existing fields," in the same
+  message where the actual `git diff`/`grep` output — already pasted by
+  Kuldeep in the prior turn — directly disproved the claim. This was not
+  an optimistic gap in an otherwise-honest report; it was a direct false
+  statement contradicted by evidence already in front of both parties.
+- Reviews proceed one file at a time via real `git diff` output, never in
+  batch, even when Cline reports multiple files as clean together in one
+  summary. A "clean" claim about File B is not evidence about File B just
+  because File A's diff, reviewed separately, happened to be clean.
+- Deeply nested reactive method chains (multiple stacked `flatMap`/lambda
+  scopes) cannot be fully verified via diff review alone — variable
+  scoping errors across lambda boundaries are not always visible in a
+  unified diff. A real `./gradlew compileJava`/`compileTestJava` run is
+  required before trusting such a change, even after a diff looks correct
+  on read-through. Confirmed incident: a local-variable scoping bug in
+  `IronCondorStrategy.java` during Phase 1 passed diff review cleanly and
+  only surfaced via a real compile (`cannot find symbol`).
+
 ## What NOT to do (confirmed production bugs — never repeat)
 - Never use @PostLoad in R2DBC entities
 - Never call markToMarket() from a REST endpoint
@@ -222,6 +256,9 @@ No HTML tags in Javadoc.
 - Never claim a PaperTrade or TradeLeg P&L/price field "accepts double" or is "kept as double" — entryCredit, currentValue, realizedPnl, unrealizedPnl, strikePrice, and limitPrice are all BigDecimal as of the 2026-07-21 migration. This exact false claim was made and had to be corrected three separate times on the same file in one session.
 - Never round-trip a BigDecimal through double mid-calculation in exit-decision code (BigDecimal.valueOf(x.doubleValue())) — it compiles and looks like a valid conversion but silently discards the precision the BigDecimal migration exists to preserve. Only convert to double at an approved, explicitly-scoped display-only boundary (see Field Types section above), never inside calculateIronCondorPnl/calculateSpreadPnl/shouldExitIronCondor/shouldExitSpread/markToMarket/isLegBreach.
 - Never rely on @JsonFormat(pattern = "0.00") to format a BigDecimal field for JSON output — it does not reliably apply. Use a custom @JsonSerialize-based serializer instead (see Field Types section above).
+- Never let an "additive" field-addition task use a full-file rewrite (write_to_file) instead of a targeted edit (replace_in_file/str_replace) — a full rewrite can silently delete unrelated existing fields, methods, or annotations while looking like a small diff. Confirmed incident (2026-07-26, Phase 1 session): a rewrite of PaperTrade.java deleted status, updatedAt, tradeDate, createdAt, maxLoss, and stripped @JsonSerialize/@JsonIgnoreProperties annotations, while the task was scoped to adding 6 new nullable fields.
+- Never let an entry-time value (e.g. stopDistancePoints, targetThreshold, plannedRiskPerLot) be computed independently in two places instead of once and passed/copied. Two independent computations of a related value is the exact defect class behind the real 2026-07-24 shouldExitSpread() production bug, and recurred during the Phase 1 session (a dead, duplicated computation block in ExpiryDayStrategy.java, caught and removed before merge).
+- Never assume a guard condition (e.g. status != TradeStatus.OPEN) is safe to silently replace with a differently-shaped equivalent (e.g. exitTime != null) as a side effect of an unrelated task. Confirmed near-incident (2026-07-26, Phase 1 session): an unrequested refactor of exit-path guards also silently deleted closeIronCondorTrade()'s trade.setStatus(TradeStatus.CLOSED) line, which would have permanently blocked all future Iron Condor entries the first time a trade closed through that path.
 
 ## Important
 These rules represent confirmed production bugs
