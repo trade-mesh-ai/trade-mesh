@@ -15,6 +15,7 @@ import reactor.core.publisher.Mono;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +37,7 @@ public class PaperTradeController {
 
     private final PaperTradeRepository paperTradeRepository;
     private final PaperTradingEngine paperTradingEngine;
+    private final TradeThresholdService tradeThresholdService;
 
     /**
      * GET /paper/trades/open
@@ -199,19 +201,57 @@ public class PaperTradeController {
     /**
      * GET /paper/trades/{id}
      * <p>
-     * Retrieves a specific paper trade by ID.
+     * Retrieves a specific paper trade by ID with computed threshold fields.
+     * <p>
+     * Response includes the trade data plus computed fields:
+     * - lots: number of lots from the first trade leg
+     * - totalEntryCredit: entryCredit × lots (in points)
+     * - stopLossThreshold: stop-loss threshold in points
+     * - stopLossThresholdAmount: stop-loss threshold in rupees
+     * - targetThreshold: target profit threshold in points
+     * - targetThresholdAmount: target profit threshold in rupees
      *
      * @param id the UUID of the paper trade
-     * @return Mono emitting ResponseEntity with the PaperTrade
+     * @return Mono emitting ResponseEntity with the PaperTrade and computed fields
      */
-    @Operation(summary = "Get a specific paper trade by ID")
+    @Operation(summary = "Get a specific paper trade by ID with computed thresholds")
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<PaperTrade>> getTrade(
+    public Mono<ResponseEntity<Map<String, Object>>> getTrade(
             @Parameter(description = "UUID of the paper trade")
             @PathVariable UUID id) {
         log.info("Fetching paper trade: {}", id);
         return paperTradeRepository.findById(id)
-                .map(ResponseEntity::ok)
+                .map(trade -> {
+                    // Calculate thresholds using the shared service
+                    TradeThresholdService.TradeThresholds thresholds = tradeThresholdService.calculateThresholds(trade);
+
+                    // Build response with trade data and computed fields
+                    Map<String, Object> response = new LinkedHashMap<>();
+                    response.put("id", trade.getId());
+                    response.put("tradeDate", trade.getTradeDate());
+                    response.put("symbol", trade.getSymbol());
+                    response.put("strategyName", trade.getStrategyName());
+                    response.put("status", trade.getStatus());
+                    response.put("legs", trade.getLegs());
+                    response.put("entryCredit", trade.getEntryCredit());
+                    response.put("totalEntryCredit", thresholds.totalEntryCredit());
+                    response.put("currentValue", trade.getCurrentValue());
+                    response.put("realizedPnl", trade.getRealizedPnl());
+                    response.put("unrealizedPnl", trade.getUnrealizedPnl());
+                    response.put("stopLossThreshold", thresholds.stopLossThreshold());
+                    response.put("stopLossThresholdAmount", thresholds.stopLossThresholdAmount());
+                    response.put("targetThreshold", thresholds.targetThreshold());
+                    response.put("targetThresholdAmount", thresholds.targetThresholdAmount());
+                    response.put("maxLoss", trade.getMaxLoss());
+                    response.put("entryTime", trade.getEntryTime());
+                    response.put("exitTime", trade.getExitTime());
+                    response.put("exitReason", trade.getExitReason());
+                    response.put("createdAt", trade.getCreatedAt());
+                    response.put("updatedAt", trade.getUpdatedAt());
+                    response.put("lots", thresholds.lots());
+
+                    return ResponseEntity.ok(response);
+                })
                 .switchIfEmpty(Mono.just(ResponseEntity.notFound().build()))
                 .onErrorResume(error -> {
                     log.error("Error fetching paper trade: {}", id, error);
