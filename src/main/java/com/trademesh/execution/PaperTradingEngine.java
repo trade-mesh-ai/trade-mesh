@@ -362,7 +362,14 @@ public class PaperTradingEngine {
                     BigDecimal entryCredit = trade.getEntryCredit()
                             .multiply(BigDecimal.valueOf(lots));
                     double slPct = cfg.getStopLossPercent() / 100.0;
-                    BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+                    BigDecimal stopLossThreshold;
+                    if (trade.getStopDistancePoints() != null) {
+                        stopLossThreshold = trade.getStopDistancePoints()
+                                .multiply(BigDecimal.valueOf(lots))
+                                .negate();
+                    } else {
+                        stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+                    }
 
                     if (unrealizedPnl.compareTo(stopLossThreshold) < 0) {
                         log.warn("Stop loss triggered for Iron Condor trade {}: pnl={}, threshold={}",
@@ -373,7 +380,13 @@ public class PaperTradingEngine {
 
                     // Check 4: Profit target
                     double targetPct = cfg.getTargetProfitPercent() / 100.0;
-                    BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+                    BigDecimal profitTarget;
+                    if (trade.getTargetThreshold() != null) {
+                        profitTarget = trade.getTargetThreshold()
+                                .multiply(BigDecimal.valueOf(lots));
+                    } else {
+                        profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+                    }
 
                     if (unrealizedPnl.compareTo(profitTarget) >= 0) {
                         log.info("Profit target hit for Iron Condor trade {}: pnl={}, target={}",
@@ -1069,7 +1082,14 @@ public class PaperTradingEngine {
                     BigDecimal entryCredit = trade.getEntryCredit()
                             .multiply(BigDecimal.valueOf(lots));
                     double slPct = cfg.getStopLossPercent() / 100.0;
-                    BigDecimal stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+                    BigDecimal stopLossThreshold;
+                    if (trade.getStopDistancePoints() != null) {
+                        stopLossThreshold = trade.getStopDistancePoints()
+                                .multiply(BigDecimal.valueOf(lots))
+                                .negate();
+                    } else {
+                        stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+                    }
 
                     if (unrealizedPnl.compareTo(stopLossThreshold) <= 0) {
                         log.warn("Stop loss triggered for spread trade {}: pnl={}, threshold={}",
@@ -1080,7 +1100,13 @@ public class PaperTradingEngine {
 
                     // Check 4: Profit target
                     double targetPct = cfg.getTargetProfitPercent() / 100.0;
-                    BigDecimal profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+                    BigDecimal profitTarget;
+                    if (trade.getTargetThreshold() != null) {
+                        profitTarget = trade.getTargetThreshold()
+                                .multiply(BigDecimal.valueOf(lots));
+                    } else {
+                        profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+                    }
 
                     if (unrealizedPnl.compareTo(profitTarget) >= 0) {
                         log.info("Profit target hit for spread trade {}: pnl={}, target={}",
