@@ -277,6 +277,25 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                         .build());
             }
 
+            // NEW: Compute ATR multipliers (PHASE 3 ADDITION)
+            BigDecimal atrPercentileBD = metrics.getAtrPercentile();
+            double atrMultiplier = (atrPercentileBD != null)
+                ? 0.85 + (atrPercentileBD.doubleValue() / 100.0) * 0.50
+                : 1.0;
+            double targetMultiplier = (atrPercentileBD != null)
+                ? 0.90 + (atrPercentileBD.doubleValue() / 100.0) * 0.45
+                : 1.0;
+
+            // NEW: Compute ATR-adjusted risk snapshot fields (PHASE 3 ADDITION)
+            // NOTE: lotSize is already declared at line 228, do NOT redeclare
+            BigDecimal stopDistancePoints = netCredit
+                .multiply(BigDecimal.valueOf(cfg.getStopLossPercent() / 100.0))
+                .multiply(BigDecimal.valueOf(atrMultiplier));
+            BigDecimal targetThreshold = netCredit
+                .multiply(BigDecimal.valueOf(cfg.getTargetProfitPercent() / 100.0))
+                .multiply(BigDecimal.valueOf(targetMultiplier));
+            BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
+
             // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
             BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
                     .multiply(BigDecimal.valueOf(lotSize));
@@ -284,7 +303,7 @@ public class BullPutSpreadStrategy implements TradingStrategy {
             // Capital-based position sizing with VIX and confidence scaling: compute lots from risk budget
             // Capped by cfg.getMaxLots() as hard ceiling
             int lots = Math.min(
-                    lotSizeService.getPositionSize(maxLossPerLot, currentVix, score, cfg.getExtraInt("min-score", 60)),
+                    lotSizeService.getPositionSize(plannedRiskPerLot, currentVix, score, cfg.getExtraInt("min-score", 60)),
                     cfg.getMaxLots()
             );
 
@@ -292,11 +311,6 @@ public class BullPutSpreadStrategy implements TradingStrategy {
             BigDecimal maxProfit = netCredit.multiply(BigDecimal.valueOf(lotSize * lots));
             BigDecimal maxLoss = maxLossPerLot.multiply(BigDecimal.valueOf(lots));
             BigDecimal breakeven = shortPutStrikePrice.subtract(netCredit);
-
-            // Phase 1: Compute risk snapshot fields (unadjusted, no multiplier)
-            BigDecimal stopDistancePoints = netCredit.multiply(BigDecimal.valueOf(cfg.getStopLossPercent() / 100.0));
-            BigDecimal targetThreshold = netCredit.multiply(BigDecimal.valueOf(cfg.getTargetProfitPercent() / 100.0));
-            BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
 
             // Build trade legs
             List<TradeLeg> legs = new ArrayList<>();

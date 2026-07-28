@@ -155,4 +155,23 @@ public class IronCondorSignal {
      * Order: SELL short call, SELL short put, BUY long call, BUY long put
      */
     private List<TradeLeg> legs;
+
+    // ─── ATR-Adjusted Risk Snapshot Fields ─────────────────────────────────────
+    /**
+     * Stop loss distance in points (ATR-adjusted).
+     * = netCredit × (stopLossPercent / 100) × atrMultiplier
+     */
+    private BigDecimal stopDistancePoints;
+
+    /**
+     * Target profit threshold in points (ATR-adjusted).
+     * = netCredit × (targetProfitPercent / 100) × targetMultiplier
+     */
+    private BigDecimal targetThreshold;
+
+    /**
+     * Planned risk per lot in points (ATR-adjusted).
+     * = stopDistancePoints × lotSize
+     */
+    private BigDecimal plannedRiskPerLot;
 }

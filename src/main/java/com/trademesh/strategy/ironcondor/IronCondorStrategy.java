@@ -238,6 +238,25 @@ public class IronCondorStrategy implements TradingStrategy {
             return Mono.empty();
         }
 
+        // NEW: Compute ATR multipliers (PHASE 3 ADDITION)
+        BigDecimal atrPercentileBD = metrics.getAtrPercentile();
+        double atrMultiplier = (atrPercentileBD != null)
+            ? 0.85 + (atrPercentileBD.doubleValue() / 100.0) * 0.50
+            : 1.0;
+        double targetMultiplier = (atrPercentileBD != null)
+            ? 0.90 + (atrPercentileBD.doubleValue() / 100.0) * 0.45
+            : 1.0;
+
+        // NEW: Compute ATR-adjusted risk snapshot fields (PHASE 3 ADDITION)
+        // NOTE: lotSize is already declared at line 171, do NOT redeclare
+        BigDecimal stopDistancePoints = netCredit
+            .multiply(BigDecimal.valueOf(cfg.getStopLossPercent() / 100.0))
+            .multiply(BigDecimal.valueOf(atrMultiplier));
+        BigDecimal targetThreshold = netCredit
+            .multiply(BigDecimal.valueOf(cfg.getTargetProfitPercent() / 100.0))
+            .multiply(BigDecimal.valueOf(targetMultiplier));
+        BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
+
         // Compute maxLossPerLot (risk of ONE lot only, no dependency on total lots)
         BigDecimal maxLossPerLot = BigDecimal.valueOf(wingWidth - netCredit.doubleValue())
                 .multiply(BigDecimal.valueOf(lotSize));
@@ -246,7 +265,7 @@ public class IronCondorStrategy implements TradingStrategy {
         // Capped by cfg.getMaxLots() as hard ceiling
         int minScore = cfg.getExtraInt("min-score", 51);
         int lots = Math.min(
-                lotSizeService.getPositionSize(maxLossPerLot, currentVix, confidenceScore, minScore),
+                lotSizeService.getPositionSize(plannedRiskPerLot, currentVix, confidenceScore, minScore),
                 cfg.getMaxLots()
         );
 
@@ -258,14 +277,14 @@ public class IronCondorStrategy implements TradingStrategy {
         BigDecimal riskRewardRatio = maxLoss.signum() > 0 ?
                 maxProfit.divide(maxLoss, 4, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
-         // Adjusted exit levels
-         double atrPct = metrics.getAtrPct() != null ?
-                 metrics.getAtrPct().doubleValue() : 0.8;
-         double[] exitLevels = calculateAdjustedExitLevels(atrPct, cfg);
-         BigDecimal adjustedProfitTarget = netCredit.multiply(BigDecimal.valueOf(exitLevels[0]));
-         BigDecimal adjustedStopLoss = netCredit.multiply(BigDecimal.valueOf(exitLevels[1]));
+        // Adjusted exit levels
+        double atrPct = metrics.getAtrPct() != null ?
+                metrics.getAtrPct().doubleValue() : 0.8;
+        double[] exitLevels = calculateAdjustedExitLevels(atrPct, cfg);
+        BigDecimal adjustedProfitTarget = netCredit.multiply(BigDecimal.valueOf(exitLevels[0]));
+        BigDecimal adjustedStopLoss = netCredit.multiply(BigDecimal.valueOf(exitLevels[1]));
 
-         // Build trade legs
+        // Build trade legs
         List<TradeLeg> legs = new ArrayList<>();
 
         // SELL short call
@@ -341,6 +360,9 @@ public class IronCondorStrategy implements TradingStrategy {
                 .dte(dte)
                 .adjustedProfitTarget(adjustedProfitTarget)
                 .adjustedStopLoss(adjustedStopLoss)
+                .stopDistancePoints(stopDistancePoints)
+                .targetThreshold(targetThreshold)
+                .plannedRiskPerLot(plannedRiskPerLot)
                 .legs(legs)
                 .build();
 
@@ -469,12 +491,6 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         Confidence confidence = score >= 60 ? Confidence.HIGH
                                                                 : score >= 43 ? Confidence.MEDIUM
                                                                   : Confidence.LOW;
-                                                        // Phase 1: Compute risk snapshot fields (unadjusted, no multiplier)
-                                                        BigDecimal netCredit = signal.getNetCredit();
-                                                        int lotSize = lotSizeService.getLotSize("NIFTY50");
-                                                        BigDecimal stopDistancePoints = netCredit.multiply(BigDecimal.valueOf(cfg.getStopLossPercent() / 100.0));
-                                                        BigDecimal targetThreshold = netCredit.multiply(BigDecimal.valueOf(cfg.getTargetProfitPercent() / 100.0));
-                                                        BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
 
                                                         return StrategyResult.builder()
                                                                 .signal(com.trademesh.strategy.TradeSignal.builder()
@@ -489,9 +505,9 @@ public class IronCondorStrategy implements TradingStrategy {
                                                                                 signal.getNetCredit() + " | Score: " + score)
                                                                         .confidence(confidence)
                                                                         .metadata(metadata)
-                                                                        .stopDistancePoints(stopDistancePoints)
-                                                                        .targetThreshold(targetThreshold)
-                                                                        .plannedRiskPerLot(plannedRiskPerLot)
+                                                                        .stopDistancePoints(signal.getStopDistancePoints())
+                                                                        .targetThreshold(signal.getTargetThreshold())
+                                                                        .plannedRiskPerLot(signal.getPlannedRiskPerLot())
                                                                         .atrPercentile(metrics.getAtrPercentile() != null ? metrics.getAtrPercentile().intValue() : null)
                                                                         .confidenceScore(score)
                                                                         .build())
