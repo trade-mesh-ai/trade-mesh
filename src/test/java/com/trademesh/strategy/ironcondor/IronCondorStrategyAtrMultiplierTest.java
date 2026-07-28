@@ -83,12 +83,12 @@ class IronCondorStrategyAtrMultiplierTest {
     }
 
     /**
-     * Test 1: ATR multiplier formula correctness at atrPercentile = 0, 50, 100.
+     * Test 1: ATR multiplier formula correctness at atrPercentile = 0, 50, 85.
      * Verifies exact expected values at boundary points by calling the real method
      * and asserting on the returned TradeSignal's stopDistancePoints/targetThreshold.
      */
     @Test
-    @DisplayName("Test 1: ATR multiplier formula at boundary values (0, 50, 100)")
+    @DisplayName("Test 1: ATR multiplier formula at boundary values (0, 50, 85)")
     void testAtrMultiplierFormula() {
         // Test case 1: atrPercentile = 0
         testAtrMultiplierAtPercentile(
@@ -104,11 +104,11 @@ class IronCondorStrategyAtrMultiplierTest {
                 1.125  // expected targetMultiplier
         );
 
-        // Test case 3: atrPercentile = 100
+        // Test case 3: atrPercentile = 85
         testAtrMultiplierAtPercentile(
-                BigDecimal.valueOf(100),
-                1.35,  // expected atrMultiplier
-                1.35   // expected targetMultiplier
+                BigDecimal.valueOf(85),
+                1.275,  // expected atrMultiplier
+                1.2825  // expected targetMultiplier
         );
     }
 

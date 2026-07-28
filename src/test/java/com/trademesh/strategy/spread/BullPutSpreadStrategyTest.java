@@ -15,8 +15,8 @@ class BullPutSpreadStrategyTest {
     private final BullPutSpreadStrategy strategy = new BullPutSpreadStrategy(null, null, null, null, null);
 
     /**
-     * Test: All 5 factors at maximum.
-     * IVR: 30, IV/HV: 20, ATR%: 20, PCR: 15, Trend: 15 = 100 points
+     * Test: All 4 factors at maximum.
+     * IVR: 30, IV/HV: 20, PCR: 15, Trend: 15 = 80 points
      * Trend: > 1.0 (e.g., 2.0%)
      */
     @Test
@@ -25,7 +25,6 @@ class BullPutSpreadStrategyTest {
         MarketMetrics metrics = MarketMetrics.builder()
                 .ivr(BigDecimal.valueOf(55.0))      // IVR 55 (in 50-65 range) -> 30 points
                 .ivHvRatio(BigDecimal.valueOf(1.5)) // IV/HV 1.5 -> 20 points
-                .atrPct(BigDecimal.valueOf(0.40))   // ATR% 0.40 (in 0.36-0.48 range) -> 20 points
                 .pcr(BigDecimal.valueOf(0.7))       // PCR 0.7 (< 0.8) -> 15 points
                 .build();
         BigDecimal trendPct = BigDecimal.valueOf(2.0); // Trend 2.0% (> 1.0) -> 15 points
@@ -34,7 +33,7 @@ class BullPutSpreadStrategyTest {
         int score = strategy.calculateConfidenceScore(metrics, trendPct);
 
         // Assert
-        assertEquals(100, score, "All factors at max should yield 100 points");
+        assertEquals(80, score, "All factors at max should yield 80 points");
     }
 
     /**
@@ -112,7 +111,6 @@ class BullPutSpreadStrategyTest {
         MarketMetrics metrics = MarketMetrics.builder()
                 .ivr(BigDecimal.valueOf(30.0))      // 20 points
                 .ivHvRatio(BigDecimal.valueOf(1.5)) // 20 points
-                .atrPct(BigDecimal.valueOf(0.35))   // 15 points
                 .pcr(BigDecimal.valueOf(0.7))       // 15 points
                 .build();
         BigDecimal trendPct = null; // Null trend
@@ -121,7 +119,7 @@ class BullPutSpreadStrategyTest {
         int score = strategy.calculateConfidenceScore(metrics, trendPct);
 
         // Assert
-        assertEquals(70, score, "Null trend should contribute 0, total 70 points");
+        assertEquals(55, score, "Null trend should contribute 0, total 55 points (20+20+15)");
     }
 
     /**
@@ -131,11 +129,10 @@ class BullPutSpreadStrategyTest {
      */
     @Test
     void testCalculateConfidenceScore_MinScoreThreshold() {
-        // Arrange: Create a score of exactly 70
+        // Arrange: Create a score of exactly 50
         MarketMetrics metrics = MarketMetrics.builder()
                 .ivr(BigDecimal.valueOf(50.0))      // 30 points (in 50-65 range)
                 .ivHvRatio(BigDecimal.valueOf(1.5)) // 20 points
-                .atrPct(BigDecimal.valueOf(0.40))   // 20 points (in 0.36-0.48 range, not 0.35)
                 .pcr(null)                          // 0 points
                 .build();
         BigDecimal trendPct = BigDecimal.valueOf(-5.0); // 0 points (negative trend)
@@ -144,6 +141,6 @@ class BullPutSpreadStrategyTest {
         int score = strategy.calculateConfidenceScore(metrics, trendPct);
 
         // Assert
-        assertEquals(70, score, "Score should be 70 (30+20+20+0)");
+        assertEquals(50, score, "Score should be 50 (30+20+0)");
     }
 }

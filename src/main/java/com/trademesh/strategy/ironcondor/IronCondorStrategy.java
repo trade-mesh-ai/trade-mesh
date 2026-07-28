@@ -94,15 +94,6 @@ public class IronCondorStrategy implements TradingStrategy {
             else if (ratio >= 1.1) score += 10;
         }
 
-        // ATR% scoring
-        if (metrics.getAtrPct() != null) {
-            double atrPct = metrics.getAtrPct().doubleValue();
-            if (atrPct < 0.6) score += 15;
-            else if (atrPct < 0.8) score += 20;
-            else if (atrPct < 1.0) score += 10;
-            else score -= 20; // penalty for high ATR
-        }
-
         // PCR scoring
         if (metrics.getPcr() != null) {
             double pcr = metrics.getPcr().doubleValue();
@@ -112,8 +103,8 @@ public class IronCondorStrategy implements TradingStrategy {
             log.debug("PCR scoring: pcr={}, contribution={}", pcr, (pcr >= 0.8 && pcr <= 1.2) ? 15 : 0);
         }
 
-        log.debug("Iron Condor confidence score: IVR={}, IV/HV={}, ATR%={}, PCR={}, total={}",
-                metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(),
+        log.debug("Iron Condor confidence score: IVR={}, IV/HV={}, PCR={}, total={}",
+                metrics.getIvr(), metrics.getIvHvRatio(),
                 metrics.getPcr(), score);
 
         return score;
@@ -430,6 +421,17 @@ public class IronCondorStrategy implements TradingStrategy {
                                     return Mono.just(StrategyResult.builder()
                                             .isExecutable(false)
                                             .skipReason("ATR% too high")
+                                            .build());
+                                }
+
+                                // ATR percentile hard gate
+                                if (metrics.getAtrPercentile() != null &&
+                                        metrics.getAtrPercentile().doubleValue() >
+                                        cfg.getExtraDouble("atr-percentile-max", 90.0)) {
+                                    log.warn("ATR percentile exceeds max — skipping Iron Condor");
+                                    return Mono.just(StrategyResult.builder()
+                                            .isExecutable(false)
+                                            .skipReason("ATR percentile too high")
                                             .build());
                                 }
 

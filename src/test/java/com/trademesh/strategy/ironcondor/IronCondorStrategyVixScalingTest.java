@@ -96,12 +96,12 @@ class IronCondorStrategyVixScalingTest {
         // netCredit = 32 (confirmed via real strike selection)
         // plannedRiskPerLot = 32 × (100/100) × 1.0 × 65 = 2080
         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
-        when(lotSizeService.getPositionSize(
-                ArgumentMatchers.argThat(bd -> bd != null && bd.compareTo(new BigDecimal("2080")) == 0),
-                ArgumentMatchers.eq(20.0),
-                ArgumentMatchers.eq(75),
-                ArgumentMatchers.eq(51)
-        )).thenReturn(5); // scaled size
+         when(lotSizeService.getPositionSize(
+                 ArgumentMatchers.argThat(bd -> bd != null && bd.compareTo(new BigDecimal("2080")) == 0),
+                 ArgumentMatchers.eq(20.0),
+                 ArgumentMatchers.eq(55),
+                 ArgumentMatchers.eq(51)
+         )).thenReturn(5); // scaled size
 
         // Create market intelligence (no marketMetrics field)
         MarketIntelligence intelligence = MarketIntelligence.builder()
@@ -161,7 +161,7 @@ class IronCondorStrategyVixScalingTest {
         when(lotSizeService.getPositionSize(
                 ArgumentMatchers.argThat(bd -> bd != null && bd.compareTo(new BigDecimal("2080")) == 0),
                 ArgumentMatchers.eq(15.0),
-                ArgumentMatchers.eq(75),
+                ArgumentMatchers.eq(55),
                 ArgumentMatchers.eq(51)
         )).thenReturn(10); // full size
 
@@ -223,7 +223,7 @@ class IronCondorStrategyVixScalingTest {
         when(lotSizeService.getPositionSize(
                 ArgumentMatchers.argThat(bd -> bd != null && bd.compareTo(new BigDecimal("2080")) == 0),
                 ArgumentMatchers.eq(18.0),
-                ArgumentMatchers.eq(75),
+                ArgumentMatchers.eq(55),
                 ArgumentMatchers.eq(51)
         )).thenReturn(10); // full size
 

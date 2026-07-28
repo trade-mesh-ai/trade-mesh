@@ -87,14 +87,6 @@ public class BullPutSpreadStrategy implements TradingStrategy {
             else if (ratio >= 1.1) score += 10;
         }
 
-        // ATR% scoring (spread-specific bands: delta-ratio scaled)
-        if (metrics.getAtrPct() != null) {
-            double atrPct = metrics.getAtrPct().doubleValue();
-            if (atrPct < 0.36) score += 15;
-            else if (atrPct < 0.48) score += 20;
-            else if (atrPct < 0.60) score += 10;
-        }
-
         // PCR scoring (Bull Put specific: rewards low PCR)
         if (metrics.getPcr() != null) {
             double pcr = metrics.getPcr().doubleValue();
@@ -115,8 +107,8 @@ public class BullPutSpreadStrategy implements TradingStrategy {
                     trend > 1.0 ? 15 : (trend >= 0.0 ? 8 : 0));
         }
 
-        log.debug("Bull Put Spread confidence score: IVR={}, IV/HV={}, ATR%={}, PCR={}, Trend={}, total={}",
-                metrics.getIvr(), metrics.getIvHvRatio(), metrics.getAtrPct(),
+        log.debug("Bull Put Spread confidence score: IVR={}, IV/HV={}, PCR={}, Trend={}, total={}",
+                metrics.getIvr(), metrics.getIvHvRatio(),
                 metrics.getPcr(), trendPct, score);
 
         return score;
@@ -162,6 +154,17 @@ public class BullPutSpreadStrategy implements TradingStrategy {
         // Fetch market metrics and continue with strike selection
         return marketMetricsService.calculateMetrics(intelligence.getSymbol())
                 .flatMap(metrics -> {
+                    // ATR percentile hard gate
+                    if (metrics.getAtrPercentile() != null &&
+                            metrics.getAtrPercentile().doubleValue() >
+                            cfg.getExtraDouble("atr-percentile-max", 90.0)) {
+                        log.warn("ATR percentile exceeds max — skipping Bull Put Spread");
+                        return Mono.just(StrategyResult.builder()
+                                .isExecutable(false)
+                                .skipReason("ATR percentile too high")
+                                .build());
+                    }
+
                     // Get DTE for trend lookback calculation
                     OptionChain chain = intelligence.getOptionChain();
                     if (chain == null) {
