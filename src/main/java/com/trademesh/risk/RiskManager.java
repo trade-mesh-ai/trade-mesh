@@ -60,18 +60,27 @@ public class RiskManager {
                 });
     }
 
-    /**
-     * Checks if the aggregate risk across all open positions is within the budget.
-     * <p>
-     * Queries the database for all OPEN trades and sums their maxLoss values.
-     * Compares the sum against: accountCapital × maxAggregateRiskPercent / 100.
-     * <p>
-     * Trades with maxLoss == null are excluded from the sum and logged as WARN.
-     * This is a separate, independent check from isWithinConcurrentPositionLimit().
-     *
-     * @return Mono emitting true if aggregate risk is strictly below budget, false if at or above budget
-     */
-    public Mono<Boolean> isWithinAggregateRiskBudget() {
+     /**
+      * Checks if the aggregate risk across all open positions is within the budget.
+      * <p>
+      * Queries the database for all OPEN trades and sums their maxLoss values.
+      * Includes the candidate trade's maxLoss in the total before comparing against budget.
+      * Compares the sum against: accountCapital × maxAggregateRiskPercent / 100.
+      * <p>
+      * Trades with maxLoss == null are excluded from the sum and logged as WARN.
+      * If candidateMaxLoss is null, returns false immediately (fail closed).
+      * This is a separate, independent check from isWithinConcurrentPositionLimit().
+      *
+      * @param candidateMaxLoss the maxLoss of the trade about to be entered (not yet persisted)
+      * @return Mono emitting true if aggregate risk INCLUDING candidate would be strictly below budget, false otherwise
+      */
+     public Mono<Boolean> isWithinAggregateRiskBudget(Double candidateMaxLoss) {
+        // Fail closed: if candidate maxLoss is null, reject immediately
+        if (candidateMaxLoss == null) {
+            log.warn("Candidate trade has null maxLoss, rejecting as a safety measure");
+            return Mono.just(false);
+        }
+
         return paperTradeRepository.findByStatus(TradeStatus.OPEN)
                 .collectList()
                 .map(openTrades -> {
@@ -85,6 +94,9 @@ public class RiskManager {
                                     trade.getId(), trade.getStrategyName());
                         }
                     }
+
+                    // Add candidate trade's maxLoss to total risk
+                    totalRisk = totalRisk.add(BigDecimal.valueOf(candidateMaxLoss));
 
                     double accountCapital = lotSizeService.getAccountCapital();
                     double maxAggregateRiskPercent = riskLimitsConfig.getMaxAggregateRiskPercent();

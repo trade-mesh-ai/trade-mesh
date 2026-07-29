@@ -109,7 +109,7 @@ public class TradingOrchestrator {
                                                             .build());
                                                 }
 
-                                                return riskManager.isWithinAggregateRiskBudget()
+                                                return riskManager.isWithinAggregateRiskBudget(result.getSignal().getMaxLoss())
                                                         .flatMap(withinRiskBudget -> {
                                                             if (!withinRiskBudget) {
                                                                 log.info("Aggregate risk budget exceeded, skipping entry");

@@ -166,7 +166,8 @@ class TradingOrchestratorConcurrentPositionLimitTest {
                 .thenReturn(Mono.just(intelligence));
 
         // Mock strategy selector to return executable signal
-        TradeSignal signal = createMockSignal("BULL_PUT_SPREAD");
+        // Use createMockSignalWithMaxLoss to set a realistic maxLoss value (50,000)
+        TradeSignal signal = createMockSignalWithMaxLoss("BULL_PUT_SPREAD", 50000.0);
         StrategyResult strategyResult = StrategyResult.builder()
                 .isExecutable(true)
                 .signal(signal)
@@ -179,7 +180,8 @@ class TradingOrchestratorConcurrentPositionLimitTest {
                 .thenReturn(Mono.just(true));
 
         // Mock RiskManager: aggregate risk budget also passes
-        when(riskManager.isWithinAggregateRiskBudget())
+        // Use argument matcher since the real orchestrator will pass signal.getMaxLoss()
+        when(riskManager.isWithinAggregateRiskBudget(any(Double.class)))
                 .thenReturn(Mono.just(true));
 
         // Mock PaperTradingEngine.executeTrade() to return a successful trade
@@ -241,15 +243,28 @@ class TradingOrchestratorConcurrentPositionLimitTest {
                 .build();
     }
 
-    /**
-     * Creates a mock TradeSignal for testing.
-     */
-    private TradeSignal createMockSignal(String strategyName) {
-        return TradeSignal.builder()
-                .strategyName(strategyName)
-                .signalType(SignalType.ENTER)
-                .reason("Test signal")
-                .confidence(Confidence.HIGH)
-                .build();
-    }
+     /**
+      * Creates a mock TradeSignal for testing.
+      */
+     private TradeSignal createMockSignal(String strategyName) {
+         return TradeSignal.builder()
+                 .strategyName(strategyName)
+                 .signalType(SignalType.ENTER)
+                 .reason("Test signal")
+                 .confidence(Confidence.HIGH)
+                 .build();
+     }
+
+     /**
+      * Creates a mock TradeSignal with maxLoss for testing.
+      */
+     private TradeSignal createMockSignalWithMaxLoss(String strategyName, Double maxLoss) {
+         return TradeSignal.builder()
+                 .strategyName(strategyName)
+                 .signalType(SignalType.ENTER)
+                 .reason("Test signal")
+                 .confidence(Confidence.HIGH)
+                 .maxLoss(maxLoss)
+                 .build();
+     }
 }

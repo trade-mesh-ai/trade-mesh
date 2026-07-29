@@ -143,22 +143,22 @@ class RiskManagerTest {
 
     // ===== Aggregate Risk Budget Tests =====
 
-    @Test
-    @DisplayName("Should return true when aggregate risk is strictly below budget")
-    void testIsWithinAggregateRiskBudget_UnderBudget() {
-        // Setup: 2 trades with maxLoss totaling 100,000 (under 6% of 2M = 120,000)
-        PaperTrade trade1 = createMockTrade("NIFTY50", TradeStatus.OPEN);
-        trade1.setMaxLoss(new java.math.BigDecimal("50000"));
-        PaperTrade trade2 = createMockTrade("NIFTYBANK", TradeStatus.OPEN);
-        trade2.setMaxLoss(new java.math.BigDecimal("40000"));
+     @Test
+     @DisplayName("Should return true when aggregate risk is strictly below budget")
+     void testIsWithinAggregateRiskBudget_UnderBudget() {
+         // Setup: 2 trades with maxLoss totaling 100,000 (under 6% of 2M = 120,000)
+         PaperTrade trade1 = createMockTrade("NIFTY50", TradeStatus.OPEN);
+         trade1.setMaxLoss(new java.math.BigDecimal("50000"));
+         PaperTrade trade2 = createMockTrade("NIFTYBANK", TradeStatus.OPEN);
+         trade2.setMaxLoss(new java.math.BigDecimal("40000"));
 
-        when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
-                .thenReturn(Flux.just(trade1, trade2));
+         when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
+                 .thenReturn(Flux.just(trade1, trade2));
 
-        StepVerifier.create(riskManager.isWithinAggregateRiskBudget())
-                .expectNext(true)
-                .verifyComplete();
-    }
+         StepVerifier.create(riskManager.isWithinAggregateRiskBudget(0.0))
+                 .expectNext(true)
+                 .verifyComplete();
+     }
 
     @Test
     @DisplayName("Should return false when aggregate risk equals or exceeds budget")
@@ -173,7 +173,7 @@ class RiskManagerTest {
         when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
                 .thenReturn(Flux.just(trade1, trade2));
 
-        StepVerifier.create(riskManager.isWithinAggregateRiskBudget())
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(0.0))
                 .expectNext(false)
                 .verifyComplete();
     }
@@ -190,7 +190,7 @@ class RiskManagerTest {
         when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
                 .thenReturn(Flux.just(trade1, trade2));
 
-        StepVerifier.create(riskManager.isWithinAggregateRiskBudget())
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(0.0))
                 .expectNext(false)
                 .verifyComplete();
     }
@@ -214,7 +214,7 @@ class RiskManagerTest {
         when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
                 .thenReturn(Flux.just(trade1, trade2, trade3));
 
-        StepVerifier.create(riskManager.isWithinAggregateRiskBudget())
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(0.0))
                 .expectNext(true)  // 100,000 < 120,000 budget
                 .verifyComplete();
     }
@@ -226,8 +226,85 @@ class RiskManagerTest {
         when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
                 .thenReturn(Flux.empty());
 
-        StepVerifier.create(riskManager.isWithinAggregateRiskBudget())
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(0.0))
                 .expectNext(true)
+                .verifyComplete();
+    }
+
+    // ===== New Regression Tests for Candidate Trade Inclusion =====
+
+    @Test
+    @DisplayName("Regression: Candidate trade's own maxLoss alone exceeds budget → gate returns false")
+    void testIsWithinAggregateRiskBudget_CandidateAloneExceedsBudget() {
+        // Setup: No open trades, but candidate maxLoss of 129,431.25 exceeds budget of 120,000
+        // This is the exact regression case from production: a single oversized trade
+        // was allowed to enter because openTrades was empty
+        when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
+                .thenReturn(Flux.empty());
+
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(129431.25))
+                .expectNext(false)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Regression: Candidate + existing trades combined exceed budget → gate returns false")
+    void testIsWithinAggregateRiskBudget_CandidatePlusExistingExceedsBudget() {
+        // Setup: 1 open trade with maxLoss 70,000, candidate with maxLoss 60,000
+        // Total: 130,000 > 120,000 budget (neither alone would exceed)
+        PaperTrade trade1 = createMockTrade("NIFTY50", TradeStatus.OPEN);
+        trade1.setMaxLoss(new java.math.BigDecimal("70000"));
+
+        when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
+                .thenReturn(Flux.just(trade1));
+
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(60000.0))
+                .expectNext(false)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Regression: Candidate trade's maxLoss alone, zero open trades, under budget → gate returns true")
+    void testIsWithinAggregateRiskBudget_CandidateAloneUnderBudget() {
+        // Setup: No open trades, candidate maxLoss of 50,000 is under 120,000 budget
+        when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
+                .thenReturn(Flux.empty());
+
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(50000.0))
+                .expectNext(true)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Regression: candidateMaxLoss == null → gate returns false immediately")
+    void testIsWithinAggregateRiskBudget_CandidateMaxLossNull() {
+        // Setup: null candidateMaxLoss should fail closed immediately without querying repository
+        // No repository stub needed since the method returns false before reaching the database
+
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(null))
+                .expectNext(false)
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Regression: Existing open trades with null maxLoss still excluded, unaffected by candidate")
+    void testIsWithinAggregateRiskBudget_ExistingNullUnaffectedByCandidate() {
+        // Setup: 2 open trades, 1 with maxLoss 50,000, 1 with null (excluded)
+        // Candidate maxLoss 30,000. Total: 50,000 + 30,000 = 80,000 < 120,000
+        // Verifies that existing null-handling is unaffected by the new candidate logic
+        PaperTrade trade1 = createMockTrade("NIFTY50", TradeStatus.OPEN);
+        trade1.setMaxLoss(new java.math.BigDecimal("50000"));
+        trade1.setStrategyName("IRON_CONDOR");
+
+        PaperTrade trade2 = createMockTrade("NIFTYBANK", TradeStatus.OPEN);
+        trade2.setMaxLoss(null);  // This should still be excluded
+        trade2.setStrategyName("BULL_PUT_SPREAD");
+
+        when(paperTradeRepository.findByStatus(TradeStatus.OPEN))
+                .thenReturn(Flux.just(trade1, trade2));
+
+        StepVerifier.create(riskManager.isWithinAggregateRiskBudget(30000.0))
+                .expectNext(true)  // 50,000 + 30,000 = 80,000 < 120,000
                 .verifyComplete();
     }
 }
