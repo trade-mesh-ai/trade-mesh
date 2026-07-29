@@ -5,9 +5,11 @@ import com.trademesh.intelligence.MarketCondition;
 import com.trademesh.intelligence.MarketIntelligence;
 import com.trademesh.intelligence.MarketMetrics;
 import com.trademesh.intelligence.MarketMetricsService;
+import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
 import com.trademesh.strategy.*;
 import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.strategy.enums.*;
+import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionStrike;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,7 +18,9 @@ import reactor.core.publisher.Mono;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -121,7 +125,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
                         }
 
                         // ─── Step 4: Build Trade Legs ─────────────────────────────────────────────
-                        TradeLegsResult legsResult = buildTradeLegs(intelligence, strikeSelection);
+                        TradeLegsResult legsResult = buildTradeLegs(intelligence, strikeSelection, metrics);
                         if (legsResult == null || legsResult.getTotalCredit() < strategyConfig().getMinCredit()) {
                             String reason = "Premium too low — not worth risk";
                             log.info("Expiry Day strategy skipped: {}", reason);
@@ -292,18 +296,113 @@ public class ExpiryDayStrategy implements TradingStrategy {
     }
 
     /**
+     * Selects hedge strikes for delta-hedged strangle (Phase 1 shadow logging only).
+     * Scans strikes above shortCallStrike and below shortPutStrike to find candidates
+     * where both delta <= hedge-target-delta AND distance >= hedge-min-distance-points.
+     * <p>
+     * For puts, applies Math.abs() to delta before comparison (delta() returns negative
+     * for PE, matching IronCondorStrategy's existing convention).
+     *
+     * @param chain              option chain with all strikes
+     * @param shortCallStrike    short call strike (entry strike)
+     * @param shortPutStrike     short put strike (entry strike)
+     * @param spotPrice          current spot price
+     * @param atmIv              ATM implied volatility (%)
+     * @param tte                time to expiry in years
+     * @param cfg                strategy configuration
+     * @return HedgeStrikeSelection with nullable hedge strikes and metrics
+     */
+    private HedgeStrikeSelection selectHedgeStrikes(
+            OptionChain chain, BigDecimal shortCallStrike, BigDecimal shortPutStrike,
+            BigDecimal spotPrice, double atmIv, double tte, com.trademesh.strategy.config.StrategyProperties cfg) {
+
+        double hedgeTargetDelta = cfg.getExtraDouble("hedge-target-delta", 0.05);
+        double hedgeMinDistance = cfg.getExtraDouble("hedge-min-distance-points", 150.0);
+
+        // ─── CALL SIDE: Find hedge strike ABOVE shortCallStrike ───────────────────────
+        BigDecimal callHedgeStrike = null;
+        Double callHedgeDelta = null;
+        Double callHedgeDistance = null;
+
+        var callCandidates = chain.getStrikes().stream()
+                .filter(s -> s.getStrikePrice().compareTo(shortCallStrike) > 0)
+                .sorted((a, b) -> a.getStrikePrice().compareTo(b.getStrikePrice()))
+                .toList();
+
+        for (OptionStrike candidate : callCandidates) {
+            double delta = ImpliedVolatilityCalculator.delta(
+                    spotPrice.doubleValue(), candidate.getStrikePrice().doubleValue(),
+                    tte, atmIv, "CE");
+            double distance = candidate.getStrikePrice().subtract(shortCallStrike).doubleValue();
+
+            if (delta <= hedgeTargetDelta && distance >= hedgeMinDistance) {
+                callHedgeStrike = candidate.getStrikePrice();
+                callHedgeDelta = delta;
+                callHedgeDistance = distance;
+                break;
+            }
+        }
+
+        if (callHedgeStrike == null && !callCandidates.isEmpty()) {
+            log.warn("Hedge shadow [{}]: No call hedge strike found satisfying both " +
+                    "delta <= {} AND distance >= {}. Candidates scanned: {}",
+                    chain.getSymbol(), hedgeTargetDelta, hedgeMinDistance, callCandidates.size());
+        }
+
+        // ─── PUT SIDE: Find hedge strike BELOW shortPutStrike ────────────────────────
+        BigDecimal putHedgeStrike = null;
+        Double putHedgeDelta = null;
+        Double putHedgeDistance = null;
+
+        var putCandidates = chain.getStrikes().stream()
+                .filter(s -> s.getStrikePrice().compareTo(shortPutStrike) < 0)
+                .sorted((a, b) -> b.getStrikePrice().compareTo(a.getStrikePrice()))
+                .toList();
+
+        for (OptionStrike candidate : putCandidates) {
+            double delta = ImpliedVolatilityCalculator.delta(
+                    spotPrice.doubleValue(), candidate.getStrikePrice().doubleValue(),
+                    tte, atmIv, "PE");
+            // Apply Math.abs() for put delta comparison (delta() returns negative for PE)
+            double absDelta = Math.abs(delta);
+            double distance = shortPutStrike.subtract(candidate.getStrikePrice()).doubleValue();
+
+            if (absDelta <= hedgeTargetDelta && distance >= hedgeMinDistance) {
+                putHedgeStrike = candidate.getStrikePrice();
+                putHedgeDelta = delta;
+                putHedgeDistance = distance;
+                break;
+            }
+        }
+
+        if (putHedgeStrike == null && !putCandidates.isEmpty()) {
+            log.warn("Hedge shadow [{}]: No put hedge strike found satisfying both " +
+                    "delta <= {} AND distance >= {}. Candidates scanned: {}",
+                    chain.getSymbol(), hedgeTargetDelta, hedgeMinDistance, putCandidates.size());
+        }
+
+        return new HedgeStrikeSelection(callHedgeStrike, putHedgeStrike,
+                callHedgeDelta, putHedgeDelta, callHedgeDistance, putHedgeDistance);
+    }
+
+    /**
      * Builds trade legs from selected strikes and option chain data.
      * Returns TradeLegsResult with legs and total credit, or null if unable to build.
      * <p>
      * Capital-based position sizing: computes maxLossPerLot from totalCredit and
      * stop-loss-percent, then derives lot count via LotSizeService before building legs.
+     * <p>
+     * Phase 1: Includes shadow logging of hedge strike selection (observation only,
+     * no impact on returned TradeLegsResult).
      *
      * @param intelligence    market intelligence data
      * @param strikeSelection selected strikes
+     * @param metrics         market metrics for hedge shadow logging
      * @return TradeLegsResult or null
      */
     private TradeLegsResult buildTradeLegs(MarketIntelligence intelligence,
-                                           StrikeSelection strikeSelection) {
+                                           StrikeSelection strikeSelection,
+                                           MarketMetrics metrics) {
         if (intelligence.getOptionChain() == null || intelligence.getOptionChain().getStrikes() == null) {
             log.warn("Option chain data not available");
             return null;
@@ -386,6 +485,100 @@ public class ExpiryDayStrategy implements TradingStrategy {
                 .limitPrice(putLTP)
                 .legType(LegType.ENTRY)
                 .build();
+
+        // ─── PHASE 1: HEDGE SHADOW LOGGING ───────────────────────────────────────────
+        // Compute time-to-expiry (intraday minutes remaining until 3:30 PM IST market close)
+        if (metrics != null && metrics.getCurrentAtmIv() != null) {
+            LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+            LocalDateTime marketClose = LocalDateTime.of(now.toLocalDate(), LocalTime.of(15, 30));
+            
+            // If market close has already passed today, skip shadow logging
+            if (now.isBefore(marketClose)) {
+                long minutesRemaining = java.time.temporal.ChronoUnit.MINUTES.between(now, marketClose);
+                double tte = minutesRemaining / (365.0 * 24 * 60);  // year-fraction
+                double atmIv = metrics.getCurrentAtmIv().doubleValue();
+                
+                // Call selectHedgeStrikes with real values (use same spot price source as strike selection)
+                BigDecimal spotPrice = intelligence.getSpotPrice() != null
+                        ? new BigDecimal(intelligence.getSpotPrice())
+                        : null;
+                
+                if (spotPrice == null) {
+                    log.warn("Spot price not available for hedge shadow logging");
+                } else {
+                    HedgeStrikeSelection hedgeSelection = selectHedgeStrikes(
+                            intelligence.getOptionChain(),
+                            strikeSelection.getCallStrike(),
+                            strikeSelection.getPutStrike(),
+                            spotPrice,
+                            atmIv,
+                            tte,
+                            strategyConfig());
+                
+                    // Fetch hedge strike LTPs and compute costs
+                    BigDecimal callHedgeLtp = null;
+                    BigDecimal putHedgeLtp = null;
+                    
+                    if (hedgeSelection.getCallHedgeStrike() != null) {
+                        callHedgeLtp = intelligence.getOptionChain().getStrikes().stream()
+                                .filter(s -> s.getStrikePrice().compareTo(hedgeSelection.getCallHedgeStrike()) == 0)
+                                .map(OptionStrike::getCallLTP)
+                                .findFirst()
+                                .orElse(null);
+                    }
+                    
+                    if (hedgeSelection.getPutHedgeStrike() != null) {
+                        putHedgeLtp = intelligence.getOptionChain().getStrikes().stream()
+                                .filter(s -> s.getStrikePrice().compareTo(hedgeSelection.getPutHedgeStrike()) == 0)
+                                .map(OptionStrike::getPutLTP)
+                                .findFirst()
+                                .orElse(null);
+                    }
+                    
+                    // Compute hedge costs and projections
+                    if (callHedgeLtp != null && putHedgeLtp != null) {
+                        BigDecimal totalHedgeCost = callHedgeLtp.add(putHedgeLtp);
+                        BigDecimal projectedNetCredit = totalCredit.subtract(totalHedgeCost);
+                        
+                        // Compute projected hedged risk per lot for both sides (distances may differ)
+                        BigDecimal callHedgeDistance = BigDecimal.valueOf(hedgeSelection.getCallHedgeDistance());
+                        BigDecimal putHedgeDistance = BigDecimal.valueOf(hedgeSelection.getPutHedgeDistance());
+                        BigDecimal projectedHedgedRiskPerLotCallSide = callHedgeDistance
+                                .subtract(projectedNetCredit)
+                                .multiply(BigDecimal.valueOf(lotSize));
+                        BigDecimal projectedHedgedRiskPerLotPutSide = putHedgeDistance
+                                .subtract(projectedNetCredit)
+                                .multiply(BigDecimal.valueOf(lotSize));
+                        
+                        log.info("Hedge shadow [{}]: callHedgeStrike={} delta={} distance={} ltp={}, " +
+                                "putHedgeStrike={} delta={} distance={} ltp={}, totalHedgeCost={}, " +
+                                "nakedRiskPerLot={}, projectedNetCredit={}, " +
+                                "projectedHedgedRiskPerLotCallSide={}, projectedHedgedRiskPerLotPutSide={}",
+                                intelligence.getSymbol(),
+                                hedgeSelection.getCallHedgeStrike(),
+                                String.format("%.4f", hedgeSelection.getCallHedgeDelta()),
+                                String.format("%.1f", hedgeSelection.getCallHedgeDistance()),
+                                callHedgeLtp,
+                                hedgeSelection.getPutHedgeStrike(),
+                                String.format("%.4f", hedgeSelection.getPutHedgeDelta()),
+                                String.format("%.1f", hedgeSelection.getPutHedgeDistance()),
+                                putHedgeLtp,
+                                totalHedgeCost,
+                                totalCredit,
+                                projectedNetCredit,
+                                projectedHedgedRiskPerLotCallSide,
+                                projectedHedgedRiskPerLotPutSide);
+                    } else if (hedgeSelection.getCallHedgeStrike() != null || hedgeSelection.getPutHedgeStrike() != null) {
+                        // One side found, other not
+                        log.warn("Hedge shadow [{}]: Partial hedge found (call: {}, put: {}) — " +
+                                "skipping cost comparison (missing LTP on one side)",
+                                intelligence.getSymbol(),
+                                hedgeSelection.getCallHedgeStrike(),
+                                hedgeSelection.getPutHedgeStrike());
+                    }
+                }
+            }
+        }
 
         return new TradeLegsResult(callLeg, putLeg, totalCredit.doubleValue());
     }
@@ -526,7 +719,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
      * Tracks both the final selected strikes and the original OI walls,
      * plus whether ATR boundary fallback was used for each leg.
      */
-    private static class StrikeSelection {
+    static class StrikeSelection {
         private final BigDecimal callStrike;      // final selected strike
         private final BigDecimal putStrike;       // final selected strike
         private final BigDecimal oiCallWall;      // original maxCallOIStrike
@@ -584,9 +777,57 @@ public class ExpiryDayStrategy implements TradingStrategy {
     }
 
     /**
+     * Helper class to hold hedge strike selection results.
+     * Tracks selected hedge strikes and their delta/distance metrics.
+     */
+    static class HedgeStrikeSelection {
+        private final BigDecimal callHedgeStrike;      // nullable
+        private final BigDecimal putHedgeStrike;       // nullable
+        private final Double callHedgeDelta;           // nullable
+        private final Double putHedgeDelta;            // nullable
+        private final Double callHedgeDistance;        // nullable
+        private final Double putHedgeDistance;         // nullable
+
+        HedgeStrikeSelection(BigDecimal callHedgeStrike, BigDecimal putHedgeStrike,
+                             Double callHedgeDelta, Double putHedgeDelta,
+                             Double callHedgeDistance, Double putHedgeDistance) {
+            this.callHedgeStrike = callHedgeStrike;
+            this.putHedgeStrike = putHedgeStrike;
+            this.callHedgeDelta = callHedgeDelta;
+            this.putHedgeDelta = putHedgeDelta;
+            this.callHedgeDistance = callHedgeDistance;
+            this.putHedgeDistance = putHedgeDistance;
+        }
+
+        BigDecimal getCallHedgeStrike() {
+            return callHedgeStrike;
+        }
+
+        BigDecimal getPutHedgeStrike() {
+            return putHedgeStrike;
+        }
+
+        Double getCallHedgeDelta() {
+            return callHedgeDelta;
+        }
+
+        Double getPutHedgeDelta() {
+            return putHedgeDelta;
+        }
+
+        Double getCallHedgeDistance() {
+            return callHedgeDistance;
+        }
+
+        Double getPutHedgeDistance() {
+            return putHedgeDistance;
+        }
+    }
+
+    /**
      * Helper class to hold trade legs and credit information.
      */
-    private static class TradeLegsResult {
+    static class TradeLegsResult {
         private final TradeLeg callLeg;
         private final TradeLeg putLeg;
         private final Double totalCredit;

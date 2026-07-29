@@ -166,6 +166,11 @@ trading-strategies:
     target-profit-percent: 50.0
     extra:
       min-distance-atr-multiplier: 0.4
+      # PLACEHOLDER pending real Tuesday paper-trading data, not a calibrated value
+      hedge-target-delta: 0.05
+      # Floor to prevent delta-collapse near 0DTE from picking a hedge strike too close
+      # to the short strike to provide meaningful protection
+      hedge-min-distance-points: 150
 
   - name: BULL_PUT_SPREAD
     enabled: true
