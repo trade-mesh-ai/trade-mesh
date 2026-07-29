@@ -91,6 +91,11 @@ public class TradingController {
                         signalInfo.put("confidence", result.getSignal().getConfidence());
                         signalInfo.put("expectedCredit", result.getSignal().getExpectedCredit());
                         signalInfo.put("maxLoss", result.getSignal().getMaxLoss());
+                        signalInfo.put("stopDistancePoints", result.getSignal().getStopDistancePoints());
+                        signalInfo.put("targetThreshold", result.getSignal().getTargetThreshold());
+                        signalInfo.put("plannedRiskPerLot", result.getSignal().getPlannedRiskPerLot());
+                        signalInfo.put("atrPercentile", result.getSignal().getAtrPercentile());
+                        signalInfo.put("confidenceScore", result.getSignal().getConfidenceScore());
                         response.put("signal", signalInfo);
                     }
 
@@ -164,6 +169,7 @@ public class TradingController {
                                     Map<String, Object> tradeInfo = new LinkedHashMap<>();
                                     tradeInfo.put("id", trade.getId());
                                     tradeInfo.put("symbol", trade.getSymbol());
+
                                     tradeInfo.put("strategyName", trade.getStrategyName());
                                     tradeInfo.put("status", trade.getStatus());
                                     tradeInfo.put("entryTime", trade.getEntryTime());
