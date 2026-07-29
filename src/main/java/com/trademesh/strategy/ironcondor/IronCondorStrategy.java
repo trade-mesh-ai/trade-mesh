@@ -110,31 +110,6 @@ public class IronCondorStrategy implements TradingStrategy {
         return score;
     }
 
-    /**
-     * Calculates adjusted exit levels based on ATR% volatility.
-     * Returns [adjustedTargetPct, adjustedSlPct] as percentages of credit.
-     */
-    private double[] calculateAdjustedExitLevels(double atrPct, StrategyProperties cfg) {
-        double baseProfitPct = cfg.getTargetProfitPercent() / 100.0;
-        double baseSlPct = cfg.getStopLossPercent() / 100.0;
-        double calmThreshold = cfg.getExtraDouble("atr-calm-threshold", 0.7);
-        double highThreshold = cfg.getExtraDouble("atr-high-threshold", 1.0);
-
-        if (atrPct < calmThreshold) {
-            // Calm market: tighter targets
-            double calmTargetMult = cfg.getExtraDouble("calm-target-multiplier", 0.9);
-            double calmSlMult = cfg.getExtraDouble("calm-sl-multiplier", 0.8);
-            return new double[]{baseProfitPct * calmTargetMult, baseSlPct * calmSlMult};
-        } else if (atrPct > highThreshold) {
-            // High volatility: wider targets
-            double highTargetMult = cfg.getExtraDouble("high-target-multiplier", 1.1);
-            double highSlMult = cfg.getExtraDouble("high-sl-multiplier", 1.2);
-            return new double[]{baseProfitPct * highTargetMult, baseSlPct * highSlMult};
-        } else {
-            // Normal: base percentages
-            return new double[]{baseProfitPct, baseSlPct};
-        }
-    }
 
     /**
      * Selects strikes and builds the Iron Condor signal.
@@ -268,13 +243,6 @@ public class IronCondorStrategy implements TradingStrategy {
         BigDecimal riskRewardRatio = maxLoss.signum() > 0 ?
                 maxProfit.divide(maxLoss, 4, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO;
 
-        // Adjusted exit levels
-        double atrPct = metrics.getAtrPct() != null ?
-                metrics.getAtrPct().doubleValue() : 0.8;
-        double[] exitLevels = calculateAdjustedExitLevels(atrPct, cfg);
-        BigDecimal adjustedProfitTarget = netCredit.multiply(BigDecimal.valueOf(exitLevels[0]));
-        BigDecimal adjustedStopLoss = netCredit.multiply(BigDecimal.valueOf(exitLevels[1]));
-
         // Build trade legs
         List<TradeLeg> legs = new ArrayList<>();
 
@@ -349,8 +317,6 @@ public class IronCondorStrategy implements TradingStrategy {
                 .atrPct(metrics.getAtrPct())
                 .currentAtmIv(metrics.getCurrentAtmIv())
                 .dte(dte)
-                .adjustedProfitTarget(adjustedProfitTarget)
-                .adjustedStopLoss(adjustedStopLoss)
                 .stopDistancePoints(stopDistancePoints)
                 .targetThreshold(targetThreshold)
                 .plannedRiskPerLot(plannedRiskPerLot)
@@ -476,8 +442,6 @@ public class IronCondorStrategy implements TradingStrategy {
                                                         metadata.put("atrPct", signal.getAtrPct() != null ? signal.getAtrPct().toString() : "0");
                                                         metadata.put("ivHvRatio", signal.getIvHvRatio() != null ? signal.getIvHvRatio().toString() : "0");
                                                         metadata.put("ivr", signal.getIvr() != null ? signal.getIvr().toString() : "0");
-                                                        metadata.put("adjustedProfitTarget", signal.getAdjustedProfitTarget().toString());
-                                                        metadata.put("adjustedStopLoss", signal.getAdjustedStopLoss().toString());
                                                         metadata.put("shortCallStrike", signal.getShortCallStrike().toString());
                                                         metadata.put("shortPutStrike", signal.getShortPutStrike().toString());
                                                         metadata.put("longCallStrike", signal.getLongCallStrike().toString());

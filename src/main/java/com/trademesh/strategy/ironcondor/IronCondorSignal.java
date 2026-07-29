@@ -136,19 +136,6 @@ public class IronCondorSignal {
      */
     private int dte;
 
-    // ─── Adjusted Exit Levels ─────────────────────────────────────────────────
-    /**
-     * Adjusted profit target (in points).
-     * Dynamically adjusted based on ATR% volatility.
-     */
-    private BigDecimal adjustedProfitTarget;
-
-    /**
-     * Adjusted stop loss (in points).
-     * Dynamically adjusted based on ATR% volatility.
-     */
-    private BigDecimal adjustedStopLoss;
-
     // ─── Trade Legs ───────────────────────────────────────────────────────────
     /**
      * List of trade legs (4 legs for iron condor).
