@@ -22,7 +22,7 @@ import java.util.List;
  * - Analyzes option chain data to identify OI walls (resistance/support)
  * - Calculates market bias based on call vs put OI distribution
  * - Detects OI wall strength (WEAK, MODERATE, STRONG)
- * - Caches analysis results in Redis with 5-minute TTL
+ * - Caches analysis results in Redis with 3-minute TTL
  */
 @Slf4j
 @Service
@@ -31,7 +31,7 @@ public class OIAnalyserService {
 
     // ─── Constants ─────────────────────────────────────────────────────────────────
     private static final String REDIS_KEY_PREFIX = "market:oi:analysis:";
-    private static final Duration CACHE_TTL = Duration.ofMinutes(5);
+    private static final Duration CACHE_TTL = Duration.ofMinutes(3);
 
     // OI Wall strength thresholds (in number of contracts)
     // Symbol-specific thresholds are determined in detectOIWallStrength()
@@ -59,7 +59,7 @@ public class OIAnalyserService {
      * - Finds maximum put OI (support wall)
      * - Identifies top 3 call and put OI walls
      * - Calculates market bias
-     * - Caches result in Redis with 5-minute TTL
+     * - Caches result in Redis with 3-minute TTL
      *
      * @param chain the option chain to analyze
      * @return Mono emitting the OIAnalysis
@@ -92,7 +92,7 @@ public class OIAnalyserService {
                         return redisTemplate.opsForValue()
                                 .set(redisKey, json, CACHE_TTL)
                                 .thenReturn(analysis)
-                                .doOnSuccess(a -> log.info("Cached OI analysis for {} in Redis (TTL=5m)", symbol));
+                                .doOnSuccess(a -> log.info("Cached OI analysis for {} in Redis (TTL=3m)", symbol));
                     } catch (Exception e) {
                         log.error("Failed to cache OI analysis: {}", e.getMessage());
                         return Mono.just(analysis);
