@@ -159,94 +159,95 @@ class ExpiryDayStrategyHedgeSelectionTest {
         assertNull(result.getCallHedgeDistance(), "Call hedge distance should be null");
     }
 
-    /**
-     * Test 4: Regression test — buildTradeLegs() return value is identical
-     * with/without valid hedge strikes available.
-     * <p>
-     * This test verifies zero live-behavior change from Phase 1 shadow logging.
-     * The TradeLegsResult (legs, totalCredit) must be byte-for-byte identical
-     * whether or not hedge strikes are found.
-     * <p>
-     * Calls the REAL buildTradeLegs() method twice via reflection with identical
-     * inputs except for the option chain (one with valid hedge strikes, one without),
-     * and verifies the returned legs and totalCredit are identical in both cases.
-     */
-    @Test
-    @DisplayName("Test 4: Regression — buildTradeLegs() return identical with/without hedge strikes")
-    void testBuildTradeLegsReturnIdenticalWithoutHedgeChange() {
-        // Setup: Create a real ExpiryDayStrategy with proper mocking
-        com.trademesh.strategy.config.StrategiesConfig strategiesConfig = mock(com.trademesh.strategy.config.StrategiesConfig.class);
-        com.trademesh.intelligence.MarketMetricsService marketMetricsService = mock(com.trademesh.intelligence.MarketMetricsService.class);
-        com.trademesh.config.LotSizeService lotSizeService = mock(com.trademesh.config.LotSizeService.class);
+     /**
+      * Test 4: buildTradeLegs() returns correct TradeLegsResult with all 4 legs.
+      * <p>
+      * Case A - Valid hedge scenario:
+      * - Spot: 24050, short call: 24000, short put: 24000
+      * - Candidate hedge strikes: 24500, 25000, 25500 (call side) and 23500, 23000, 22500 (put side)
+      * - Config: hedge-target-delta=0.05, hedge-min-distance-points=150.0
+      * - Expected: buildTradeLegs() returns non-null TradeLegsResult with all 4 legs present
+      * <p>
+      * Case B - No valid hedge scenario:
+      * - Spot: 24050, short call: 24000, short put: 24000
+      * - Candidate hedge strikes: 24050, 24100 (call side) and 24000, 23950 (put side) — all too close
+      * - Config: hedge-target-delta=0.05, hedge-min-distance-points=150.0
+      * - Expected: buildTradeLegs() returns null (no valid hedges found)
+      */
+     @Test
+     @DisplayName("Test 4: buildTradeLegs() returns correct TradeLegsResult with all 4 legs")
+     void testBuildTradeLegsWithAndWithoutValidHedges() {
+         // Setup: Create a real ExpiryDayStrategy with proper mocking
+         com.trademesh.strategy.config.StrategiesConfig strategiesConfig = mock(com.trademesh.strategy.config.StrategiesConfig.class);
+         com.trademesh.intelligence.MarketMetricsService marketMetricsService = mock(com.trademesh.intelligence.MarketMetricsService.class);
+         com.trademesh.config.LotSizeService lotSizeService = mock(com.trademesh.config.LotSizeService.class);
 
-        ExpiryDayStrategy strategy = new ExpiryDayStrategy(strategiesConfig, marketMetricsService, lotSizeService);
+         ExpiryDayStrategy strategy = new ExpiryDayStrategy(strategiesConfig, marketMetricsService, lotSizeService);
 
-        // Mock strategy config
-        com.trademesh.strategy.config.StrategyProperties config = mock(com.trademesh.strategy.config.StrategyProperties.class);
-        when(strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE")).thenReturn(config);
-        when(config.getStopLossPercent()).thenReturn(100.0);
-        when(config.getMaxLots()).thenReturn(2);
-        when(config.getMinCredit()).thenReturn(20.0);
-        when(config.getExtraDouble("hedge-target-delta", 0.05)).thenReturn(0.05);
-        when(config.getExtraDouble("hedge-min-distance-points", 150.0)).thenReturn(150.0);
+         // Mock strategy config (matching ExpiryDayStrategyPositionSizingTest pattern)
+         com.trademesh.strategy.config.StrategyProperties config = mock(com.trademesh.strategy.config.StrategyProperties.class);
+         when(strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE")).thenReturn(config);
+         when(config.getStopLossPercent()).thenReturn(100.0);
+         when(config.getMaxLots()).thenReturn(2);
+         when(config.getMinCredit()).thenReturn(20.0);
+         when(config.getExtraDouble("hedge-target-delta", 0.05)).thenReturn(0.05);
+         when(config.getExtraDouble("hedge-min-distance-points", 150.0)).thenReturn(150.0);
 
-        // Mock lot size service
-        when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
-        when(lotSizeService.getPositionSize(any(BigDecimal.class))).thenReturn(1);
+         // Mock lot size service
+         when(lotSizeService.getLotSize("NIFTY50")).thenReturn(65);
+         when(lotSizeService.getPositionSize(any(BigDecimal.class))).thenReturn(1);
 
-        // Create base MarketIntelligence and StrikeSelection
-        BigDecimal spotPrice = BigDecimal.valueOf(24050);
-        BigDecimal callStrike = BigDecimal.valueOf(24100);
-        BigDecimal putStrike = BigDecimal.valueOf(24000);
+         // Create MarketMetrics with ATM IV
+         com.trademesh.intelligence.MarketMetrics metrics = com.trademesh.intelligence.MarketMetrics.builder()
+                 .atr14(BigDecimal.valueOf(250.0))
+                 .currentAtmIv(BigDecimal.valueOf(18.0))
+                 .build();
 
-        // Create MarketMetrics with ATM IV
-        com.trademesh.intelligence.MarketMetrics metrics = com.trademesh.intelligence.MarketMetrics.builder()
-                .atr14(BigDecimal.valueOf(250.0))
-                .currentAtmIv(BigDecimal.valueOf(18.0))
-                .build();
+         // ─── Case A: Valid hedge scenario ───────────────────────────────────────
+         BigDecimal spotPrice = BigDecimal.valueOf(24050);
+         BigDecimal shortCallStrike = BigDecimal.valueOf(24000);
+         BigDecimal shortPutStrike = BigDecimal.valueOf(24000);
 
-        // Scenario 1: Chain with valid hedge strikes (candidates exist)
-        OptionChain chainWithHedges = createMockChainWithHedges("NIFTY50", spotPrice, callStrike, putStrike);
-        com.trademesh.intelligence.MarketIntelligence intelligenceWithHedges = createMockIntelligenceWithChain(
-                "NIFTY50", spotPrice, callStrike, putStrike, chainWithHedges);
-        ExpiryDayStrategy.StrikeSelection strikeSelectionWithHedges = new ExpiryDayStrategy.StrikeSelection(
-                callStrike, putStrike, callStrike, putStrike, false, false, 250.0, 0.4);
+         // Create option chain with valid hedge candidates
+         // Call side: 24500, 25000, 25500 (distances: 500, 1000, 1500 — all >= 150)
+         // Put side: 23500, 23000, 22500 (distances: 500, 1000, 1500 — all >= 150)
+         OptionChain chainWithValidHedges = createMockChainWithValidHedges(
+                 "NIFTY50", spotPrice, shortCallStrike, shortPutStrike);
+         com.trademesh.intelligence.MarketIntelligence intelligenceWithValidHedges = createMockIntelligenceWithChain(
+                 "NIFTY50", spotPrice, shortCallStrike, shortPutStrike, chainWithValidHedges);
+         ExpiryDayStrategy.StrikeSelection strikeSelectionWithValidHedges = new ExpiryDayStrategy.StrikeSelection(
+                 shortCallStrike, shortPutStrike, shortCallStrike, shortPutStrike, false, false, 250.0, 0.4);
 
-        // Scenario 2: Chain without valid hedge strikes (all candidates too close)
-        OptionChain chainWithoutHedges = createMockChainWithoutHedges("NIFTY50", spotPrice, callStrike, putStrike);
-        com.trademesh.intelligence.MarketIntelligence intelligenceWithoutHedges = createMockIntelligenceWithChain(
-                "NIFTY50", spotPrice, callStrike, putStrike, chainWithoutHedges);
-        ExpiryDayStrategy.StrikeSelection strikeSelectionWithoutHedges = new ExpiryDayStrategy.StrikeSelection(
-                callStrike, putStrike, callStrike, putStrike, false, false, 250.0, 0.4);
+         // Execute Case A
+         ExpiryDayStrategy.TradeLegsResult resultA = invokeBuildTradeLegs(
+                 strategy, intelligenceWithValidHedges, strikeSelectionWithValidHedges, metrics);
 
-        // Execute: Call buildTradeLegs() twice via reflection
-        ExpiryDayStrategy.TradeLegsResult result1 = invokeBuildTradeLegs(
-                strategy, intelligenceWithHedges, strikeSelectionWithHedges, metrics);
-        ExpiryDayStrategy.TradeLegsResult result2 = invokeBuildTradeLegs(
-                strategy, intelligenceWithoutHedges, strikeSelectionWithoutHedges, metrics);
+         // Verify Case A: Non-null result with all 4 legs present
+         assertNotNull(resultA, "Case A: buildTradeLegs() should return non-null result with valid hedges");
+         assertNotNull(resultA.getCallLeg(), "Case A: Call leg should be present");
+         assertNotNull(resultA.getPutLeg(), "Case A: Put leg should be present");
+         assertNotNull(resultA.getCallHedgeLeg(), "Case A: Call hedge leg should be present");
+         assertNotNull(resultA.getPutHedgeLeg(), "Case A: Put hedge leg should be present");
+         assertEquals(4, countNonNullLegs(resultA), "Case A: All 4 legs must be present");
 
-        // Verify: Both results have identical totalCredit and leg data
-        assertNotNull(result1, "buildTradeLegs() should return non-null result with valid hedges");
-        assertNotNull(result2, "buildTradeLegs() should return non-null result without valid hedges");
+         // ─── Case B: No valid hedge scenario ───────────────────────────────────────
+         // Create option chain with only too-close candidates
+         // Call side: 24050, 24100 (distances: 50, 100 — both < 150)
+         // Put side: 24000, 23950 (distances: 0, 50 — both < 150)
+         OptionChain chainWithoutValidHedges = createMockChainWithoutValidHedges(
+                 "NIFTY50", spotPrice, shortCallStrike, shortPutStrike);
+         com.trademesh.intelligence.MarketIntelligence intelligenceWithoutValidHedges = createMockIntelligenceWithChain(
+                 "NIFTY50", spotPrice, shortCallStrike, shortPutStrike, chainWithoutValidHedges);
+         ExpiryDayStrategy.StrikeSelection strikeSelectionWithoutValidHedges = new ExpiryDayStrategy.StrikeSelection(
+                 shortCallStrike, shortPutStrike, shortCallStrike, shortPutStrike, false, false, 250.0, 0.4);
 
-        assertEquals(result1.getTotalCredit(), result2.getTotalCredit(), 0.01,
-                "totalCredit must be identical regardless of hedge strike availability");
+         // Execute Case B
+         ExpiryDayStrategy.TradeLegsResult resultB = invokeBuildTradeLegs(
+                 strategy, intelligenceWithoutValidHedges, strikeSelectionWithoutValidHedges, metrics);
 
-        assertEquals(result1.getCallLeg().getStrikePrice(), result2.getCallLeg().getStrikePrice(),
-                "Call leg strike price must be identical");
-        assertEquals(result1.getPutLeg().getStrikePrice(), result2.getPutLeg().getStrikePrice(),
-                "Put leg strike price must be identical");
-
-        assertEquals(result1.getCallLeg().getQuantity(), result2.getCallLeg().getQuantity(),
-                "Call leg quantity must be identical");
-        assertEquals(result1.getPutLeg().getQuantity(), result2.getPutLeg().getQuantity(),
-                "Put leg quantity must be identical");
-
-        assertEquals(result1.getCallLeg().getAction(), result2.getCallLeg().getAction(),
-                "Call leg action must be identical");
-        assertEquals(result1.getPutLeg().getAction(), result2.getPutLeg().getAction(),
-                "Put leg action must be identical");
-    }
+         // Verify Case B: Null result (no valid hedges found)
+         assertNull(resultB, "Case B: buildTradeLegs() should return null when no valid hedges found");
+     }
 
     // ─── Helper Methods ───────────────────────────────────────────────────────────
 
@@ -370,6 +371,127 @@ class ExpiryDayStrategyHedgeSelectionTest {
 
         when(chain.getStrikes()).thenReturn(strikes);
         return chain;
+    }
+
+    /**
+     * Creates a mock OptionChain with valid hedge strike candidates (far enough from short strikes).
+     * Used for Test 4 Case A: spot=24050, short call/put=24000
+     * Call side: 24500, 25000, 25500 (distances: 500, 1000, 1500 — all >= 150)
+     * Put side: 23500, 23000, 22500 (distances: 500, 1000, 1500 — all >= 150)
+     */
+    private OptionChain createMockChainWithValidHedges(String symbol, BigDecimal spotPrice,
+                                                        BigDecimal callStrike, BigDecimal putStrike) {
+        OptionChain chain = mock(OptionChain.class);
+        when(chain.getSymbol()).thenReturn(symbol);
+        when(chain.getSpotPrice()).thenReturn(spotPrice);
+        when(chain.getExpiryDate()).thenReturn(LocalDate.now().plusDays(1));
+
+        List<OptionStrike> strikes = new ArrayList<>();
+
+        // Add short call strike itself (needed for buildTradeLegs() to find the short leg)
+        OptionStrike shortCallStrike = mock(OptionStrike.class);
+        when(shortCallStrike.getStrikePrice()).thenReturn(callStrike);
+        when(shortCallStrike.getCallLTP()).thenReturn(BigDecimal.valueOf(50.0));
+        when(shortCallStrike.getPutLTP()).thenReturn(BigDecimal.valueOf(0.5));
+        strikes.add(shortCallStrike);
+
+        // Add short put strike itself (needed for buildTradeLegs() to find the short leg)
+        OptionStrike shortPutStrike = mock(OptionStrike.class);
+        when(shortPutStrike.getStrikePrice()).thenReturn(putStrike);
+        when(shortPutStrike.getCallLTP()).thenReturn(BigDecimal.valueOf(0.5));
+        when(shortPutStrike.getPutLTP()).thenReturn(BigDecimal.valueOf(40.0));
+        strikes.add(shortPutStrike);
+
+        // Add call hedge candidates (above short call strike)
+        // 24500, 25000, 25500 (distances: 500, 1000, 1500 — all >= 150)
+        for (int i = 1; i <= 3; i++) {
+            BigDecimal strikePrice = callStrike.add(BigDecimal.valueOf(i * 500));
+            OptionStrike strike = mock(OptionStrike.class);
+            when(strike.getStrikePrice()).thenReturn(strikePrice);
+            when(strike.getCallLTP()).thenReturn(BigDecimal.valueOf(5.0 + i));
+            when(strike.getPutLTP()).thenReturn(BigDecimal.valueOf(0.5));
+            strikes.add(strike);
+        }
+
+        // Add put hedge candidates (below short put strike)
+        // 23500, 23000, 22500 (distances: 500, 1000, 1500 — all >= 150)
+        for (int i = 1; i <= 3; i++) {
+            BigDecimal strikePrice = putStrike.subtract(BigDecimal.valueOf(i * 500));
+            OptionStrike strike = mock(OptionStrike.class);
+            when(strike.getStrikePrice()).thenReturn(strikePrice);
+            when(strike.getCallLTP()).thenReturn(BigDecimal.valueOf(0.5));
+            when(strike.getPutLTP()).thenReturn(BigDecimal.valueOf(5.0 + i));
+            strikes.add(strike);
+        }
+
+        when(chain.getStrikes()).thenReturn(strikes);
+        return chain;
+    }
+
+    /**
+     * Creates a mock OptionChain without valid hedge strike candidates (all too close).
+     * Used for Test 4 Case B: spot=24050, short call/put=24000
+     * Call side: 24050, 24100 (distances: 50, 100 — both < 150)
+     * Put side: 24000, 23950 (distances: 0, 50 — both < 150)
+     */
+    private OptionChain createMockChainWithoutValidHedges(String symbol, BigDecimal spotPrice,
+                                                           BigDecimal callStrike, BigDecimal putStrike) {
+        OptionChain chain = mock(OptionChain.class);
+        when(chain.getSymbol()).thenReturn(symbol);
+        when(chain.getSpotPrice()).thenReturn(spotPrice);
+        when(chain.getExpiryDate()).thenReturn(LocalDate.now().plusDays(1));
+
+        List<OptionStrike> strikes = new ArrayList<>();
+
+        // Add short call strike itself (needed for buildTradeLegs() to find the short leg)
+        OptionStrike shortCallStrike = mock(OptionStrike.class);
+        when(shortCallStrike.getStrikePrice()).thenReturn(callStrike);
+        when(shortCallStrike.getCallLTP()).thenReturn(BigDecimal.valueOf(50.0));
+        when(shortCallStrike.getPutLTP()).thenReturn(BigDecimal.valueOf(0.5));
+        strikes.add(shortCallStrike);
+
+        // Add short put strike itself (needed for buildTradeLegs() to find the short leg)
+        OptionStrike shortPutStrike = mock(OptionStrike.class);
+        when(shortPutStrike.getStrikePrice()).thenReturn(putStrike);
+        when(shortPutStrike.getCallLTP()).thenReturn(BigDecimal.valueOf(0.5));
+        when(shortPutStrike.getPutLTP()).thenReturn(BigDecimal.valueOf(40.0));
+        strikes.add(shortPutStrike);
+
+        // Add call candidates that are too close (distance < 150)
+        // 24050, 24100 (distances: 50, 100 — both < 150)
+        strikes.add(createMockStrike(BigDecimal.valueOf(24050), BigDecimal.valueOf(5.0), BigDecimal.valueOf(0.5)));
+        strikes.add(createMockStrike(BigDecimal.valueOf(24100), BigDecimal.valueOf(5.0), BigDecimal.valueOf(0.5)));
+
+        // Add put candidates that are too close (distance < 150)
+        // 24000, 23950 (distances: 0, 50 — both < 150)
+        strikes.add(createMockStrike(BigDecimal.valueOf(24000), BigDecimal.valueOf(0.5), BigDecimal.valueOf(5.0)));
+        strikes.add(createMockStrike(BigDecimal.valueOf(23950), BigDecimal.valueOf(0.5), BigDecimal.valueOf(5.0)));
+
+        when(chain.getStrikes()).thenReturn(strikes);
+        return chain;
+    }
+
+    /**
+     * Helper to create a mock OptionStrike with given strike price and LTPs.
+     */
+    private OptionStrike createMockStrike(BigDecimal strikePrice, BigDecimal callLtp, BigDecimal putLtp) {
+        OptionStrike strike = mock(OptionStrike.class);
+        when(strike.getStrikePrice()).thenReturn(strikePrice);
+        when(strike.getCallLTP()).thenReturn(callLtp);
+        when(strike.getPutLTP()).thenReturn(putLtp);
+        return strike;
+    }
+
+    /**
+     * Counts the number of non-null legs in a TradeLegsResult.
+     */
+    private int countNonNullLegs(ExpiryDayStrategy.TradeLegsResult result) {
+        int count = 0;
+        if (result.getCallLeg() != null) count++;
+        if (result.getPutLeg() != null) count++;
+        if (result.getCallHedgeLeg() != null) count++;
+        if (result.getPutHedgeLeg() != null) count++;
+        return count;
     }
 
     /**
