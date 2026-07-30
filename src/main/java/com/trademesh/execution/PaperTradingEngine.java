@@ -194,6 +194,10 @@ public class PaperTradingEngine {
             return markToMarketSpread(trade);
         }
 
+        if ("EXPIRY_DAY_STRANGLE".equals(trade.getStrategyName())) {
+            return markToMarketExpiryDay(trade);
+        }
+
         // Default mark-to-market for other strategies
         return fetchCurrentPrices(trade)
                 .flatMap(currentValue -> {
@@ -258,6 +262,61 @@ public class PaperTradingEngine {
                     log.error("Error in Iron Condor mark-to-market for trade: {}", trade.getId(), error);
                     return Mono.empty();
                 });
+    }
+
+    /**
+     * Calculates Expiry Day Strangle P&L by analyzing all 4 legs.
+     * SELL legs (short call/put) profit when premium decays (entry > current).
+     * BUY legs (hedge call/put) profit when premium appreciates (current > entry).
+     *
+     * @param trade the Expiry Day Strangle paper trade
+     * @return Mono emitting the unrealized P&L in points
+     */
+    Mono<BigDecimal> calculateExpiryDayStranglePnl(PaperTrade trade) {
+        try {
+            List<TradeLeg> legs = trade.getLegs();
+            if (legs == null || legs.isEmpty()) {
+                log.warn("No legs found for Expiry Day Strangle trade {}, falling back to last known unrealized P&L: {}",
+                        trade.getId(), trade.getUnrealizedPnl());
+                return Mono.just(trade.getUnrealizedPnl());
+            }
+
+            return optionChainService.fetchOptionChain(trade.getSymbol())
+                    .flatMap(chainData -> {
+                        BigDecimal totalPnl = BigDecimal.ZERO;
+
+                        for (TradeLeg leg : legs) {
+                            BigDecimal currentLtp = extractLTP(chainData, leg);
+                            BigDecimal entryPrice = leg.getLimitPrice();
+                            BigDecimal legPnl;
+
+                            if (leg.getAction() == Action.SELL) {
+                                // SELL legs: profit when premium decays
+                                legPnl = entryPrice.subtract(currentLtp).multiply(BigDecimal.valueOf(leg.getQuantity()));
+                            } else {
+                                // BUY legs: profit when premium appreciates
+                                legPnl = currentLtp.subtract(entryPrice).multiply(BigDecimal.valueOf(leg.getQuantity()));
+                            }
+
+                            totalPnl = totalPnl.add(legPnl);
+                            log.debug("Expiry Day Strangle leg P&L: {} {} @ {} (entry: {}, current: {}, pnl: {})",
+                                    leg.getAction(), leg.getOptionType(), leg.getStrikePrice(),
+                                    entryPrice, currentLtp, legPnl);
+                        }
+
+                        log.debug("Expiry Day Strangle total unrealized P&L for trade {}: {}", trade.getId(), totalPnl);
+                        return Mono.just(totalPnl);
+                    })
+                    .onErrorResume(e -> {
+                        log.warn("Failed to fetch option chain for Expiry Day Strangle P&L (trade {}), falling back to last known unrealized P&L: {} ({})",
+                                trade.getId(), trade.getUnrealizedPnl(), e.getMessage());
+                        return Mono.just(trade.getUnrealizedPnl());
+                    });
+        } catch (Exception e) {
+            log.error("Error calculating Expiry Day Strangle P&L for trade: {}, falling back to last known unrealized P&L: {}",
+                    trade.getId(), trade.getUnrealizedPnl(), e);
+            return Mono.just(trade.getUnrealizedPnl());
+        }
     }
 
     /**
@@ -399,21 +458,87 @@ public class PaperTradingEngine {
                 });
     }
 
-    /**
-     * Closes an Iron Condor trade with Telegram alert.
-     * <p>
-     * Process:
-     * 1. Re-fetch trade from DB to ensure current status (guard against concurrent closes)
-     * 2. Check if trade is still OPEN (skip if already closed)
-     * 3. Update status to CLOSED
-     * 4. Set exit time and realized P&L
-     * 5. Save to PostgreSQL
-     * 6. Send Telegram alert
-     *
-     * @param trade the Iron Condor paper trade to close
-     * @return Mono emitting the closed PaperTrade
-     */
-    Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
+     /**
+      * Closes an Expiry Day Strangle trade with Telegram alert.
+      * <p>
+      * Process:
+      * 1. Re-fetch trade from DB to ensure current status (guard against concurrent closes)
+      * 2. Check if trade is still OPEN (skip if already closed)
+      * 3. Calculate P&L using calculateExpiryDayStranglePnl() (signed netting of SELL/BUY legs)
+      * 4. Update status to CLOSED
+      * 5. Set exit time and realized P&L
+      * 6. Save to PostgreSQL
+      * 7. Send Telegram alert
+      *
+      * @param trade the Expiry Day Strangle paper trade to close
+      * @return Mono emitting the closed PaperTrade
+      */
+     Mono<PaperTrade> closeExpiryDayTrade(PaperTrade trade) {
+         log.info("Closing Expiry Day Strangle trade: {} with reason: {}", trade.getId(), trade.getExitReason());
+
+         // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
+         // This guards against race condition where two concurrent chains (MTM cycle + scheduled exit)
+         // both read the same trade as OPEN and attempt to close it simultaneously
+         return paperTradeRepository.findById(trade.getId())
+                 .flatMap(freshTrade -> {
+                     // Guard: check if trade is still OPEN
+                     if (freshTrade.getStatus() != TradeStatus.OPEN) {
+                         log.warn("closeExpiryDayTrade() called on trade {} with status {} (expected OPEN) — skipping duplicate close attempt",
+                                 freshTrade.getId(), freshTrade.getStatus());
+                         return Mono.just(freshTrade);
+                     }
+
+                     // Calculate final P&L using the same formula as the decision path
+                     return calculateExpiryDayStranglePnl(trade)
+                             .flatMap(finalPnl -> {
+                                 // Proceed with close logic on the original trade parameter
+                                 // (which already has correct exitReason, legs, etc. from the reactive chain)
+                                 trade.setStatus(TradeStatus.CLOSED);
+                                 trade.setExitTime(LocalDateTime.now(this.clock));
+                                 trade.setRealizedPnl(finalPnl);
+                                 trade.setUnrealizedPnl(BigDecimal.ZERO);
+                                 trade.setUpdatedAt(LocalDateTime.now(this.clock));
+
+                                 // Derive lot count from trade legs (all legs share same quantity)
+                                 int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                                         ? trade.getLegs().get(0).getQuantity()
+                                         : 1;
+                                 // Scale entryCredit by lot count before subtraction
+                                 BigDecimal scaledEntryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
+                                 trade.setCurrentValue(scaledEntryCredit.subtract(finalPnl));
+
+                                 return paperTradeRepository.save(trade);
+                             })
+                             .flatMap(closedTrade -> {
+                                 String alert = formatExitAlert(closedTrade);
+                                 return telegramNotificationBot.sendAlert(createAlert(closedTrade, alert))
+                                         .then(Mono.just(closedTrade));
+                             })
+                             .doOnSuccess(closedTrade -> log.info("Expiry Day Strangle trade closed: {} with P&L: {}, reason: {}",
+                                     closedTrade.getId(), closedTrade.getRealizedPnl(), closedTrade.getExitReason()))
+                             .doOnError(error -> log.error("Error closing Expiry Day Strangle trade: {}", trade.getId(), error));
+                 })
+                 .onErrorResume(e -> {
+                     log.error("Error re-fetching trade {} for close operation: {}", trade.getId(), e.getMessage());
+                     return Mono.just(trade);
+                 });
+     }
+
+     /**
+      * Closes an Iron Condor trade with Telegram alert.
+      * <p>
+      * Process:
+      * 1. Re-fetch trade from DB to ensure current status (guard against concurrent closes)
+      * 2. Check if trade is still OPEN (skip if already closed)
+      * 3. Update status to CLOSED
+      * 4. Set exit time and realized P&L
+      * 5. Save to PostgreSQL
+      * 6. Send Telegram alert
+      *
+      * @param trade the Iron Condor paper trade to close
+      * @return Mono emitting the closed PaperTrade
+      */
+     Mono<PaperTrade> closeIronCondorTrade(PaperTrade trade) {
         log.info("Closing Iron Condor trade: {} with reason: {}", trade.getId(), trade.getExitReason());
 
         // Re-fetch trade from DB to ensure we have current state, not stale in-memory object
@@ -1120,6 +1245,44 @@ public class PaperTradingEngine {
                 .onErrorResume(e -> {
                     log.error("Error in shouldExitSpread for trade {}: {}", trade.getId(), e.getMessage());
                     return Mono.just(false);
+                });
+    }
+
+    /**
+     * Expiry Day Strangle specific mark-to-market logic.
+     * Calculates P&L for all 4 legs (2 short + 2 hedge) and checks exit conditions.
+     *
+     * @param trade the Expiry Day Strangle paper trade
+     * @return Mono emitting the updated or closed PaperTrade
+     */
+    private Mono<PaperTrade> markToMarketExpiryDay(PaperTrade trade) {
+        return calculateExpiryDayStranglePnl(trade)
+                .flatMap(pnl -> {
+                    trade.setUnrealizedPnl(pnl);
+                    // Derive lot count from trade legs (all legs share same quantity)
+                    int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                            ? trade.getLegs().get(0).getQuantity()
+                            : 1;
+                    // Scale entryCredit by lot count before subtraction
+                    BigDecimal scaledEntryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
+                    trade.setCurrentValue(scaledEntryCredit.subtract(pnl));
+                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
+
+                    // Check for STOP_LOSS or TARGET_HIT using the shared decision method
+                    Optional<MarkToMarketExitTrigger> trigger =
+                            determineMarkToMarketExitTrigger(trade.getCurrentValue(), trade.getEntryCredit());
+                    if (trigger.isPresent()) {
+                        String reason = trigger.get().name(); // "STOP_LOSS" or "TARGET_HIT"
+                        log.info("{} triggered for Expiry Day Strangle trade {}: currentValue={}, entryCredit={}",
+                                reason, trade.getId(), trade.getCurrentValue(), trade.getEntryCredit());
+                        trade.setExitReason(reason);
+                        return closeExpiryDayTrade(trade);
+                    }
+                    return paperTradeRepository.save(trade);
+                })
+                .onErrorResume(error -> {
+                    log.error("Error in Expiry Day Strangle mark-to-market for trade: {}", trade.getId(), error);
+                    return Mono.empty();
                 });
     }
 

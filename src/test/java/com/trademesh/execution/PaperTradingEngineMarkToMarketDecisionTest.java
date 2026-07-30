@@ -232,21 +232,42 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         );
         trade.setLegs(legs);
 
-        // Mock Redis to return option chain with LTPs that produce currentValue = 210.0
-        // SELL CE leg (23950): callLTP = 120.0 → adds 120.0
-        // SELL PE leg (23850): putLTP = 90.0 → adds 90.0
-        // Signed netting: 120.0 + 90.0 = 210.0
+        // Mock Redis to return option chain with LTPs that differ from entry prices
+        // SELL CE leg (23950): entry 120.0, current 80.0 → legPnl = (120.0 - 80.0) × 1 = 40.0
+        // SELL PE leg (23850): entry 90.0, current 50.0 → legPnl = (90.0 - 50.0) × 1 = 40.0
+        // totalPnl = 40.0 + 40.0 = 80.0
+        // currentValue = entryCredit - totalPnl = 100.0 - 80.0 = 20.0
+        // STOP_LOSS check: currentValue (20.0) > entryCredit × 2 (200.0)? NO → no trigger
+        // But we want to test STOP_LOSS, so use LTPs that make currentValue > 200.0:
+        // SELL CE leg (23950): entry 120.0, current 10.0 → legPnl = (120.0 - 10.0) × 1 = 110.0
+        // SELL PE leg (23850): entry 90.0, current 10.0 → legPnl = (90.0 - 10.0) × 1 = 80.0
+        // totalPnl = 110.0 + 80.0 = 190.0
+        // currentValue = entryCredit - totalPnl = 100.0 - 190.0 = -90.0 (but this is negative, which doesn't make sense)
+        // Let's use: SELL CE current 5.0, SELL PE current 5.0
+        // legPnl_CE = (120.0 - 5.0) × 1 = 115.0
+        // legPnl_PE = (90.0 - 5.0) × 1 = 85.0
+        // totalPnl = 115.0 + 85.0 = 200.0
+        // currentValue = 100.0 - 200.0 = -100.0 (still negative)
+        // Actually, for STOP_LOSS to trigger, we need currentValue > 200.0
+        // currentValue = entryCredit - totalPnl, so we need: 100.0 - totalPnl > 200.0
+        // This means totalPnl < -100.0 (negative P&L, i.e., loss)
+        // For SELL legs: legPnl = entry - current. If current > entry, legPnl is negative.
+        // SELL CE: entry 120.0, current 250.0 → legPnl = 120.0 - 250.0 = -130.0
+        // SELL PE: entry 90.0, current 200.0 → legPnl = 90.0 - 200.0 = -110.0
+        // totalPnl = -130.0 - 110.0 = -240.0
+        // currentValue = 100.0 - (-240.0) = 340.0
+        // STOP_LOSS check: 340.0 > 200.0? YES → STOP_LOSS triggered ✓
         OptionChain optionChain = OptionChain.builder()
                 .symbol("NIFTY50")
                 .expiryDate(LocalDate.of(2026, 7, 9))
                 .strikes(List.of(
                         OptionStrike.builder()
                                 .strikePrice(BigDecimal.valueOf(23950))
-                                .callLTP(BigDecimal.valueOf(120.0))  // SELL CE leg LTP
+                                .callLTP(BigDecimal.valueOf(250.0))  // SELL CE current (entry 120.0)
                                 .build(),
                         OptionStrike.builder()
                                 .strikePrice(BigDecimal.valueOf(23850))
-                                .putLTP(BigDecimal.valueOf(90.0))   // SELL PE leg LTP
+                                .putLTP(BigDecimal.valueOf(200.0))   // SELL PE current (entry 90.0)
                                 .build()
                 ))
                 .build();
@@ -259,7 +280,7 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         PaperTrade freshTrade = new PaperTrade();
         freshTrade.setId(trade.getId());
         freshTrade.setSymbol("NIFTY50");
-        freshTrade.setStrategyName("BULL_PUT_SPREAD");
+        freshTrade.setStrategyName("EXPIRY_DAY_STRANGLE");
         freshTrade.setStatus(TradeStatus.OPEN);  // CRITICAL: must be OPEN
         freshTrade.setEntryCredit(BigDecimal.valueOf(100.0));
         freshTrade.setCurrentValue(BigDecimal.valueOf(100.0));
@@ -282,11 +303,17 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         // Act & Assert
         StepVerifier.create(engine.markToMarket(trade))
                 .expectNextMatches(result -> {
-                    // Assert
+                    // Hand-calculated expected values:
+                    // legPnl_CE = (120.0 - 250.0) × 1 = -130.0
+                    // legPnl_PE = (90.0 - 200.0) × 1 = -110.0
+                    // totalPnl = -130.0 - 110.0 = -240.0
+                    // currentValue = 100.0 - (-240.0) = 340.0
+                    // STOP_LOSS check: 340.0 > 200.0? YES
+                    // realizedPnl = unrealizedPnl = -240.0
                     return result.getStatus() == TradeStatus.CLOSED &&
-                            result.getCurrentValue().compareTo(BigDecimal.valueOf(210.0)) == 0 &&  // Verify actual computed value
+                            result.getCurrentValue().compareTo(BigDecimal.valueOf(340.0)) == 0 &&
                             result.getExitReason().equals("STOP_LOSS") &&
-                            result.getRealizedPnl().compareTo(BigDecimal.valueOf(-110.0)) == 0;  // 100.0 - 210.0 = -110.0
+                            result.getRealizedPnl().compareTo(BigDecimal.valueOf(-240.0)) == 0;
                 })
                 .verifyComplete();
 
@@ -298,104 +325,110 @@ class PaperTradingEngineMarkToMarketDecisionTest {
         verify(telegramNotificationBot, times(1)).sendAlert(any());
     }
 
-    /**
-     * Test B: No trigger → paperTradeRepository.save() is called directly,
-     * closeTrade() is NOT invoked.
-     * <p>
-     * Setup:
-     * - entryCredit = 100.0 points
-     * - 2 legs: SELL @ 23900 PE, BUY @ 23800 PE
-     * - Redis returns: SELL leg putLTP = 75.0, BUY leg putLTP = 25.0
-     * <p>
-     * Arithmetic:
-     * currentValue = 75.0 - 25.0 = 50.0
-     * 50.0 > 200.0? NO (not STOP_LOSS)
-     * 50.0 < 50.0? NO (not TARGET_HIT)
-     * → No trigger, save() called directly
-     */
-    @Test
-    @DisplayName("markToMarket: No trigger → save() called directly, closeTrade() NOT invoked")
-    void markToMarket_NoTrigger_SavesDirectly() {
-        // Arrange: Create trade with entryCredit = 100.0
-        PaperTrade trade = new PaperTrade();
-        trade.setId(UUID.randomUUID());
-        trade.setSymbol("NIFTY50");
-        trade.setStrategyName("EXPIRY_DAY_STRANGLE");
-        trade.setStatus(TradeStatus.OPEN);
-        trade.setEntryCredit(BigDecimal.valueOf(100.0));
-        trade.setCurrentValue(BigDecimal.valueOf(100.0));
-        trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
-        trade.setEntryTime(LocalDateTime.now());
-        trade.setTradeDate(LocalDate.now());
+     /**
+      * Test B: No trigger → paperTradeRepository.save() is called directly,
+      * closeTrade() is NOT invoked.
+      * <p>
+      * Setup:
+      * - entryCredit = 100.0 points
+      * - 2 legs: SELL CE @ 23950 (entry 40.0), SELL PE @ 23850 (entry 35.0)
+      * - Redis returns: SELL CE callLTP = 25.0, SELL PE putLTP = 30.0
+      * <p>
+      * Hand-calculated P&L via calculateExpiryDayStranglePnl():
+      * SELL CE leg: legPnl = (entry - current) × qty = (40.0 - 25.0) × 1 = 15.0
+      * SELL PE leg: legPnl = (entry - current) × qty = (35.0 - 30.0) × 1 = 5.0
+      * totalPnl = 15.0 + 5.0 = 20.0
+      * currentValue = entryCredit - totalPnl = 100.0 - 20.0 = 80.0
+      * unrealizedPnl = totalPnl = 20.0
+      * <p>
+      * Exit check: currentValue (80.0) > entryCredit × 2 (200.0)? NO
+      *             currentValue (80.0) < entryCredit × 0.5 (50.0)? NO
+      * → No trigger, save() called directly
+      */
+     @Test
+     @DisplayName("markToMarket: No trigger → save() called directly, closeTrade() NOT invoked")
+     void markToMarket_NoTrigger_SavesDirectly() {
+         // Arrange: Create trade with entryCredit = 100.0
+         PaperTrade trade = new PaperTrade();
+         trade.setId(UUID.randomUUID());
+         trade.setSymbol("NIFTY50");
+         trade.setStrategyName("EXPIRY_DAY_STRANGLE");
+         trade.setStatus(TradeStatus.OPEN);
+         trade.setEntryCredit(BigDecimal.valueOf(100.0));
+         trade.setCurrentValue(BigDecimal.valueOf(100.0));
+         trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
+         trade.setEntryTime(LocalDateTime.now());
+         trade.setTradeDate(LocalDate.now());
 
-        // 2 legs: SELL CE @ 23950 (entry 30.0), SELL PE @ 23850 (entry 20.0)
-        // Naked strangle: both SELL, different option types
-        List<TradeLeg> legs = List.of(
-                TradeLeg.builder()
-                        .action(Action.SELL)
-                        .optionType(OptionType.CE)
-                        .strikePrice(BigDecimal.valueOf(23950.0))
-                        .limitPrice(BigDecimal.valueOf(30.0))
-                        .quantity(1)
-                        .expiryDate(LocalDate.now().plusDays(7))
-                        .build(),
-                TradeLeg.builder()
-                        .action(Action.SELL)
-                        .optionType(OptionType.PE)
-                        .strikePrice(BigDecimal.valueOf(23850.0))
-                        .limitPrice(BigDecimal.valueOf(20.0))
-                        .quantity(1)
-                        .expiryDate(LocalDate.now().plusDays(7))
-                        .build()
-        );
-        trade.setLegs(legs);
+         // 2 legs: SELL CE @ 23950 (entry 40.0), SELL PE @ 23850 (entry 35.0)
+         // Naked strangle: both SELL, different option types
+         List<TradeLeg> legs = List.of(
+                 TradeLeg.builder()
+                         .action(Action.SELL)
+                         .optionType(OptionType.CE)
+                         .strikePrice(BigDecimal.valueOf(23950.0))
+                         .limitPrice(BigDecimal.valueOf(40.0))
+                         .quantity(1)
+                         .expiryDate(LocalDate.now().plusDays(7))
+                         .build(),
+                 TradeLeg.builder()
+                         .action(Action.SELL)
+                         .optionType(OptionType.PE)
+                         .strikePrice(BigDecimal.valueOf(23850.0))
+                         .limitPrice(BigDecimal.valueOf(35.0))
+                         .quantity(1)
+                         .expiryDate(LocalDate.now().plusDays(7))
+                         .build()
+         );
+         trade.setLegs(legs);
 
-        // Mock Redis to return option chain with LTPs that produce currentValue = 50.0
-        // SELL CE leg (23950): callLTP = 30.0 → adds 30.0
-        // SELL PE leg (23850): putLTP = 20.0 → adds 20.0
-        // Signed netting: 30.0 + 20.0 = 50.0
-        // 50.0 is in the safe range (not > 200.0, not < 50.0)
-        OptionChain optionChain = OptionChain.builder()
-                .symbol("NIFTY50")
-                .expiryDate(LocalDate.of(2026, 7, 9))
-                .strikes(List.of(
-                        OptionStrike.builder()
-                                .strikePrice(BigDecimal.valueOf(23950))
-                                .callLTP(BigDecimal.valueOf(30.0))
-                                .build(),
-                        OptionStrike.builder()
-                                .strikePrice(BigDecimal.valueOf(23850))
-                                .putLTP(BigDecimal.valueOf(20.0))
-                                .build()
-                ))
-                .build();
+         // Mock Redis to return option chain with LTPs that produce currentValue = 80.0
+         // SELL CE leg (23950): entry 40.0, current 25.0 → legPnl = (40.0 - 25.0) × 1 = 15.0
+         // SELL PE leg (23850): entry 35.0, current 30.0 → legPnl = (35.0 - 30.0) × 1 = 5.0
+         // totalPnl = 15.0 + 5.0 = 20.0
+         // currentValue = entryCredit - totalPnl = 100.0 - 20.0 = 80.0
+         // 80.0 is in the safe range (not > 200.0, not < 50.0)
+         OptionChain optionChain = OptionChain.builder()
+                 .symbol("NIFTY50")
+                 .expiryDate(LocalDate.of(2026, 7, 9))
+                 .strikes(List.of(
+                         OptionStrike.builder()
+                                 .strikePrice(BigDecimal.valueOf(23950))
+                                 .callLTP(BigDecimal.valueOf(25.0))
+                                 .build(),
+                         OptionStrike.builder()
+                                 .strikePrice(BigDecimal.valueOf(23850))
+                                 .putLTP(BigDecimal.valueOf(30.0))
+                                 .build()
+                 ))
+                 .build();
 
-        when(optionChainService.fetchOptionChain("NIFTY50"))
-                .thenReturn(Mono.just(optionChain));
+         when(optionChainService.fetchOptionChain("NIFTY50"))
+                 .thenReturn(Mono.just(optionChain));
 
-        // Mock paperTradeRepository.save() to echo back the mutated trade
-        when(paperTradeRepository.save(any(PaperTrade.class)))
-                .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
+         // Mock paperTradeRepository.save() to echo back the mutated trade
+         when(paperTradeRepository.save(any(PaperTrade.class)))
+                 .thenAnswer(invocation -> Mono.just(invocation.getArgument(0)));
 
-        // NOTE: findById() is NOT stubbed — it should never be called
-        // If it is called, the test will fail with "Unexpected invocation"
+         // NOTE: findById() is NOT stubbed — it should never be called
+         // If it is called, the test will fail with "Unexpected invocation"
 
-        // Act & Assert
-        StepVerifier.create(engine.markToMarket(trade))
-                .expectNextMatches(result ->
-                        result.getStatus() == TradeStatus.OPEN &&
-                                result.getCurrentValue().compareTo(BigDecimal.valueOf(50.0)) == 0 &&
-                                result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(50.0)) == 0  // entryCredit - currentValue = 100.0 - 50.0 = 50.0
-                )
-                .verifyComplete();
+         // Act & Assert
+         StepVerifier.create(engine.markToMarket(trade))
+                 .expectNextMatches(result ->
+                         result.getStatus() == TradeStatus.OPEN &&
+                                 result.getCurrentValue().compareTo(BigDecimal.valueOf(80.0)) == 0 &&
+                                 result.getUnrealizedPnl().compareTo(BigDecimal.valueOf(20.0)) == 0  // totalPnl = 20.0
+                 )
+                 .verifyComplete();
 
-        // Verify save() was called directly (not through closeTrade)
-        verify(paperTradeRepository, times(1)).save(any(PaperTrade.class));
+         // Verify save() was called directly (not through closeTrade)
+         verify(paperTradeRepository, times(1)).save(any(PaperTrade.class));
 
-        // Verify findById() was NOT called (unique to closeTrade path)
-        verify(paperTradeRepository, never()).findById(any(UUID.class));
+         // Verify findById() was NOT called (unique to closeTrade path)
+         verify(paperTradeRepository, never()).findById(any(UUID.class));
 
-        // Verify alert was NOT sent (no close)
-        verify(telegramNotificationBot, never()).sendAlert(any());
-    }
+         // Verify alert was NOT sent (no close)
+         verify(telegramNotificationBot, never()).sendAlert(any());
+     }
 }
