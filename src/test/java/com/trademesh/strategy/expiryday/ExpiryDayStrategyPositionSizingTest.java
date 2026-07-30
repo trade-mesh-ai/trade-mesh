@@ -95,15 +95,19 @@ class ExpiryDayStrategyPositionSizingTest {
                     assertTrue(strategyResult.getIsExecutable());
                     assertNotNull(strategyResult.getSignal());
 
-                    // Verify that getPositionSize was called with the correct maxLossPerLot
+                    // Verify that getPositionSize was called with the correct maxLossPerLotHedged
                     // totalCredit = 50.0 + 40.0 = 90.0
-                    // maxLossPerLot = 90.0 × (100.0 / 100.0) × 65 = 5850.0
-                    BigDecimal expectedMaxLoss = BigDecimal.valueOf(90.0)
-                            .multiply(BigDecimal.valueOf(100.0 / 100.0))
-                            .multiply(BigDecimal.valueOf(65));
+                    // callHedgeLtp = 50.0 × 9% = 4.5
+                    // putHedgeLtp = 40.0 × 9% = 3.6
+                    // netCredit = 90.0 - 4.5 - 3.6 = 81.9
+                    // maxDistance = 200 pts (call @ 51200, put @ 48800)
+                    // maxLossPerLotHedged = 200 × 65 - 81.9 × 65 = 13000 - 5323.5 = 7676.5
+                    BigDecimal expectedMaxLoss = BigDecimal.valueOf(200)
+                            .multiply(BigDecimal.valueOf(65))
+                            .subtract(BigDecimal.valueOf(81.9).multiply(BigDecimal.valueOf(65)));
 
                     verify(lotSizeService).getPositionSize(
-                            argThat(arg -> arg.compareTo(expectedMaxLoss) == 0)
+                            argThat(arg -> arg.subtract(expectedMaxLoss).abs().compareTo(BigDecimal.valueOf(0.01)) < 0)
                     );
                 })
                 .verifyComplete();
@@ -146,11 +150,15 @@ class ExpiryDayStrategyPositionSizingTest {
                     TradeSignal signal = strategyResult.getSignal();
                     assertNotNull(signal);
 
-                    // Both legs should have quantity = 1 (capped at maxLots)
+                    // All 4 legs should have quantity = 1 (capped at maxLots)
                     assertEquals(1, signal.getLegs().get(0).getQuantity(),
                             "Call leg quantity should be capped at maxLots=1");
                     assertEquals(1, signal.getLegs().get(1).getQuantity(),
                             "Put leg quantity should be capped at maxLots=1");
+                    assertEquals(1, signal.getLegs().get(2).getQuantity(),
+                            "Call hedge leg quantity should be capped at maxLots=1");
+                    assertEquals(1, signal.getLegs().get(3).getQuantity(),
+                            "Put hedge leg quantity should be capped at maxLots=1");
                 })
                 .verifyComplete();
     }
@@ -194,11 +202,19 @@ class ExpiryDayStrategyPositionSizingTest {
 
                     int callLegQuantity = signal.getLegs().get(0).getQuantity();
                     int putLegQuantity = signal.getLegs().get(1).getQuantity();
+                    int callHedgeLegQuantity = signal.getLegs().get(2).getQuantity();
+                    int putHedgeLegQuantity = signal.getLegs().get(3).getQuantity();
 
                     assertEquals(2, callLegQuantity, "Call leg quantity should be 2");
                     assertEquals(2, putLegQuantity, "Put leg quantity should be 2");
+                    assertEquals(2, callHedgeLegQuantity, "Call hedge leg quantity should be 2");
+                    assertEquals(2, putHedgeLegQuantity, "Put hedge leg quantity should be 2");
                     assertEquals(callLegQuantity, putLegQuantity,
-                            "Both legs must use the SAME computed lots value");
+                            "Both short legs must use the SAME computed lots value");
+                    assertEquals(callLegQuantity, callHedgeLegQuantity,
+                            "All 4 legs must use the SAME computed lots value");
+                    assertEquals(putLegQuantity, putHedgeLegQuantity,
+                            "All 4 legs must use the SAME computed lots value");
                 })
                 .verifyComplete();
     }
@@ -314,6 +330,8 @@ class ExpiryDayStrategyPositionSizingTest {
         when(config.getMaxVix()).thenReturn(20.0);
         when(config.getLatestEntryTime()).thenReturn("23:59");
         when(config.getExtraDouble("min-distance-atr-multiplier", 0.4)).thenReturn(0.4);
+        when(config.getExtraDouble("hedge-target-delta", 0.05)).thenReturn(0.05);
+        when(config.getExtraDouble("hedge-min-distance-points", 150.0)).thenReturn(150.0);
         return config;
     }
 
@@ -331,24 +349,47 @@ class ExpiryDayStrategyPositionSizingTest {
         var oiAnalysis = createMockOIAnalysis();
         when(intelligence.getOiAnalysis()).thenReturn(oiAnalysis);
 
-        // Mock option chain
+        // Mock option chain with hedge candidates
         OptionChain chain = mock(OptionChain.class);
         when(chain.getExpiryDate()).thenReturn(LocalDate.now().plusDays(1));
 
-        // Create option strikes
+        List<OptionStrike> strikes = new ArrayList<>();
+
+        // Short call strike @ 51000
         OptionStrike callStrike = mock(OptionStrike.class);
         when(callStrike.getStrikePrice()).thenReturn(BigDecimal.valueOf(51000));
         when(callStrike.getCallLTP()).thenReturn(BigDecimal.valueOf(callLTP));
+        strikes.add(callStrike);
 
+        // Short put strike @ 49000
         OptionStrike putStrike = mock(OptionStrike.class);
         when(putStrike.getStrikePrice()).thenReturn(BigDecimal.valueOf(49000));
         when(putStrike.getPutLTP()).thenReturn(BigDecimal.valueOf(putLTP));
-
-        List<OptionStrike> strikes = new ArrayList<>();
-        strikes.add(callStrike);
         strikes.add(putStrike);
-        when(chain.getStrikes()).thenReturn(strikes);
 
+        // Call hedge candidates (above short call @ 51000)
+        // Scaled LTPs based on callLTP: 51100 gets 10% of callLTP, 51200 gets 9%, etc.
+        double[] callHedgeStrikes = {51100, 51200, 51300, 51400, 51500};
+        for (int i = 0; i < callHedgeStrikes.length; i++) {
+            OptionStrike hedgeStrike = mock(OptionStrike.class);
+            when(hedgeStrike.getStrikePrice()).thenReturn(BigDecimal.valueOf(callHedgeStrikes[i]));
+            double hedgeLtp = callLTP * (0.10 - i * 0.01);  // 10%, 9%, 8%, 7%, 6%
+            when(hedgeStrike.getCallLTP()).thenReturn(BigDecimal.valueOf(Math.max(0.5, hedgeLtp)));
+            strikes.add(hedgeStrike);
+        }
+
+        // Put hedge candidates (below short put @ 49000)
+        // Scaled LTPs based on putLTP: 48900 gets 10% of putLTP, 48800 gets 9%, etc.
+        double[] putHedgeStrikes = {48900, 48800, 48700, 48600, 48500};
+        for (int i = 0; i < putHedgeStrikes.length; i++) {
+            OptionStrike hedgeStrike = mock(OptionStrike.class);
+            when(hedgeStrike.getStrikePrice()).thenReturn(BigDecimal.valueOf(putHedgeStrikes[i]));
+            double hedgeLtp = putLTP * (0.10 - i * 0.01);  // 10%, 9%, 8%, 7%, 6%
+            when(hedgeStrike.getPutLTP()).thenReturn(BigDecimal.valueOf(Math.max(0.5, hedgeLtp)));
+            strikes.add(hedgeStrike);
+        }
+
+        when(chain.getStrikes()).thenReturn(strikes);
         when(intelligence.getOptionChain()).thenReturn(chain);
 
         return intelligence;
@@ -357,6 +398,7 @@ class ExpiryDayStrategyPositionSizingTest {
     private MarketMetrics createMockMetrics() {
         return MarketMetrics.builder()
                 .atr14(BigDecimal.valueOf(250.0))
+                .currentAtmIv(BigDecimal.valueOf(18.0))
                 .build();
     }
 
