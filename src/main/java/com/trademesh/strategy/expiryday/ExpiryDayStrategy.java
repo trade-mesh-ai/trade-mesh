@@ -603,25 +603,27 @@ public class ExpiryDayStrategy implements TradingStrategy {
      * @param legsResult      trade legs and credit
      * @return TradeSignal ready for execution
      */
-    private TradeSignal buildTradeSignal(MarketIntelligence intelligence,
-                                         StrikeSelection strikeSelection,
-                                         TradeLegsResult legsResult) {
-        String reason = buildReasonString(strikeSelection, legsResult);
-
-        // Calculate stop loss amount for strangle
-        Double stopLossAmount = legsResult.getTotalCredit() * strategyConfig().getStopLossPercent() / 100;
-
-        // Determine confidence based on credit received
-        Confidence confidence = legsResult.getTotalCredit() >= strategyConfig().getMinCredit() * 2
-                ? Confidence.HIGH
-                : Confidence.MEDIUM;
-
-        // Phase 1: Compute risk snapshot fields (unadjusted, no multiplier)
-        BigDecimal totalCredit = BigDecimal.valueOf(legsResult.getTotalCredit());
-        int lotSize = lotSizeService.getLotSize(intelligence.getSymbol());
-        BigDecimal stopDistancePoints = totalCredit.multiply(BigDecimal.valueOf(strategyConfig().getStopLossPercent() / 100.0));
-        BigDecimal targetThreshold = totalCredit.multiply(BigDecimal.valueOf(strategyConfig().getTargetProfitPercent() / 100.0));
-        BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
+     private TradeSignal buildTradeSignal(MarketIntelligence intelligence,
+                                          StrikeSelection strikeSelection,
+                                          TradeLegsResult legsResult) {
+         String reason = buildReasonString(strikeSelection, legsResult);
+ 
+         // Calculate stop loss amount for strangle
+         Double stopLossAmount = legsResult.getTotalCredit() * strategyConfig().getStopLossPercent() / 100;
+ 
+         // Determine confidence based on credit received
+         Confidence confidence = legsResult.getTotalCredit() >= strategyConfig().getMinCredit() * 2
+                 ? Confidence.HIGH
+                 : Confidence.MEDIUM;
+ 
+         // Phase 1: Compute risk snapshot fields using netCredit (hedged net premium)
+         BigDecimal totalCredit = BigDecimal.valueOf(legsResult.getTotalCredit());
+         BigDecimal totalDebit = BigDecimal.valueOf(legsResult.getTotalDebit() != null ? legsResult.getTotalDebit() : 0.0);
+         BigDecimal netCredit = totalCredit.subtract(totalDebit);
+         int lotSize = lotSizeService.getLotSize(intelligence.getSymbol());
+         BigDecimal stopDistancePoints = netCredit.multiply(BigDecimal.valueOf(strategyConfig().getStopLossPercent() / 100.0));
+         BigDecimal targetThreshold = netCredit.multiply(BigDecimal.valueOf(strategyConfig().getTargetProfitPercent() / 100.0));
+         BigDecimal plannedRiskPerLot = stopDistancePoints.multiply(BigDecimal.valueOf(lotSize));
 
         return TradeSignal.builder()
                 .signalId(UUID.randomUUID())

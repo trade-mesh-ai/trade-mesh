@@ -1248,43 +1248,73 @@ public class PaperTradingEngine {
                 });
     }
 
-    /**
-     * Expiry Day Strangle specific mark-to-market logic.
-     * Calculates P&L for all 4 legs (2 short + 2 hedge) and checks exit conditions.
-     *
-     * @param trade the Expiry Day Strangle paper trade
-     * @return Mono emitting the updated or closed PaperTrade
-     */
-    private Mono<PaperTrade> markToMarketExpiryDay(PaperTrade trade) {
-        return calculateExpiryDayStranglePnl(trade)
-                .flatMap(pnl -> {
-                    trade.setUnrealizedPnl(pnl);
-                    // Derive lot count from trade legs (all legs share same quantity)
-                    int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
-                            ? trade.getLegs().get(0).getQuantity()
-                            : 1;
-                    // Scale entryCredit by lot count before subtraction
-                    BigDecimal scaledEntryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
-                    trade.setCurrentValue(scaledEntryCredit.subtract(pnl));
-                    trade.setUpdatedAt(LocalDateTime.now(this.clock));
-
-                    // Check for STOP_LOSS or TARGET_HIT using the shared decision method
-                    Optional<MarkToMarketExitTrigger> trigger =
-                            determineMarkToMarketExitTrigger(trade.getCurrentValue(), trade.getEntryCredit());
-                    if (trigger.isPresent()) {
-                        String reason = trigger.get().name(); // "STOP_LOSS" or "TARGET_HIT"
-                        log.info("{} triggered for Expiry Day Strangle trade {}: currentValue={}, entryCredit={}",
-                                reason, trade.getId(), trade.getCurrentValue(), trade.getEntryCredit());
-                        trade.setExitReason(reason);
-                        return closeExpiryDayTrade(trade);
-                    }
-                    return paperTradeRepository.save(trade);
-                })
-                .onErrorResume(error -> {
-                    log.error("Error in Expiry Day Strangle mark-to-market for trade: {}", trade.getId(), error);
-                    return Mono.empty();
-                });
-    }
+     /**
+      * Expiry Day Strangle specific mark-to-market logic.
+      * Calculates P&L for all 4 legs (2 short + 2 hedge) and checks exit conditions.
+      *
+      * @param trade the Expiry Day Strangle paper trade
+      * @return Mono emitting the updated or closed PaperTrade
+      */
+     private Mono<PaperTrade> markToMarketExpiryDay(PaperTrade trade) {
+         return calculateExpiryDayStranglePnl(trade)
+                 .flatMap(pnl -> {
+                     trade.setUnrealizedPnl(pnl);
+                     // Derive lot count from trade legs (all legs share same quantity)
+                     int lots = (trade.getLegs() != null && !trade.getLegs().isEmpty())
+                             ? trade.getLegs().get(0).getQuantity()
+                             : 1;
+                     // Scale entryCredit by lot count before subtraction
+                     BigDecimal scaledEntryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
+                     trade.setCurrentValue(scaledEntryCredit.subtract(pnl));
+                     trade.setUpdatedAt(LocalDateTime.now(this.clock));
+ 
+                     // Check for STOP_LOSS or TARGET_HIT using risk snapshot fields (mirroring shouldExitIronCondor pattern)
+                     BigDecimal entryCredit = trade.getEntryCredit().multiply(BigDecimal.valueOf(lots));
+ 
+                     // Check 1: Stop loss
+                     BigDecimal stopLossThreshold;
+                     if (trade.getStopDistancePoints() != null) {
+                         stopLossThreshold = trade.getStopDistancePoints()
+                                 .multiply(BigDecimal.valueOf(lots))
+                                 .negate();
+                     } else {
+                         // Fallback: compute from config only if stopDistancePoints is null
+                         double slPct = strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE").getStopLossPercent() / 100.0;
+                         stopLossThreshold = entryCredit.multiply(BigDecimal.valueOf(slPct)).negate();
+                     }
+ 
+                     if (pnl.compareTo(stopLossThreshold) < 0) {
+                         log.warn("Stop loss triggered for Expiry Day Strangle trade {}: pnl={}, threshold={}",
+                                 trade.getId(), pnl, stopLossThreshold);
+                         trade.setExitReason("STOP_LOSS");
+                         return closeExpiryDayTrade(trade);
+                     }
+ 
+                     // Check 2: Profit target
+                     BigDecimal profitTarget;
+                     if (trade.getTargetThreshold() != null) {
+                         profitTarget = trade.getTargetThreshold()
+                                 .multiply(BigDecimal.valueOf(lots));
+                     } else {
+                         // Fallback: compute from config only if targetThreshold is null
+                         double targetPct = strategiesConfig.getStrategy("EXPIRY_DAY_STRANGLE").getTargetProfitPercent() / 100.0;
+                         profitTarget = entryCredit.multiply(BigDecimal.valueOf(targetPct));
+                     }
+ 
+                     if (pnl.compareTo(profitTarget) >= 0) {
+                         log.info("Profit target hit for Expiry Day Strangle trade {}: pnl={}, target={}",
+                                 trade.getId(), pnl, profitTarget);
+                         trade.setExitReason("TARGET_HIT");
+                         return closeExpiryDayTrade(trade);
+                     }
+ 
+                     return paperTradeRepository.save(trade);
+                 })
+                 .onErrorResume(error -> {
+                     log.error("Error in Expiry Day Strangle mark-to-market for trade: {}", trade.getId(), error);
+                     return Mono.empty();
+                 });
+     }
 
     /**
      * Closes a spread trade with Telegram alert.
