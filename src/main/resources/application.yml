@@ -267,3 +267,12 @@ logging:
     reactor.netty: INFO
     io.netty: INFO
     liquibase: INFO
+  file:
+    name: logs/trademesh.log
+  logback:
+    rollingpolicy:
+      file-name-pattern: "logs/trademesh-%d{yyyy-MM-dd}.%i.log.gz"
+      max-file-size: 50MB
+      max-history: 30
+      total-size-cap: 2GB
+      clean-history-on-start: false
