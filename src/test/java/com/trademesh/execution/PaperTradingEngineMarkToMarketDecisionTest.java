@@ -52,15 +52,20 @@ class PaperTradingEngineMarkToMarketDecisionTest {
     private LotSizeService lotSizeService;
     @Mock
     private OptionChainService optionChainService;
+
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     private PaperTradingEngine engine;
 
     @BeforeEach
     void setUp() {
         engine = new PaperTradingEngine(
                 paperTradeRepository, redisTemplate, telegramNotificationBot,
-                objectMapper, null, lotSizeService, null, null, optionChainService
+                objectMapper, null, lotSizeService, null, null, optionChainService, kiteMarginService, null
         );
         lenient().when(lotSizeService.getLotSize("NIFTY50")).thenReturn(75);
+        lenient().when(kiteMarginService.fetchBasketMargin(any(), any())).thenReturn(Mono.empty());
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
