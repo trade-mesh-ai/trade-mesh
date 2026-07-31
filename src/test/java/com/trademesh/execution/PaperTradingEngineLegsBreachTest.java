@@ -60,9 +60,12 @@ class PaperTradingEngineLegsBreachTest {
     @Mock
     private MarketCalendarService marketCalendarService;
 
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     @BeforeEach
     void setUp() {
-        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService, optionChainService);
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService, optionChainService, kiteMarginService, null);
         lenient().when(marketCalendarService.countTradingDays(any(), any())).thenReturn(5);
     }
 

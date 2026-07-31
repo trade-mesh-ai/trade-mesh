@@ -46,6 +46,10 @@ class PaperTradingEngineCurrentValueTest {
     private ReactiveRedisTemplate<String, String> redisTemplate;
     @Mock
     private com.trademesh.zerodha.options.OptionChainService optionChainService;
+
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     private PaperTradingEngine paperTradingEngine;
 
     private OptionChain optionChain;
@@ -54,7 +58,7 @@ class PaperTradingEngineCurrentValueTest {
     void setUp() {
         paperTradingEngine = new PaperTradingEngine(
                 paperTradeRepository, redisTemplate, null, objectMapper,
-                null, null, null, null, optionChainService
+                null, null, null, null, optionChainService, kiteMarginService, null
         );
         optionChain = OptionChain.builder()
                 .symbol("NIFTY50")

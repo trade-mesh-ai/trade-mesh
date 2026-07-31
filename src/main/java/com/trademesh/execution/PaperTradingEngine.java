@@ -13,6 +13,8 @@ import com.trademesh.strategy.enums.OptionType;
 import com.trademesh.trading.MarketCalendarService;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionChainService;
+import com.trademesh.zerodha.options.KiteMarginService;
+import com.trademesh.zerodha.auth.ZerodhaAuthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
@@ -56,6 +58,8 @@ public class PaperTradingEngine {
     private final VixMonitorService vixMonitorService;
     private final MarketCalendarService marketCalendarService;
     private final OptionChainService optionChainService;
+    private final KiteMarginService kiteMarginService;
+    private final ZerodhaAuthService authService;
     private final Clock clock = Clock.system(ZoneId.of("Asia/Kolkata"));
 
     /**
@@ -133,7 +137,24 @@ public class PaperTradingEngine {
                                 return telegramNotificationBot.sendAlert(createAlert(savedTrade, alert))
                                         .then(Mono.just(savedTrade));
                             })
-                            .doOnSuccess(savedTrade -> log.info("Paper trade executed: {} for {}", savedTrade.getId(), savedTrade.getSymbol()))
+                            .doOnSuccess(savedTrade -> {
+                                log.info("Paper trade executed: {} for {}", savedTrade.getId(), savedTrade.getSymbol());
+                                
+                                 // Margin shadow-logging (fire-and-forget, non-blocking)
+                                 // Fetch access token and log margin comparison
+                                 authService.getAccessToken()
+                                         .flatMap(accessToken -> kiteMarginService.fetchBasketMargin(signal.getLegs(), accessToken))
+                                        .subscribe(
+                                                realMargin -> {
+                                                    if (realMargin != null && !signal.getLegs().isEmpty()) {
+                                                        int lots = signal.getLegs().get(0).getQuantity();
+                                                        log.info("Margin shadow-check for trade {}: real basket margin={}, plannedRiskPerLot={}, lots={}",
+                                                                savedTrade.getId(), realMargin, signal.getPlannedRiskPerLot(), lots);
+                                                    }
+                                                },
+                                                error -> log.debug("Margin shadow-check skipped (non-critical): {}", error.getMessage())
+                                        );
+                            })
                             .doOnError(error -> log.error("Error executing paper trade", error));
                 });
     }

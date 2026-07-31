@@ -63,12 +63,15 @@ class PaperTradingEngineFrozenFieldsTest {
     @Mock
     private ReactiveValueOperations<String, String> reactiveValueOps;
 
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     @BeforeEach
     void setUp() {
         lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
         lenient().when(reactiveValueOps.get("price:NIFTY50")).thenReturn(Mono.just("24000"));
 
-        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService, optionChainService);
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, null, marketCalendarService, optionChainService, kiteMarginService, null);
 
         // Stub marketCalendarService for all tests (safe DTE value)
         lenient().when(marketCalendarService.countTradingDays(any(), any())).thenReturn(5);
