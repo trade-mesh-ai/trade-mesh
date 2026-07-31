@@ -50,13 +50,18 @@ class PaperTradingEngineExpiryDayPnlTest {
     private ReactiveRedisTemplate<String, String> redisTemplate;
     @Mock
     private OptionChainService optionChainService;
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+    @Mock
+    private com.trademesh.zerodha.auth.ZerodhaAuthService authService;
     private PaperTradingEngine engine;
 
     @BeforeEach
     void setUp() {
         engine = new PaperTradingEngine(
                 paperTradeRepository, redisTemplate, null, objectMapper,
-                null, null, null, null, optionChainService
+                null, null, null, null, optionChainService,
+                kiteMarginService, authService
         );
     }
 
