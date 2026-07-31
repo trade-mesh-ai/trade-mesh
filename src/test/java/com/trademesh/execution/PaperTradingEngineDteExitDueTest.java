@@ -61,7 +61,7 @@ class PaperTradingEngineDteExitDueTest {
     @BeforeEach
     void setUp() {
         // Create a minimal PaperTradingEngine instance with mocked MarketCalendarService
-        engine = new PaperTradingEngine(null, null, null, null, null, null, null, marketCalendarService, optionChainService);
+        engine = new PaperTradingEngine(null, null, null, null, null, null, null, marketCalendarService, optionChainService, null, null);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════

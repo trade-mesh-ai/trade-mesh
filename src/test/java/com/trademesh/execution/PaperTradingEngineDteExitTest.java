@@ -71,9 +71,12 @@ class PaperTradingEngineDteExitTest {
     @Mock
     private ReactiveValueOperations<String, String> reactiveValueOps;
 
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     @BeforeEach
     void setUp() {
-        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, vixMonitorService, marketCalendarService, optionChainService);
+        engine = new PaperTradingEngine(null, redisTemplate, null, null, null, null, vixMonitorService, marketCalendarService, optionChainService, kiteMarginService, null);
         lenient().when(redisTemplate.opsForValue()).thenReturn(reactiveValueOps);
         lenient().when(reactiveValueOps.get("price:NIFTY50")).thenReturn(Mono.just("19400"));
     }

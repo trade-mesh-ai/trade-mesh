@@ -55,11 +55,14 @@ class PaperTradingEngineCloseTest {
     @Mock
     private OptionChainService optionChainService;
 
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     @BeforeEach
     void setUp() {
         engine = new PaperTradingEngine(
                 paperTradeRepository, null, telegramNotificationBot,
-                null, null, lotSizeService, null, null, optionChainService
+                null, null, lotSizeService, null, null, optionChainService, kiteMarginService, null
         );
 
         // Stub lotSizeService for alert formatting

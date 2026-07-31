@@ -34,6 +34,9 @@ class PaperTradingEngineTest {
     @Mock
     private MarketCalendarService marketCalendarService;
 
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
     @InjectMocks
     private PaperTradingEngine paperTradingEngine;
 

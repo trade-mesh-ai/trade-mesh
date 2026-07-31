@@ -85,6 +85,12 @@ class PaperTradingEngineExecuteTradeTest {
     @Mock
     private OptionChainService optionChainService;
 
+    @Mock
+    private com.trademesh.zerodha.options.KiteMarginService kiteMarginService;
+
+    @Mock
+    private com.trademesh.zerodha.auth.ZerodhaAuthService authService;
+
     @BeforeEach
     void setUp() {
         engine = new PaperTradingEngine(
@@ -96,8 +102,16 @@ class PaperTradingEngineExecuteTradeTest {
                 lotSizeService,
                 vixMonitorService,
                 marketCalendarService,
-                optionChainService
+                optionChainService,
+                kiteMarginService,
+                authService
         );
+        
+        // Stub kiteMarginService for margin shadow-logging
+        lenient().when(kiteMarginService.fetchBasketMargin(any(), any())).thenReturn(Mono.empty());
+
+        // Stub authService for margin shadow-logging
+        lenient().when(authService.getAccessToken()).thenReturn(Mono.just("fake-token-for-test"));
 
         // Default lenient mocking for alert sending
         lenient().when(telegramNotificationBot.sendAlert(any()))
