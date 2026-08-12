@@ -108,7 +108,7 @@ class PaperTradingEngineExecuteTradeTest {
         );
         
         // Stub kiteMarginService for margin shadow-logging
-        lenient().when(kiteMarginService.fetchBasketMargin(any(), any())).thenReturn(Mono.empty());
+        lenient().when(kiteMarginService.fetchBasketMargin(any(), any(), any())).thenReturn(Mono.empty());
 
         // Stub authService for margin shadow-logging
         lenient().when(authService.getAccessToken()).thenReturn(Mono.just("fake-token-for-test"));
