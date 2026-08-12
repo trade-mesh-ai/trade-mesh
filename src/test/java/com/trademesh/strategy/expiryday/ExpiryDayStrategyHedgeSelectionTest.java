@@ -1,7 +1,10 @@
 package com.trademesh.strategy.expiryday;
 
+import com.trademesh.config.LotSizeService;
+import com.trademesh.intelligence.MarketMetricsService;
 import com.trademesh.intelligence.iv.ImpliedVolatilityCalculator;
 import com.trademesh.strategy.config.StrategyProperties;
+import com.trademesh.strategy.config.StrategiesConfig;
 import com.trademesh.zerodha.options.OptionChain;
 import com.trademesh.zerodha.options.OptionStrike;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,7 +14,11 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -182,7 +189,16 @@ class ExpiryDayStrategyHedgeSelectionTest {
          com.trademesh.intelligence.MarketMetricsService marketMetricsService = mock(com.trademesh.intelligence.MarketMetricsService.class);
          com.trademesh.config.LotSizeService lotSizeService = mock(com.trademesh.config.LotSizeService.class);
 
-         ExpiryDayStrategy strategy = new ExpiryDayStrategy(strategiesConfig, marketMetricsService, lotSizeService);
+         // Fixed clock at 11:00 AM IST (before 15:30 market close)
+         // Construction: LocalDateTime.of(2026, 8, 12, 11, 0).atZone(ZoneId.of("Asia/Kolkata")).toInstant()
+         // This ensures LocalDateTime.now(clock) inside buildTradeLegs() reads as 11:00 IST
+         Clock fixedClock = Clock.fixed(
+                 LocalDateTime.of(2026, 8, 12, 11, 0)
+                         .atZone(ZoneId.of("Asia/Kolkata"))
+                         .toInstant(),
+                 ZoneId.of("Asia/Kolkata")
+         );
+         ExpiryDayStrategy strategy = new ExpiryDayStrategy(strategiesConfig, marketMetricsService, lotSizeService, fixedClock);
 
          // Mock strategy config (matching ExpiryDayStrategyPositionSizingTest pattern)
          com.trademesh.strategy.config.StrategyProperties config = mock(com.trademesh.strategy.config.StrategyProperties.class);
@@ -535,8 +551,17 @@ class ExpiryDayStrategyHedgeSelectionTest {
                     BigDecimal.class, double.class, double.class, StrategyProperties.class);
             method.setAccessible(true);
 
-            // Create a dummy ExpiryDayStrategy instance (constructor args don't matter for this test)
-            var strategy = new ExpiryDayStrategy(null, null, null);
+            // Create a dummy ExpiryDayStrategy instance with a fixed clock
+            // Fixed clock at 11:00 AM IST (before 15:30 market close)
+            // Construction: LocalDateTime.of(2026, 8, 12, 11, 0).atZone(ZoneId.of("Asia/Kolkata")).toInstant()
+            // This ensures LocalDateTime.now(clock) inside buildTradeLegs() reads as 11:00 IST
+            Clock fixedClock = Clock.fixed(
+                    LocalDateTime.of(2026, 8, 12, 11, 0)
+                            .atZone(ZoneId.of("Asia/Kolkata"))
+                            .toInstant(),
+                    ZoneId.of("Asia/Kolkata")
+            );
+            var strategy = new ExpiryDayStrategy(null, null, null, fixedClock);
 
             return (ExpiryDayStrategy.HedgeStrikeSelection) method.invoke(
                     strategy, chain, shortCallStrike, shortPutStrike, spotPrice, atmIv, tte, cfg);

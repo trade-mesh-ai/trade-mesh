@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -46,12 +47,14 @@ public class ExpiryDayStrategy implements TradingStrategy {
     private final StrategiesConfig strategiesConfig;
     private final MarketMetricsService marketMetricsService;
     private final LotSizeService lotSizeService;
+    private final Clock clock;
 
     public ExpiryDayStrategy(StrategiesConfig strategiesConfig, MarketMetricsService marketMetricsService,
-                             LotSizeService lotSizeService) {
+                             LotSizeService lotSizeService, Clock clock) {
         this.strategiesConfig = strategiesConfig;
         this.marketMetricsService = marketMetricsService;
         this.lotSizeService = lotSizeService;
+        this.clock = clock;
     }
 
     /**
@@ -452,7 +455,7 @@ public class ExpiryDayStrategy implements TradingStrategy {
             return null;
         }
 
-        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Kolkata"));
+        LocalDateTime now = LocalDateTime.now(clock);
         LocalDateTime marketClose = LocalDateTime.of(now.toLocalDate(), LocalTime.of(15, 30));
 
         // If market close has already passed today, fail closed

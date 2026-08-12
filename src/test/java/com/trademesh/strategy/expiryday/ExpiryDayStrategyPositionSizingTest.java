@@ -19,7 +19,10 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -51,11 +54,20 @@ class ExpiryDayStrategyPositionSizingTest {
 
     private ExpiryDayStrategy strategy;
 
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        strategy = new ExpiryDayStrategy(strategiesConfig, marketMetricsService, lotSizeService);
-    }
+     @BeforeEach
+     void setUp() {
+         MockitoAnnotations.openMocks(this);
+         // Fixed clock at 11:00 AM IST (before 15:30 market close)
+         // Construction: LocalDateTime.of(2026, 8, 12, 11, 0).atZone(ZoneId.of("Asia/Kolkata")).toInstant()
+         // This ensures LocalDateTime.now(clock) inside buildTradeLegs() reads as 11:00 IST
+         Clock fixedClock = Clock.fixed(
+                 LocalDateTime.of(2026, 8, 12, 11, 0)
+                         .atZone(ZoneId.of("Asia/Kolkata"))
+                         .toInstant(),
+                 ZoneId.of("Asia/Kolkata")
+         );
+         strategy = new ExpiryDayStrategy(strategiesConfig, marketMetricsService, lotSizeService, fixedClock);
+     }
 
     /**
      * Test 1: Verify maxLossPerLot correctly derived from totalCredit and stopLossPercent.
