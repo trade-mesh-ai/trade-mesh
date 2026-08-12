@@ -65,7 +65,7 @@ class PaperTradingEngineMarkToMarketDecisionTest {
                 objectMapper, null, lotSizeService, null, null, optionChainService, kiteMarginService, null
         );
         lenient().when(lotSizeService.getLotSize("NIFTY50")).thenReturn(75);
-        lenient().when(kiteMarginService.fetchBasketMargin(any(), any())).thenReturn(Mono.empty());
+        lenient().when(kiteMarginService.fetchBasketMargin(any(), any(), any())).thenReturn(Mono.empty());
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
