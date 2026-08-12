@@ -1,5 +1,6 @@
 package com.trademesh.zerodha.options;
 
+import com.trademesh.config.LotSizeService;
 import com.trademesh.strategy.TradeLeg;
 import com.trademesh.strategy.enums.Action;
 import com.trademesh.zerodha.auth.ZerodhaConfig;
@@ -31,6 +32,7 @@ public class KiteMarginService {
 
     private final ZerodhaConfig config;
     private final WebClient.Builder webClientBuilder;
+    private final LotSizeService lotSizeService;
 
     /**
      * Fetches basket margin requirement from Kite Connect POST /margins/basket endpoint.
@@ -39,11 +41,12 @@ public class KiteMarginService {
      * All errors are logged as warnings and return Mono.empty() — never propagate errors
      * that could affect the caller or trade execution.
      *
+     * @param symbol the trading symbol (e.g., "NIFTY50", "NIFTYBANK") for lot size lookup
      * @param legs the list of trade legs to calculate margin for
      * @param accessToken the Zerodha access token
      * @return Mono emitting the final margin requirement as BigDecimal, or empty on any error
      */
-    public Mono<BigDecimal> fetchBasketMargin(List<TradeLeg> legs, String accessToken) {
+    public Mono<BigDecimal> fetchBasketMargin(String symbol, List<TradeLeg> legs, String accessToken) {
         if (legs == null || legs.isEmpty()) {
             log.warn("Cannot fetch basket margin: legs list is null or empty");
             return Mono.empty();
@@ -57,6 +60,10 @@ public class KiteMarginService {
         try {
             // Build request body: array of order objects
             List<Map<String, Object>> orders = new ArrayList<>();
+            
+            // Get lot size once for the symbol (all legs share the same underlying)
+            int lotSize = lotSizeService.getLotSize(symbol);
+            
             for (TradeLeg leg : legs) {
                 Map<String, Object> order = new HashMap<>();
                 order.put("exchange", "NFO");
@@ -65,7 +72,9 @@ public class KiteMarginService {
                 order.put("variety", "regular");
                 order.put("product", "NRML");
                 order.put("order_type", "MARKET");
-                order.put("quantity", leg.getQuantity());
+                // Convert lot count to actual contract quantity: lots × lotSize
+                int contractQuantity = leg.getQuantity() * lotSize;
+                order.put("quantity", contractQuantity);
                 order.put("price", 0);
                 order.put("trigger_price", 0);
                 orders.add(order);
@@ -82,7 +91,6 @@ public class KiteMarginService {
                     .bodyValue(orders)
                     .retrieve()
                     .bodyToMono(KiteBasketMarginResponse.class)
-                    .timeout(Duration.ofSeconds(10))
                     .flatMap(response -> {
                         if (response == null || response.getData() == null || response.getData().getFinalMargin() == null) {
                             log.warn("Invalid margin response: missing data or finalMargin");
@@ -90,6 +98,7 @@ public class KiteMarginService {
                         }
                         return Mono.just(BigDecimal.valueOf(response.getData().getFinalMargin().getTotal()));
                     })
+                    .timeout(Duration.ofSeconds(10))
                     .onErrorResume(e -> {
                         log.warn("Failed to fetch basket margin from Kite API: {}", e.getMessage());
                         return Mono.empty();

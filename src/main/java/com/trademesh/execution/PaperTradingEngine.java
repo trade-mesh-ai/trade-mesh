@@ -143,7 +143,7 @@ public class PaperTradingEngine {
                                  // Margin shadow-logging (fire-and-forget, non-blocking)
                                  // Fetch access token and log margin comparison
                                  authService.getAccessToken()
-                                         .flatMap(accessToken -> kiteMarginService.fetchBasketMargin(signal.getLegs(), accessToken))
+                                         .flatMap(accessToken -> kiteMarginService.fetchBasketMargin(signal.getSymbol(), signal.getLegs(), accessToken))
                                         .subscribe(
                                                 realMargin -> {
                                                     if (realMargin != null && !signal.getLegs().isEmpty()) {
