@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 /**
@@ -711,24 +712,207 @@ class PaperTradingEngineCurrentValueTest {
                 .verifyComplete();
     }
 
-    // ─── Test Case 12: calculateDefaultCurrentValue() - null chainData graceful fallback ───
-    @Test
-    @DisplayName("calculateDefaultCurrentValue: null chainData falls back to leg.getLimitPrice() for SELL leg")
-    void testCalculateDefaultCurrentValue_NullChainData_FallsBackToLimitPrice() {
-        // Setup: null optionChain triggers graceful fallback in extractLTP()
-        // extractLTP() null-checks chainData (line 539) and returns leg.getLimitPrice()
-        // For a SELL leg: totalCurrentValue += 50.0 (the limitPrice)
-        TradeLeg leg = TradeLeg.builder()
-                .action(Action.SELL)
-                .optionType(OptionType.CE)
-                .strikePrice(BigDecimal.valueOf(24000.0))
-                .limitPrice(BigDecimal.valueOf(50.0))
-                .quantity(1)
-                .build();
+     // ─── Test Case 12: calculateDefaultCurrentValue() - null chainData graceful fallback ───
+     @Test
+     @DisplayName("calculateDefaultCurrentValue: null chainData falls back to leg.getLimitPrice() for SELL leg")
+     void testCalculateDefaultCurrentValue_NullChainData_FallsBackToLimitPrice() {
+         // Setup: null optionChain triggers graceful fallback in extractLTP()
+         // extractLTP() null-checks chainData (line 539) and returns leg.getLimitPrice()
+         // For a SELL leg: totalCurrentValue += 50.0 (the limitPrice)
+         TradeLeg leg = TradeLeg.builder()
+                 .action(Action.SELL)
+                 .optionType(OptionType.CE)
+                 .strikePrice(BigDecimal.valueOf(24000.0))
+                 .limitPrice(BigDecimal.valueOf(50.0))
+                 .quantity(1)
+                 .build();
 
-        // Act & Assert
-        StepVerifier.create(paperTradingEngine.calculateDefaultCurrentValue(null, List.of(leg)))
-                .expectNext(50.0)  // Graceful fallback: SELL leg returns its limitPrice
-                .verifyComplete();
-    }
-}
+         // Act & Assert
+         StepVerifier.create(paperTradingEngine.calculateDefaultCurrentValue(null, List.of(leg)))
+                 .expectNext(50.0)  // Graceful fallback: SELL leg returns its limitPrice
+                 .verifyComplete();
+     }
+
+     // ═══════════════════════════════════════════════════════════════════════════════
+     // ZERO-LTP GUARD TESTS FOR extractLTP()
+     // ═══════════════════════════════════════════════════════════════════════════════
+
+     /**
+      * Test: extractLTP() returns leg.getLimitPrice() when callLTP is BigDecimal.ZERO.
+      * Confirms the new zero-check guard fires for CE options.
+      * This tests the real production failure mode: Kite API returns all-zero responses
+      * for degraded/stale data, which Jackson deserializes to BigDecimal.ZERO (not null).
+      */
+     @Test
+     @DisplayName("extractLTP: callLTP = BigDecimal.ZERO returns leg.getLimitPrice() (CE guard fires)")
+     void testExtractLTP_CallLtpIsZero_ReturnsFallback() {
+         // Arrange: Strike with callLTP = BigDecimal.ZERO (not null)
+         OptionStrike strikeWithZeroLtp = OptionStrike.builder()
+                 .strikePrice(BigDecimal.valueOf(24100))
+                 .callLTP(BigDecimal.ZERO)  // Degraded API response
+                 .build();
+
+         optionChain.setStrikes(List.of(strikeWithZeroLtp));
+
+         TradeLeg ceLeg = TradeLeg.builder()
+                 .action(Action.SELL)
+                 .optionType(OptionType.CE)
+                 .strikePrice(BigDecimal.valueOf(24100.0))
+                 .limitPrice(BigDecimal.valueOf(50.0))  // Fallback value
+                 .quantity(1)
+                 .build();
+
+         // Act
+         BigDecimal result = paperTradingEngine.extractLTP(optionChain, ceLeg);
+
+         // Assert: Should return limitPrice (50.0), not zero
+         assertEquals(0, result.compareTo(BigDecimal.valueOf(50.0)), "Expected limitPrice 50.0, got " + result);
+     }
+
+     /**
+      * Test: extractLTP() returns leg.getLimitPrice() when putLTP is BigDecimal.ZERO.
+      * Confirms the new zero-check guard fires for PE options.
+      */
+     @Test
+     @DisplayName("extractLTP: putLTP = BigDecimal.ZERO returns leg.getLimitPrice() (PE guard fires)")
+     void testExtractLTP_PutLtpIsZero_ReturnsFallback() {
+         // Arrange: Strike with putLTP = BigDecimal.ZERO (not null)
+         OptionStrike strikeWithZeroLtp = OptionStrike.builder()
+                 .strikePrice(BigDecimal.valueOf(23900))
+                 .putLTP(BigDecimal.ZERO)  // Degraded API response
+                 .build();
+
+         optionChain.setStrikes(List.of(strikeWithZeroLtp));
+
+         TradeLeg peLeg = TradeLeg.builder()
+                 .action(Action.SELL)
+                 .optionType(OptionType.PE)
+                 .strikePrice(BigDecimal.valueOf(23900.0))
+                 .limitPrice(BigDecimal.valueOf(45.0))  // Fallback value
+                 .quantity(1)
+                 .build();
+
+         // Act
+         BigDecimal result = paperTradingEngine.extractLTP(optionChain, peLeg);
+
+         // Assert: Should return limitPrice (45.0), not zero
+         assertEquals(0, result.compareTo(BigDecimal.valueOf(45.0)), "Expected limitPrice 45.0, got " + result);
+     }
+
+     /**
+      * Test: extractLTP() returns the real LTP unchanged when it's a small positive value.
+      * Confirms the zero-check doesn't over-trigger and reject legitimate low prices near expiry.
+      * Real options near expiry can trade at 0.05 or 0.10 points legitimately.
+      */
+     @Test
+     @DisplayName("extractLTP: callLTP = 0.05 (small positive) returns the real LTP, not fallback")
+     void testExtractLTP_CallLtpIsSmallPositive_ReturnsRealLtp() {
+         // Arrange: Strike with callLTP = 0.05 (legitimate near-expiry price)
+         OptionStrike strikeWithSmallLtp = OptionStrike.builder()
+                 .strikePrice(BigDecimal.valueOf(24100))
+                 .callLTP(BigDecimal.valueOf(0.05))  // Real, legitimate price
+                 .build();
+
+         optionChain.setStrikes(List.of(strikeWithSmallLtp));
+
+         TradeLeg ceLeg = TradeLeg.builder()
+                 .action(Action.SELL)
+                 .optionType(OptionType.CE)
+                 .strikePrice(BigDecimal.valueOf(24100.0))
+                 .limitPrice(BigDecimal.valueOf(50.0))  // Fallback value (should NOT be used)
+                 .quantity(1)
+                 .build();
+
+         // Act
+         BigDecimal result = paperTradingEngine.extractLTP(optionChain, ceLeg);
+
+         // Assert: Should return the real LTP (0.05), not the fallback (50.0)
+         assertEquals(0, result.compareTo(BigDecimal.valueOf(0.05)), "Expected real LTP 0.05, got " + result);
+     }
+
+     /**
+      * Test: End-to-end through calculateSpreadPnl() with degraded all-zero chain.
+      * Mirrors the real production JSON structure from the incident:
+      * {"strikePrice":57000,"callOI":0,"callOIChange":0,"callLTP":0,"callIV":0,"putOI":0,"putOIChange":0,"putLTP":0,"putIV":0,"totalOI":0}
+      * <p>
+      * Confirms that when extractLTP() encounters zero LTPs, it falls back to limitPrice,
+      * preventing the false inflated P&L that caused the real incident.
+      * <p>
+      * Without the fix: P&L = (50 - 0) * 1 + (30 - 0) * 1 = 80 (false, inflated)
+      * With the fix: P&L = (50 - 50) * 1 + (30 - 30) * 1 = 0 (correct, using fallback)
+      */
+     @Test
+     @DisplayName("calculateSpreadPnl: degraded all-zero chain falls back to limitPrice, preventing inflated P&L")
+     void testCalculateSpreadPnl_DegradedAllZeroChain_FallsBackCorrectly() {
+         // Arrange: Trade with 2 legs
+         PaperTrade trade = new PaperTrade();
+         trade.setId(java.util.UUID.randomUUID());
+         trade.setSymbol("NIFTY50");
+         trade.setUnrealizedPnl(BigDecimal.valueOf(0.0));
+
+         // SELL @ 50 (entry), BUY @ 30 (entry)
+         List<TradeLeg> legs = List.of(
+                 TradeLeg.builder().action(Action.SELL).optionType(OptionType.PE)
+                         .strikePrice(BigDecimal.valueOf(23900.0)).limitPrice(BigDecimal.valueOf(50.0)).quantity(1).build(),
+                 TradeLeg.builder().action(Action.BUY).optionType(OptionType.PE)
+                         .strikePrice(BigDecimal.valueOf(23800.0)).limitPrice(BigDecimal.valueOf(30.0)).quantity(1).build()
+         );
+         trade.setLegs(legs);
+
+         // Create degraded all-zero chain (matching the real production incident)
+         OptionChain degradedChain = OptionChain.builder()
+                 .symbol("NIFTY50")
+                 .expiryDate(LocalDate.of(2026, 7, 9))
+                 .strikes(List.of(
+                         OptionStrike.builder().strikePrice(BigDecimal.valueOf(23900))
+                                 .putLTP(BigDecimal.ZERO)  // All-zero response
+                                 .putOI(0).putOIChange(0).putIV(BigDecimal.ZERO).build(),
+                         OptionStrike.builder().strikePrice(BigDecimal.valueOf(23800))
+                                 .putLTP(BigDecimal.ZERO)  // All-zero response
+                                 .putOI(0).putOIChange(0).putIV(BigDecimal.ZERO).build()
+                 ))
+                 .build();
+
+         when(optionChainService.fetchOptionChain("NIFTY50"))
+                 .thenReturn(Mono.just(degradedChain));
+
+         // Act & Assert
+         // With the fix: extractLTP() detects zero and returns limitPrice
+         // P&L = (50 - 50) * 1 + (30 - 30) * 1 = 0 (correct, using fallback)
+         // Without the fix: P&L = (50 - 0) * 1 + (30 - 0) * 1 = 80 (false, inflated)
+         StepVerifier.create(paperTradingEngine.calculateSpreadPnl(trade))
+                 .expectNextMatches(bd -> bd.compareTo(BigDecimal.ZERO) == 0)
+                 .verifyComplete();
+         verify(optionChainService, atLeastOnce()).fetchOptionChain("NIFTY50");
+     }
+
+     /**
+      * Test: extractLTP() returns leg.getLimitPrice() when callLTP is negative.
+      * Confirms the zero-check guard (signum() <= 0) also catches negative values.
+      */
+     @Test
+     @DisplayName("extractLTP: callLTP = -5.0 (negative) returns leg.getLimitPrice()")
+     void testExtractLTP_CallLtpIsNegative_ReturnsFallback() {
+         // Arrange: Strike with callLTP = -5.0 (invalid, should never happen but guard catches it)
+         OptionStrike strikeWithNegativeLtp = OptionStrike.builder()
+                 .strikePrice(BigDecimal.valueOf(24100))
+                 .callLTP(BigDecimal.valueOf(-5.0))  // Invalid negative price
+                 .build();
+
+         optionChain.setStrikes(List.of(strikeWithNegativeLtp));
+
+         TradeLeg ceLeg = TradeLeg.builder()
+                 .action(Action.SELL)
+                 .optionType(OptionType.CE)
+                 .strikePrice(BigDecimal.valueOf(24100.0))
+                 .limitPrice(BigDecimal.valueOf(50.0))  // Fallback value
+                 .quantity(1)
+                 .build();
+
+         // Act
+         BigDecimal result = paperTradingEngine.extractLTP(optionChain, ceLeg);
+
+         // Assert: Should return limitPrice (50.0), not negative value
+         assertEquals(0, result.compareTo(BigDecimal.valueOf(50.0)), "Expected limitPrice 50.0, got " + result);
+     }
+ }

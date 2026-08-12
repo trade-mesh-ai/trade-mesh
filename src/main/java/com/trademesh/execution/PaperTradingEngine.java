@@ -751,10 +751,18 @@ public class PaperTradingEngine {
      * Extracts the LTP (Last Traded Price) for a trade leg from the option chain data.
      * Finds the matching strike by comparing strike prices (int comparison),
      * then returns the appropriate LTP based on option type (CE or PE).
+     * <p>
+     * Guards against both null and zero/negative LTPs, which can occur when the Kite API
+     * returns degraded/stale data (all-zero responses). Falls back to leg.getLimitPrice()
+     * in either case.
+     * <p>
+     * Future improvement: OptionChainService.buildStrikesFromQuotes() should detect and
+     * reject all-zero API responses before they're cached in Redis, preventing this
+     * fallback from being needed at all.
      *
      * @param chainData the option chain data containing all strikes
      * @param leg       the trade leg to extract LTP for
-     * @return the LTP value as BigDecimal, or the leg's limit price if strike not found
+     * @return the LTP value as BigDecimal, or the leg's limit price if strike not found or LTP is invalid
      */
     public BigDecimal extractLTP(OptionChain chainData, TradeLeg leg) {
         if (chainData == null || chainData.getStrikes() == null || chainData.getStrikes().isEmpty()) {
@@ -769,16 +777,16 @@ public class PaperTradingEngine {
             if (strike.getStrikePrice().intValue() == legStrikeInt) {
                 // Extract appropriate LTP based on option type
                 if (leg.getOptionType() == OptionType.CE) {
-                    if (strike.getCallLTP() == null) {
-                        log.warn("Call LTP is null for strike {}, using limit price", legStrikeInt);
+                    if (strike.getCallLTP() == null || strike.getCallLTP().signum() <= 0) {
+                        log.warn("Call LTP is null or non-positive ({}) for strike {}, using limit price - likely degraded/stale API data", strike.getCallLTP(), legStrikeInt);
                         return leg.getLimitPrice();
                     }
                     BigDecimal callLTP = strike.getCallLTP();
                     log.debug("Found call LTP {} for strike {}", callLTP, legStrikeInt);
                     return callLTP;
                 } else if (leg.getOptionType() == OptionType.PE) {
-                    if (strike.getPutLTP() == null) {
-                        log.warn("Put LTP is null for strike {}, using limit price", legStrikeInt);
+                    if (strike.getPutLTP() == null || strike.getPutLTP().signum() <= 0) {
+                        log.warn("Put LTP is null or non-positive ({}) for strike {}, using limit price - likely degraded/stale API data", strike.getPutLTP(), legStrikeInt);
                         return leg.getLimitPrice();
                     }
                     BigDecimal putLTP = strike.getPutLTP();
