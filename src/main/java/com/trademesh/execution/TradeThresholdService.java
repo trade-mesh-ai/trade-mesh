@@ -29,12 +29,16 @@ public class TradeThresholdService {
     /**
      * Calculates trade thresholds (stop-loss and target profit) for a given paper trade.
      * <p>
+     * Reads persisted, real exit-decision fields (stopDistancePoints, targetThreshold)
+     * computed at entry time. Falls back to naive formula only if fields are null
+     * (for older/edge-case trades from strategies that don't populate these fields).
+     * <p>
      * Returns a record containing:
      * - lots: number of lots from the first trade leg
      * - totalEntryCredit: entryCredit × lots (in points)
-     * - stopLossThreshold: stop-loss threshold in points
+     * - stopLossThreshold: stop-loss threshold in points (lots-scaled)
      * - stopLossThresholdAmount: stop-loss threshold in rupees
-     * - targetThreshold: target profit threshold in points
+     * - targetThreshold: target profit threshold in points (lots-scaled)
      * - targetThresholdAmount: target profit threshold in rupees
      * <p>
      * For unknown strategies, all threshold fields are set to null.
@@ -55,15 +59,36 @@ public class TradeThresholdService {
         // Get lot size for rupee conversion
         int lotSize = lotSizeService.getLotSize(trade.getSymbol());
 
-        // Branch on strategy name
+        // Unified logic for ALL strategies (IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD, EXPIRY_DAY_STRANGLE)
+        // Read persisted exit-decision fields, with defensive null-fallback
         String strategyName = trade.getStrategyName();
 
-        if ("IRON_CONDOR".equals(strategyName) || "BULL_PUT_SPREAD".equals(strategyName) || "BEAR_CALL_SPREAD".equals(strategyName)) {
-            // IRON_CONDOR, BULL_PUT_SPREAD, BEAR_CALL_SPREAD: entryCredit-based formula
+        if ("IRON_CONDOR".equals(strategyName) || "BULL_PUT_SPREAD".equals(strategyName) || 
+            "BEAR_CALL_SPREAD".equals(strategyName) || "EXPIRY_DAY_STRANGLE".equals(strategyName)) {
+            
             StrategyProperties cfg = strategiesConfig.getStrategy(strategyName);
-            double scaledEntryCredit = trade.getEntryCredit().doubleValue() * lots;
-            double stopLossThreshold = -(scaledEntryCredit * cfg.getStopLossPercent() / 100.0);
-            double targetThreshold = scaledEntryCredit * cfg.getTargetProfitPercent() / 100.0;
+            
+            // Compute stop-loss threshold (in points, lots-scaled)
+            double stopLossThreshold;
+            if (trade.getStopDistancePoints() != null) {
+                // Use persisted field: -(stopDistancePoints × lots)
+                stopLossThreshold = -(trade.getStopDistancePoints().doubleValue() * lots);
+            } else {
+                // Fallback to naive formula for older/edge-case trades
+                double scaledEntryCredit = trade.getEntryCredit().doubleValue() * lots;
+                stopLossThreshold = -(scaledEntryCredit * cfg.getStopLossPercent() / 100.0);
+            }
+            
+            // Compute target threshold (in points, lots-scaled)
+            double targetThreshold;
+            if (trade.getTargetThreshold() != null) {
+                // Use persisted field: targetThreshold × lots
+                targetThreshold = trade.getTargetThreshold().doubleValue() * lots;
+            } else {
+                // Fallback to naive formula for older/edge-case trades
+                double scaledEntryCredit = trade.getEntryCredit().doubleValue() * lots;
+                targetThreshold = scaledEntryCredit * cfg.getTargetProfitPercent() / 100.0;
+            }
 
             return new TradeThresholds(
                     lots,
@@ -72,20 +97,6 @@ public class TradeThresholdService {
                     Math.round(stopLossThreshold * lotSize * 100.0) / 100.0,
                     Math.round(targetThreshold * 100.0) / 100.0,
                     Math.round(targetThreshold * lotSize * 100.0) / 100.0
-            );
-        } else if ("EXPIRY_DAY_STRANGLE".equals(strategyName)) {
-            // Expiry Day Strangle: hardcoded rule (per-lot thresholds, must scale by lots for rupee amount)
-            double entryCredit = trade.getEntryCredit().doubleValue();
-            double stopLossThreshold = entryCredit * 2.0;
-            double targetThreshold = entryCredit * 0.5;
-
-            return new TradeThresholds(
-                    lots,
-                    Math.round(totalEntryCredit * 100.0) / 100.0,
-                    Math.round(stopLossThreshold * 100.0) / 100.0,
-                    Math.round(stopLossThreshold * lotSize * lots * 100.0) / 100.0,
-                    Math.round(targetThreshold * 100.0) / 100.0,
-                    Math.round(targetThreshold * lotSize * lots * 100.0) / 100.0
             );
         } else {
             // Unknown strategy — omit thresholds
