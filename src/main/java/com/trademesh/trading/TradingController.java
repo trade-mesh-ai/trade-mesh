@@ -240,6 +240,75 @@ public class TradingController {
     }
 
     /**
+     * Retrieves inception-to-date trading performance summary.
+     * <p>
+     * Returns aggregated metrics for all closed trades since inception:
+     * - Total realized P&L (in points and rupees)
+     * - Account capital and P&L as percentage of capital
+     * - Trade counts (total, winning, losing) and win rate
+     * - Best and worst trades
+     * <p>
+     * If no trades have been closed, returns zero metrics with account capital.
+     *
+     * @return Mono emitting ResponseEntity with inception-to-date summary
+     */
+    @Operation(summary = "Get inception-to-date trading performance summary")
+    @GetMapping(value = "/report/inception", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<ResponseEntity<Map<String, Object>>> getInceptionReport() {
+        log.info("Fetching inception-to-date trading report");
+
+        return dailyReportService.getInceptionToDateMetrics()
+                .map(inceptionMetrics -> {
+                    Map<String, Object> response = new LinkedHashMap<>();
+                    response.put("reportType", "INCEPTION_TO_DATE");
+                    response.put("accountCapital", String.format("₹ %.2f", inceptionMetrics.accountCapital()));
+
+                    DailyReportService.DailyReportMetrics metrics = inceptionMetrics.metrics();
+
+                    // Include metrics even if no trades (all zeros)
+                    response.put("totalTrades", metrics.totalTrades);
+                    response.put("winningTrades", metrics.winningTrades);
+                    response.put("losingTrades", metrics.losingTrades);
+                    response.put("winRate", String.format("%.1f%%", metrics.winRate));
+                    response.put("totalRealizedPnl", String.format("%.2f pts", metrics.totalPnl));
+                    response.put("totalRealizedPnlAmount", String.format("₹ %.2f", metrics.totalPnlAmount));
+                    response.put("pnlAsPercentOfCapital", String.format("%.2f%%", inceptionMetrics.pnlAsPercentOfCapital()));
+
+                    if (metrics.totalTrades > 0) {
+                        if (metrics.bestTrade != null) {
+                            Map<String, Object> bestInfo = new LinkedHashMap<>();
+                            bestInfo.put("strategy", metrics.bestTrade.getStrategyName());
+                            bestInfo.put("pnl", String.format("%.2f pts", metrics.bestTrade.getRealizedPnl()));
+                            bestInfo.put("pnlAmount", String.format("₹ %.2f", metrics.bestPnlAmount));
+                            bestInfo.put("lots", metrics.bestTrade.getLegs() != null && !metrics.bestTrade.getLegs().isEmpty() 
+                                ? metrics.bestTrade.getLegs().get(0).getQuantity() : 0);
+                            response.put("bestTrade", bestInfo);
+                        }
+
+                        if (metrics.worstTrade != null) {
+                            Map<String, Object> worstInfo = new LinkedHashMap<>();
+                            worstInfo.put("strategy", metrics.worstTrade.getStrategyName());
+                            worstInfo.put("pnl", String.format("%.2f pts", metrics.worstTrade.getRealizedPnl()));
+                            worstInfo.put("pnlAmount", String.format("₹ %.2f", metrics.worstPnlAmount));
+                            worstInfo.put("lots", metrics.worstTrade.getLegs() != null && !metrics.worstTrade.getLegs().isEmpty() 
+                                ? metrics.worstTrade.getLegs().get(0).getQuantity() : 0);
+                            response.put("worstTrade", worstInfo);
+                        }
+                    }
+
+                    log.info("Inception report: totalTrades={}, totalPnl={}, pnlPercent={}%",
+                            metrics.totalTrades, metrics.totalPnlAmount, inceptionMetrics.pnlAsPercentOfCapital());
+                    return ResponseEntity.ok(response);
+                })
+                .onErrorResume(e -> {
+                    log.error("Error fetching inception report: {}", e.getMessage(), e);
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("error", "Error fetching inception report: " + e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse));
+                });
+    }
+
+    /**
      * Retrieves today's trading summary.
      * <p>
      * Returns aggregated metrics for all trades executed today:

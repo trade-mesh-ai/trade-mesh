@@ -121,6 +121,33 @@ public class DailyReportService {
     }
 
     /**
+     * Retrieves inception-to-date metrics aggregating all closed trades since inception.
+     * <p>
+     * Fetches all closed trades (regardless of entry or exit date) and computes:
+     * - Total realized P&L (in points and rupees)
+     * - Account capital and P&L as percentage of capital
+     * <p>
+     * This is the single source of truth for inception-to-date performance reporting.
+     *
+     * @return Mono emitting InceptionMetrics with all aggregated values
+     */
+    public Mono<InceptionMetrics> getInceptionToDateMetrics() {
+        return paperTradeRepository.findAllClosedTrades()
+                .collectList()
+                .doOnNext(trades -> {
+                    log.info("getInceptionToDateMetrics fetched {} closed trades since inception", trades.size());
+                })
+                .map(trades -> {
+                    DailyReportMetrics metrics = computeMetrics(trades);
+                    double accountCapital = lotSizeService.getAccountCapital();
+                    double pnlAsPercentOfCapital = accountCapital > 0 
+                        ? (metrics.totalPnlAmount / accountCapital) * 100.0 
+                        : 0.0;
+                    return new InceptionMetrics(metrics, accountCapital, pnlAsPercentOfCapital);
+                });
+    }
+
+    /**
      * Retrieves today's status summary with three independent counts and P&L metrics.
      * <p>
      * Combines three independent queries:
@@ -333,6 +360,21 @@ public class DailyReportService {
             this.bestPnlAmount = 0;
             this.worstPnlAmount = 0;
         }
+    }
+
+    /**
+     * Public record bundling inception-to-date metrics with account capital and P&L percentage.
+     * <p>
+     * Contains aggregated metrics from all closed trades since inception:
+     * - metrics: DailyReportMetrics with all P&L calculations
+     * - accountCapital: total account capital in rupees
+     * - pnlAsPercentOfCapital: realized P&L as percentage of account capital
+     */
+    public record InceptionMetrics(
+            DailyReportMetrics metrics,
+            double accountCapital,
+            double pnlAsPercentOfCapital
+    ) {
     }
 
 }
